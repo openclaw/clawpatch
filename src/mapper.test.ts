@@ -62,6 +62,52 @@ describe("mapFeatures", () => {
     ]);
   });
 
+  it("maps Next routes under src/app and src/pages", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-src-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "fixture-app",
+          scripts: { build: "next build" },
+          dependencies: { next: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(
+      root,
+      "src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/app/api/health/route.ts",
+      "export function GET() { return new Response('ok'); }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/about.tsx",
+      "export default function About() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const bySource = (route: string) =>
+      result.features.find((feature) => feature.title === `Route ${route}`)?.source;
+
+    expect(titles).toContain("Route /dashboard");
+    expect(titles).toContain("Route /api/health");
+    expect(titles).toContain("Route /about");
+    expect(bySource("/dashboard")).toBe("next-app-route");
+    expect(bySource("/api/health")).toBe("next-app-route");
+    expect(bySource("/about")).toBe("next-pages-route");
+  });
+
   it("maps generated package bins back to source entries", async () => {
     const root = await fixtureRoot("clawpatch-map-bin-source-");
     await writeFixture(
