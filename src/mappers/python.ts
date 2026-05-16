@@ -481,12 +481,8 @@ function isReviewablePythonSourceFile(path: string): boolean {
 }
 
 function isPythonTestPath(path: string): boolean {
-  return (
-    path.endsWith(".py") &&
-    (/(^|\/)tests?\//u.test(path) ||
-      /(^|\/)test_[^/]+\.py$/u.test(path) ||
-      path.endsWith("_test.py"))
-  );
+  const name = basename(path);
+  return path.endsWith(".py") && (/^test_[^/]+\.py$/u.test(name) || name.endsWith("_test.py"));
 }
 
 function pythonShouldSkip(path: string): boolean {

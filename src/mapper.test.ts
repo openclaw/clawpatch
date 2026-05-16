@@ -1278,6 +1278,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(suite?.ownedFiles).toEqual([{ path: "src/pkg/store_test.py", reason: "pytest file" }]);
   });
 
+  it("does not map Python test support modules as pytest suites", async () => {
+    const root = await fixtureRoot("clawpatch-python-test-support-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "support-only"\n');
+    await writeFixture(root, "tests/helpers.py", "def helper():\n    pass\n");
+    await writeFixture(root, "tests/conftest.py", "def pytest_configure():\n    pass\n");
+    await writeFixture(root, "tests/__init__.py", "");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.commands.test).toBeNull();
+    expect(result.features.some((feature) => feature.source === "python-test-suite")).toBe(false);
+  });
+
   it("maps Python source-only projects without a full source-group pre-scan", async () => {
     const root = await fixtureRoot("clawpatch-python-source-only-");
     await writeFixture(root, "src/source_only/app.py", "def app():\n    pass\n");
