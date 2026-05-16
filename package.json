@@ -19,7 +19,8 @@
     "lint": "oxlint . --config oxlint.json",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pack:smoke": "node scripts/package-smoke.mjs"
   },
   "dependencies": {
     "zod": "^4.4.3"
