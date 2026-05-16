@@ -268,7 +268,7 @@ function parseJavaFile(source: string): JavaFileInfo {
   )) {
     const type = match[1];
     if (type !== undefined) {
-      methodReturnTypes.add(baseJavaTypeName(type));
+      methodReturnTypes.add(baseJavaTypeName(stripGenericParameters(type)));
     }
   }
 
@@ -432,7 +432,6 @@ function javaTypeNames(raw: string): string[] {
 function baseJavaTypeName(raw: string): string {
   return (
     raw
-      .replace(/<.*>/su, "")
       .replace(/\?.*$/su, "")
       .split(".")
       .at(-1)

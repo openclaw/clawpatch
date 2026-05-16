@@ -176,9 +176,12 @@ describe("workflow", () => {
   });
 
   it("parses review jobs and report filters", () => {
-    expect(parseArgs(["review", "--limit", "4", "--jobs", "3"]).flags).toMatchObject({
+    expect(
+      parseArgs(["review", "--limit", "4", "--jobs", "3", "--project", "apps/web"]).flags,
+    ).toMatchObject({
       limit: "4",
       jobs: "3",
+      project: "apps/web",
     });
     expect(parseArgs(["review", "--since", "HEAD~5"]).flags).toMatchObject({
       since: "HEAD~5",
@@ -186,9 +189,12 @@ describe("workflow", () => {
     expect(parseArgs(["revalidate", "--since", "origin/main"]).flags).toMatchObject({
       since: "origin/main",
     });
-    expect(parseArgs(["report", "--status", "open", "--severity", "high"]).flags).toMatchObject({
+    expect(
+      parseArgs(["report", "--status", "open", "--severity", "high", "--project", "web"]).flags,
+    ).toMatchObject({
       status: "open",
       severity: "high",
+      project: "web",
     });
     expect(
       parseArgs(["triage", "--finding", "f", "--status", "wont-fix", "--note", "ok"]).flags,
@@ -706,6 +712,71 @@ describe("workflow", () => {
     expect(features[0]?.status).toBe("pending");
   });
 
+  it("filters review dry-runs by project name or root", async () => {
+    const root = await fixtureRoot("clawpatch-project-filter-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/admin/package.json",
+      JSON.stringify({ name: "admin", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/project.json",
+      JSON.stringify({ name: "admin", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const byRoot = (await reviewCommand(context, {
+      dryRun: true,
+      project: "apps/web",
+      limit: "20",
+    })) as { featureIds: string[]; wouldReview: number };
+    const byName = (await reviewCommand(context, {
+      dryRun: true,
+      project: "web",
+      limit: "20",
+    })) as { featureIds: string[]; wouldReview: number };
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const titleById = new Map(features.map((feature) => [feature.featureId, feature.title]));
+
+    expect(byRoot.wouldReview).toBeGreaterThan(0);
+    expect(byRoot.featureIds).toEqual(byName.featureIds);
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).toEqual(
+      expect.arrayContaining(["Node package web", "web route /dashboard"]),
+    );
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).not.toContain("Node package admin");
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).not.toContain(
+      "admin route /dashboard",
+    );
+  });
+
   it("does not mutate features on dry-run map", async () => {
     const root = await fixtureRoot("clawpatch-map-dry-run-");
     await writeFixture(
@@ -992,6 +1063,132 @@ describe("workflow", () => {
     expect(fixed).toMatchObject({ status: "applied", filesChanged: 0 });
     expect(patches[0]?.filesChanged).toEqual([]);
     await expect(access(join(root, "SHOULD_NOT_RUN_PROVIDER_COMMANDS"))).rejects.toThrow();
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("includes feature-specific validation in fix dry-run output", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-dry-run-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(0)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [{ path: "src/index.test.ts", command: featureCommand }],
+    });
+    const fixed = await fixCommand(context, { finding, dryRun: true });
+    const patches = await readPatchAttempts(paths);
+
+    expect(fixed).toMatchObject({ dryRun: true, validation: featureCommand });
+    expect(patches).toEqual([]);
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("fails fix when feature-specific validation fails", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-fail-");
+    await runCommand(
+      "git init -q && git config user.email test@example.com && git config user.name Test",
+      root,
+    );
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    await runCommand(
+      "git add package.json src/index.ts && git -c commit.gpgsign=false commit -q -m init",
+      root,
+    );
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(7)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [{ path: "src/index.test.ts", command: featureCommand }],
+    });
+    await expect(fixCommand(context, { finding })).rejects.toMatchObject({ exitCode: 6 });
+    const [patches, updatedFinding] = await Promise.all([
+      readPatchAttempts(paths),
+      readFinding(paths, finding),
+    ]);
+
+    expect(patches[0]?.status).toBe("failed");
+    expect(patches[0]?.commandsRun).toHaveLength(1);
+    expect(patches[0]?.commandsRun[0]).toMatchObject({ command: featureCommand, exitCode: 7 });
+    expect(updatedFinding?.status).toBe("open");
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("deduplicates feature-specific and configured fix validation commands", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-dedupe-");
+    await runCommand(
+      "git init -q && git config user.email test@example.com && git config user.name Test",
+      root,
+    );
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {
+          format: 'node -e "process.exit(0)"',
+          test: 'node -e "process.exit(0)"',
+        },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    await runCommand(
+      "git add package.json src/index.ts && git -c commit.gpgsign=false commit -q -m init",
+      root,
+    );
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(0)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [
+        { path: "src/index.test.ts", command: "" },
+        { path: "src/index.test.ts", command: featureCommand },
+        { path: "src/index.test.ts", command: "npm run test" },
+      ],
+    });
+    const fixed = await fixCommand(context, { finding });
+    const patches = await readPatchAttempts(paths);
+
+    expect(fixed).toMatchObject({ status: "applied", commands: 3 });
+    expect(patches[0]?.commandsRun.map((result) => result.command)).toEqual([
+      "npm run format",
+      featureCommand,
+      "npm run test",
+    ]);
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 

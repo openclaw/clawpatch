@@ -148,10 +148,10 @@ const commandFlags = {
   init: new Set(["force"]),
   map: new Set(["dryRun"]),
   status: new Set<string>(),
-  review: new Set(["feature", "limit", "since", "jobs", "provider", "model", "dryRun"]),
-  report: new Set(["status", "severity", "feature", "category", "triage", "output"]),
+  review: new Set(["feature", "project", "limit", "since", "jobs", "provider", "model", "dryRun"]),
+  report: new Set(["status", "severity", "feature", "project", "category", "triage", "output"]),
   show: new Set(["finding"]),
-  next: new Set(["status"]),
+  next: new Set(["status", "project"]),
   triage: new Set(["finding", "status", "note"]),
   fix: new Set(["finding", "provider", "model", "dryRun"]),
   revalidate: new Set([
@@ -193,6 +193,7 @@ const valueFlagNames = new Set([
   "severity",
   "category",
   "triage",
+  "project",
   "note",
 ]);
 
@@ -352,6 +353,7 @@ Usage:
 
 Flags:
   --feature <id>
+  --project <name-or-root>
   --limit <n>
   --since <ref>
   --jobs <n>        default: 10
@@ -373,6 +375,7 @@ Flags:
   --status <status>
   --severity <severity>
   --feature <id>
+  --project <name-or-root>
   --category <category>
   --triage <triage>
   --output <path>
@@ -400,6 +403,7 @@ Usage:
 
 Flags:
   --status <status>  default: open
+  --project <name-or-root>
   --json
 `);
     return;

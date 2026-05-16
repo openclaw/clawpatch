@@ -1,0 +1,28 @@
+name: clawpatch-codeql-typescript-security
+
+disable-default-queries: true
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - include:
+      precision:
+        - high
+        - very-high
+      tags contain: security
+      security-severity: /([7-9]|10)\.(\d)+/
+
+paths:
+  - src
+  - package.json
+  - pnpm-lock.yaml
+
+paths-ignore:
+  - "**/node_modules"
+  - "**/coverage"
+  - "**/dist"
+  - "**/dist/**"
+  - "**/*.test.ts"
+  - "**/*test-helper*"
+  - "**/*fixture*"
