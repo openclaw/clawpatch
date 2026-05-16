@@ -1516,7 +1516,7 @@ add_executable(headerapp include/headers.hpp)
   it("uses the CMake source that defines main as the executable entrypoint", async () => {
     const root = await fixtureRoot("clawpatch-cmake-cpp-main-entry-");
     await writeFixture(root, "CMakeLists.txt", "add_executable(app src/app.cpp src/main.cpp)\n");
-    await writeFixture(root, "src/app.cpp", "int helper(void) { return 0; }\n");
+    await writeFixture(root, "src/app.cpp", "struct App { int main(void) { return 0; } };\n");
     await writeFixture(root, "src/main.cpp", "int main(void) { return 0; }\n");
 
     const project = await detectProject(root);
@@ -1530,6 +1530,16 @@ add_executable(headerapp include/headers.hpp)
     expect(app?.entrypoints[0]?.path).toBe("src/main.cpp");
     expect(mainFeatures).toHaveLength(1);
     expect(result.features.map((feature) => feature.title)).not.toContain("C++ binary main");
+  });
+
+  it("does not map member main methods as standalone C++ binaries", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-member-main-");
+    await writeFixture(root, "src/app.cpp", "struct App { int main(void) { return 0; } };\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).not.toContain("C++ binary app");
   });
 
   it("resolves targets from included CMake modules relative to the source dir", async () => {
@@ -1548,6 +1558,21 @@ add_executable(headerapp include/headers.hpp)
       { path: "src/main.c", reason: "target source" },
       { path: "src/util.c", reason: "target source" },
     ]);
+  });
+
+  it("ignores unreferenced CMake modules", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-unreferenced-module-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
+    await writeFixture(root, "cmake/Dead.cmake", "add_executable(dead src/dead.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/dead.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("CMake binary app");
+    expect(titles).not.toContain("CMake binary dead");
   });
 
   it("maps autotools C and C++ binary and library targets", async () => {

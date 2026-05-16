@@ -126,7 +126,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
 
 async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
-  const cmakeFiles = files.filter(isCMake);
+  const cmakeFiles = await referencedCMakeFiles(root, files);
   const sourceDirs = await cmakeSourceDirs(root, cmakeFiles);
   const extraSources = await cmakeTargetSources(root, cmakeFiles, sourceDirs);
   const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
@@ -199,6 +199,31 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
     }
   }
   return seeds;
+}
+
+async function referencedCMakeFiles(root: string, files: string[]): Promise<string[]> {
+  const cmakeFileSet = new Set(files.filter(isCMake));
+  const referenced = new Set(files.filter((file) => file.endsWith("CMakeLists.txt")));
+  const pending = [...referenced];
+  while (pending.length > 0) {
+    const cmakeFile = pending.shift();
+    if (cmakeFile === undefined) {
+      continue;
+    }
+    const dir = parentDir(cmakeFile);
+    const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    for (const include of cmakeIncludes(body)) {
+      const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
+      const full = isAbsolute(includePath) ? includePath : join(root, prefixDir(dir, includePath));
+      const rel = normalize(relative(root, full));
+      if (!cmakeFileSet.has(rel) || referenced.has(rel)) {
+        continue;
+      }
+      referenced.add(rel);
+      pending.push(rel);
+    }
+  }
+  return [...referenced].toSorted();
 }
 
 async function cmakeTargetSources(
@@ -298,13 +323,31 @@ async function mainFunctionTargets(
 
 function definesMain(source: string): boolean {
   const stripped = stripBlockComments(stripLineComments(source, "//"));
-  return /(?:^|[;{}\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/u.test(
-    stripped,
-  );
+  const pattern =
+    /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/gmu;
+  for (const match of stripped.matchAll(pattern)) {
+    if (braceDepthBefore(stripped, match.index) === 0) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function stripBlockComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//gu, " ");
+}
+
+function braceDepthBefore(source: string, end: number): number {
+  let depth = 0;
+  for (let index = 0; index < end; index += 1) {
+    const char = source[index];
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth = Math.max(0, depth - 1);
+    }
+  }
+  return depth;
 }
 
 function collapseBackslashContinuations(source: string): string {
