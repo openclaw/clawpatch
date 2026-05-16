@@ -6,6 +6,7 @@ import {
   isSampleProjectPath,
   normalize,
   packageTrustBoundaries,
+  shouldSkip,
   stripLineComments,
   walk,
 } from "./shared.js";
@@ -66,9 +67,15 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         if (!isValidTargetName(target)) {
           continue;
         }
-        const sources = readTargetSources(body, automakeVariableName(target));
+        const sources = await automakeTargetSources(root, dir, body, target);
         const sourcePaths = await targetSourcePaths(root, dir, sources);
-        const entryPath = (await pickExecutableEntry(root, sourcePaths, target)) ?? makefile;
+        if (sourcePaths.length === 0) {
+          continue;
+        }
+        const entryPath = await pickExecutableEntry(root, sourcePaths, target);
+        if (entryPath === null) {
+          continue;
+        }
         const tag = languageTag(entryPath);
         seeds.push({
           title: `Autotools binary ${target}`,
@@ -96,6 +103,9 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         const target = rawTarget.replace(/\.la$/u, "");
         const sources = readTargetSources(body, automakeVariableName(rawTarget));
         const sourcePaths = await targetSourcePaths(root, dir, sources);
+        if (sourcePaths.length === 0) {
+          continue;
+        }
         const entryPath = pickEntry(sourcePaths, target) ?? makefile;
         const tag = languageTag(entryPath);
         seeds.push({
@@ -138,7 +148,13 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
-      const entryPath = (await pickExecutableEntry(root, sourcePaths, target)) ?? cmakeFile;
+      if (sourcePaths.length === 0) {
+        continue;
+      }
+      const entryPath = await pickExecutableEntry(root, sourcePaths, target);
+      if (entryPath === null) {
+        continue;
+      }
       const tag = languageTag(entryPath);
       seeds.push({
         title: `CMake binary ${target}`,
@@ -163,6 +179,9 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
+      if (sourcePaths.length === 0) {
+        continue;
+      }
       const entryPath = pickEntry(sourcePaths, target) ?? cmakeFile;
       const tag = languageTag(entryPath);
       seeds.push({
@@ -245,8 +264,44 @@ function readTargetSources(body: string, target: string): string[] {
   return splitWords(raw);
 }
 
+async function automakeTargetSources(
+  root: string,
+  dir: string,
+  body: string,
+  target: string,
+): Promise<string[]> {
+  const sources = readTargetSources(body, automakeVariableName(target));
+  if (sources.length > 0) {
+    return sources;
+  }
+  return defaultAutomakeSources(root, dir, target);
+}
+
+async function defaultAutomakeSources(
+  root: string,
+  dir: string,
+  target: string,
+): Promise<string[]> {
+  const defaultSources = [`${target}.c`];
+  const existing: string[] = [];
+  for (const source of defaultSources) {
+    if (await isSafeFile(root, join(root, prefixDir(dir, source)))) {
+      existing.push(source);
+    }
+  }
+  return existing;
+}
+
 function splitWords(value: string): string[] {
-  return value.split(/\s+/u).filter((word) => word.length > 0);
+  return value
+    .split(/\s+/u)
+    .filter((word) => word.length > 0)
+    .map(unquoteWord);
+}
+
+function unquoteWord(value: string): string {
+  const quote = value[0];
+  return (quote === '"' || quote === "'") && value.endsWith(quote) ? value.slice(1, -1) : value;
 }
 
 async function pickExecutableEntry(
@@ -254,41 +309,48 @@ async function pickExecutableEntry(
   candidates: string[],
   targetName: string,
 ): Promise<string | null> {
-  for (const candidate of candidates) {
+  const compilableCandidates = candidates.filter(isCOrCppCompilable);
+  if (compilableCandidates.length === 0) {
+    return null;
+  }
+  for (const candidate of compilableCandidates) {
     const source = await readFile(join(root, candidate), "utf8").catch(() => "");
     if (source.length <= 2_000_000 && definesMain(source)) {
       return candidate;
     }
   }
-  return pickEntry(candidates, targetName);
+  return pickEntry(compilableCandidates, targetName);
 }
 
 function pickEntry(candidates: string[], targetName: string): string | null {
-  if (candidates.length === 0) {
+  const entryCandidates = candidates.filter(isCOrCppCompilable);
+  const candidatesToPick = entryCandidates.length > 0 ? entryCandidates : candidates;
+  if (candidatesToPick.length === 0) {
     return null;
   }
-  for (const candidate of candidates) {
+  for (const candidate of candidatesToPick) {
     if (candidate.split("/").at(-1) === targetName) {
       return candidate;
     }
   }
-  const preferred = candidates.find((candidate) => {
+  const preferred = candidatesToPick.find((candidate) => {
     const base = candidate.split("/").at(-1) ?? candidate;
     return base.startsWith(targetName) || base.startsWith("main.");
   });
   if (preferred !== undefined) {
     return preferred;
   }
-  const first = candidates[0];
+  const first = candidatesToPick[0];
   return first === undefined ? null : first;
 }
 
 async function targetSourcePaths(root: string, dir: string, sources: string[]): Promise<string[]> {
   const paths: string[] = [];
-  for (const source of sources.filter(isCOrCppCompilable)) {
+  for (const source of sources.filter(isCOrCppSource)) {
     const full = join(root, prefixDir(dir, source));
-    if (await isSafeFile(root, full)) {
-      paths.push(normalize(relative(root, full)));
+    const rel = normalize(relative(root, full));
+    if (!shouldSkip(rel) && (await isSafeFile(root, full))) {
+      paths.push(rel);
     }
   }
   return paths;
@@ -333,12 +395,37 @@ function dedupeByEntry(seeds: FeatureSeed[]): FeatureSeed[] {
   const seen = new Set<string>();
   const output: FeatureSeed[] = [];
   for (const seed of seeds) {
-    const key = `${seed.entryPath}:${seed.kind}`;
+    const key = `${seed.entryPath}:${seed.kind}:${seed.command ?? seed.symbol ?? seed.title}`;
     if (seen.has(key)) {
       continue;
     }
     seen.add(key);
     output.push(seed);
   }
-  return output;
+  return disambiguateFeatureIdCollisions(output);
+}
+
+function disambiguateFeatureIdCollisions(seeds: FeatureSeed[]): FeatureSeed[] {
+  const counts = new Map<string, number>();
+  for (const seed of seeds) {
+    const key = featureIdCollisionKey(seed);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return seeds.map((seed) => {
+    if ((counts.get(featureIdCollisionKey(seed)) ?? 0) < 2) {
+      return seed;
+    }
+    if (seed.kind !== "library" || seed.symbol !== null) {
+      return seed;
+    }
+    return { ...seed, symbol: disambiguatorFromTitle(seed.title) };
+  });
+}
+
+function featureIdCollisionKey(seed: FeatureSeed): string {
+  return `${seed.kind}:${seed.source}:${seed.entryPath}:${seed.command ?? seed.route ?? seed.symbol ?? ""}`;
+}
+
+function disambiguatorFromTitle(title: string): string {
+  return title.split(" ").at(-1) ?? title;
 }

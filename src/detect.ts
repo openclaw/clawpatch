@@ -967,6 +967,7 @@ function shouldSkipSearchEntry(entry: string): boolean {
     ".worktrees",
     ".venv",
     "venv",
+    "vendor",
     "__pycache__",
     ".mypy_cache",
     ".ruff_cache",

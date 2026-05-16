@@ -1204,12 +1204,16 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "CMakeLists.txt",
-      "add_executable(myapp src/main.cpp src/util.cpp)\nadd_library(core STATIC src/core.c src/core_util.c)\n",
+      'add_executable(myapp src/main.cpp src/util.cpp)\nadd_executable(quoted "src/quoted.cpp")\nadd_library(core STATIC include/core.hpp src/core.c src/core_util.c)\nadd_library(headers INTERFACE include/headers.hpp)\nadd_library(vendored INTERFACE vendor/dep.hpp)\nadd_executable(varapp ${APP_SOURCES})\nadd_executable(headerapp include/headers.hpp)\n',
     );
     await writeFixture(root, "src/main.cpp", "int main(int argc, char **argv) { return 0; }\n");
+    await writeFixture(root, "src/quoted.cpp", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/util.cpp", "int util() { return 1; }\n");
+    await writeFixture(root, "include/core.hpp", "int core(void);\n");
     await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
     await writeFixture(root, "src/core_util.c", "int core_util(void) { return 2; }\n");
+    await writeFixture(root, "include/headers.hpp", "int header_only(void);\n");
+    await writeFixture(root, "vendor/dep.hpp", "int dep(void);\n");
     await writeFixture(root, "tests/main_test.cpp", "int main() { return 0; }\n");
 
     const project = await detectProject(root);
@@ -1217,6 +1221,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const titles = result.features.map((feature) => feature.title);
     const myapp = result.features.find((feature) => feature.title === "CMake binary myapp");
     const core = result.features.find((feature) => feature.title === "CMake library core");
+    const headers = result.features.find((feature) => feature.title === "CMake library headers");
     const mainFeatures = result.features.filter(
       (feature) =>
         feature.kind === "cli-command" && feature.entrypoints[0]?.path === "src/main.cpp",
@@ -1225,7 +1230,12 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(project.detected.languages).toEqual(expect.arrayContaining(["c", "cpp"]));
     expect(project.detected.packageManagers).toContain("cmake");
     expect(titles).toContain("CMake binary myapp");
+    expect(titles).toContain("CMake binary quoted");
     expect(titles).toContain("CMake library core");
+    expect(titles).toContain("CMake library headers");
+    expect(titles).not.toContain("CMake library vendored");
+    expect(titles).not.toContain("CMake binary varapp");
+    expect(titles).not.toContain("CMake binary headerapp");
     expect(titles).not.toContain("C++ binary main_test");
     expect(mainFeatures).toHaveLength(1);
     expect(myapp?.source).toBe("cmake-bin");
@@ -1238,10 +1248,118 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       { path: "tests/main_test.cpp", reason: "nearby test" },
     ]);
     expect(myapp?.tests).toEqual([{ path: "tests/main_test.cpp", command: null }]);
+    expect(core?.entrypoints[0]?.path).toBe("src/core.c");
+    expect(core?.entrypoints[0]?.symbol).toBeNull();
     expect(core?.ownedFiles).toEqual([
+      { path: "include/core.hpp", reason: "target source" },
       { path: "src/core.c", reason: "target source" },
       { path: "src/core_util.c", reason: "target source" },
     ]);
+    expect(headers?.ownedFiles).toEqual([{ path: "include/headers.hpp", reason: "target source" }]);
+  });
+
+  it("preserves CMake targets that share the same source list", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-shared-sources-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_library(core_static STATIC src/core.c)\nadd_library(core_shared SHARED src/core.c)\n",
+    );
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const coreStatic = result.features.find(
+      (feature) => feature.title === "CMake library core_static",
+    );
+    const coreShared = result.features.find(
+      (feature) => feature.title === "CMake library core_shared",
+    );
+
+    expect(titles).toContain("CMake library core_static");
+    expect(titles).toContain("CMake library core_shared");
+    expect(coreStatic?.entrypoints[0]?.symbol).toBe("core_static");
+    expect(coreShared?.entrypoints[0]?.symbol).toBe("core_shared");
+  });
+
+  it("keeps existing CMake library ids when a target starts sharing sources", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-shared-source-stability-");
+    await writeFixture(root, "CMakeLists.txt", "add_library(core_static STATIC src/core.c)\n");
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstCore = first.features.find(
+      (feature) => feature.title === "CMake library core_static",
+    );
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_library(core_shared SHARED src/core.c)\nadd_library(core_static STATIC src/core.c)\n",
+    );
+    const second = await mapFeatures(root, project, first.features);
+    const secondCore = second.features.find(
+      (feature) => feature.title === "CMake library core_static",
+    );
+    const shared = second.features.find((feature) => feature.title === "CMake library core_shared");
+
+    expect(secondCore?.featureId).toBe(firstCore?.featureId);
+    expect(secondCore?.entrypoints[0]?.symbol).toBeNull();
+    expect(shared?.entrypoints[0]?.symbol).toBe("core_shared");
+    expect(second.stale).toBe(0);
+  });
+
+  it("keeps disambiguated CMake library ids when source sharing stops", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-shared-source-removal-");
+    await writeFixture(root, "CMakeLists.txt", "add_library(core_static STATIC src/core.c)\n");
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_library(core_static STATIC src/core.c)\nadd_library(core_shared SHARED src/core.c)\n",
+    );
+    const second = await mapFeatures(root, project, first.features);
+    const sharedDuringCollision = second.features.find(
+      (feature) => feature.title === "CMake library core_shared",
+    );
+    await writeFixture(root, "CMakeLists.txt", "add_library(core_shared SHARED src/core.c)\n");
+    const third = await mapFeatures(root, project, second.features);
+    const sharedAfterRemoval = third.features.find(
+      (feature) => feature.title === "CMake library core_shared",
+    );
+
+    expect(sharedAfterRemoval?.featureId).toBe(sharedDuringCollision?.featureId);
+    expect(sharedAfterRemoval?.entrypoints[0]?.symbol).toBe("core_shared");
+    expect(third.stale).toBe(1);
+  });
+
+  it("keeps initially disambiguated CMake library ids after source sharing stops", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-initial-shared-source-removal-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_library(core_static STATIC src/core.c)\nadd_library(core_shared SHARED src/core.c)\n",
+    );
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const sharedDuringCollision = first.features.find(
+      (feature) => feature.title === "CMake library core_shared",
+    );
+    await writeFixture(root, "CMakeLists.txt", "add_library(core_shared SHARED src/core.c)\n");
+    const second = await mapFeatures(root, project, first.features);
+    const sharedAfterRemoval = second.features.find(
+      (feature) => feature.title === "CMake library core_shared",
+    );
+
+    expect(sharedAfterRemoval?.featureId).toBe(sharedDuringCollision?.featureId);
+    expect(sharedAfterRemoval?.entrypoints[0]?.symbol).toBe("core_shared");
+    expect(second.stale).toBe(1);
   });
 
   it("does not map CMake target sources outside the project root", async () => {
@@ -1287,12 +1405,15 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "Makefile.am",
-      "bin_PROGRAMS = thing my-tool # installed helpers\nthing_SOURCES = thing.c \\\n  util.c\nmy_tool_SOURCES = main.c tool-util.c\nlib_LTLIBRARIES = libcore.la libcore-extra.la\nlibcore_la_SOURCES = core.cc core_util.cc\nlibcore_extra_la_SOURCES = extra.cc\n",
+      "bin_PROGRAMS = thing my-tool defaulted header-tool # installed helpers\nthing_SOURCES = thing.c \\\n  util.c\nmy_tool_SOURCES = main.c tool-util.c\nheader_tool_SOURCES = include/header.hpp\nlib_LTLIBRARIES = libcore.la libcore-extra.la\nlibcore_la_SOURCES = core.cc core_util.cc\nlibcore_extra_la_SOURCES = extra.cc\n",
     );
     await writeFixture(root, "thing.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
     await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "tool-util.c", "int tool_util(void) { return 1; }\n");
+    await writeFixture(root, "defaulted.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "cppdefault.cpp", "int main() { return 0; }\n");
+    await writeFixture(root, "include/header.hpp", "int header(void);\n");
     await writeFixture(root, "core.cc", "int core() { return 1; }\n");
     await writeFixture(root, "core_util.cc", "int coreUtil() { return 2; }\n");
     await writeFixture(root, "extra.cc", "int extra() { return 3; }\n");
@@ -1301,6 +1422,9 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const result = await mapFeatures(root, project, []);
     const thing = result.features.find((feature) => feature.title === "Autotools binary thing");
     const myTool = result.features.find((feature) => feature.title === "Autotools binary my-tool");
+    const defaulted = result.features.find(
+      (feature) => feature.title === "Autotools binary defaulted",
+    );
     const core = result.features.find((feature) => feature.title === "Autotools library libcore");
     const extra = result.features.find(
       (feature) => feature.title === "Autotools library libcore-extra",
@@ -1310,6 +1434,9 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(project.detected.packageManagers).toContain("autotools");
     expect(titles).not.toContain("Autotools binary installed");
     expect(titles).not.toContain("Autotools binary helpers");
+    expect(titles).not.toContain("Autotools binary header-tool");
+    expect(titles).not.toContain("Autotools binary cppdefault");
+    expect(titles).toContain("C++ binary cppdefault");
     expect(thing?.entrypoints[0]).toMatchObject({
       path: "thing.c",
       symbol: "main",
@@ -1324,6 +1451,12 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       { path: "main.c", reason: "target source" },
       { path: "tool-util.c", reason: "target source" },
     ]);
+    expect(defaulted?.entrypoints[0]).toMatchObject({
+      path: "defaulted.c",
+      symbol: "main",
+      command: "defaulted",
+    });
+    expect(titles).not.toContain("C binary defaulted");
     expect(thing?.ownedFiles).toEqual([
       { path: "thing.c", reason: "target source" },
       { path: "util.c", reason: "target source" },
@@ -1395,6 +1528,35 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     expect(app?.tests).toEqual([]);
     expect(app?.contextFiles).toEqual([]);
+  });
+
+  it("skips dependency trees during C and C++ discovery", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-dependency-paths-");
+    await writeFixture(root, "src/app.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "vendor/tool/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, ".venv/native/main.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const paths = result.features.flatMap((feature) =>
+      feature.entrypoints.map((entrypoint) => entrypoint.path),
+    );
+
+    expect(paths).toContain("src/app.c");
+    expect(paths.some((path) => path.startsWith("vendor/"))).toBe(false);
+    expect(paths.some((path) => path.startsWith(".venv/"))).toBe(false);
+  });
+
+  it("ignores vendored C and C++ files during detection", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-vendor-detect-");
+    await writeFixture(root, "vendor/CMakeLists.txt", "add_executable(vendor main.c)\n");
+    await writeFixture(root, "vendor/main.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).not.toContain("c");
+    expect(project.detected.languages).not.toContain("cpp");
+    expect(project.detected.packageManagers).not.toContain("cmake");
   });
 
   it("maps Python project metadata, console scripts, source groups, and tests", async () => {
