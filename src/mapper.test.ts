@@ -1052,6 +1052,30 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       format: "ruff format --check .",
     });
 
+    const setupCfgExtrasNameRoot = await fixtureRoot("clawpatch-python-setup-cfg-extras-name-");
+    await writeFixture(
+      setupCfgExtrasNameRoot,
+      "setup.cfg",
+      "[metadata]\nname = extras-name\n\n[options.extras_require]\npytest =\n    httpx\nruff =\n    typing-extensions\n",
+    );
+    expect((await detectProject(setupCfgExtrasNameRoot)).detected.commands).toEqual({
+      typecheck: null,
+      lint: null,
+      format: null,
+      test: null,
+    });
+
+    const setupCfgExtrasValueRoot = await fixtureRoot("clawpatch-python-setup-cfg-extras-value-");
+    await writeFixture(
+      setupCfgExtrasValueRoot,
+      "setup.cfg",
+      "[metadata]\nname = extras-value\n\n[options.extras_require]\ndev =\n    pytest\n    ruff\n",
+    );
+    expect((await detectProject(setupCfgExtrasValueRoot)).detected.commands).toMatchObject({
+      lint: "ruff check .",
+      test: "pytest",
+    });
+
     const markerRoot = await fixtureRoot("clawpatch-python-marker-deps-");
     await writeFixture(
       markerRoot,

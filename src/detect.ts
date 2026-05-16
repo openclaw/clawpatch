@@ -307,19 +307,23 @@ async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
     }
     info.hasPytestConfig = info.tools.has("pytest") || info.tools.has("pytest.ini_options");
   }
-  for (const file of ["requirements.txt", "setup.cfg"]) {
-    if (await pathExists(join(root, file))) {
-      const source = await readFile(join(root, file), "utf8");
-      for (const dependency of pythonRequirementNames(source)) {
-        info.dependencies.add(dependency);
-      }
-      if (/^\s*\[tool:pytest\]|\[pytest\]/mu.test(source)) {
-        info.hasPytestConfig = true;
-      }
-      for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff)\]/gmu)) {
-        if (toolMatch[1] !== undefined) {
-          info.tools.add(toolMatch[1]);
-        }
+  if (await pathExists(join(root, "requirements.txt"))) {
+    const source = await readFile(join(root, "requirements.txt"), "utf8");
+    for (const dependency of pythonRequirementNames(source)) {
+      info.dependencies.add(dependency);
+    }
+  }
+  if (await pathExists(join(root, "setup.cfg"))) {
+    const source = await readFile(join(root, "setup.cfg"), "utf8");
+    for (const dependency of pythonSetupCfgRequirementNames(source)) {
+      info.dependencies.add(dependency);
+    }
+    if (/^\s*\[tool:pytest\]|\[pytest\]/mu.test(source)) {
+      info.hasPytestConfig = true;
+    }
+    for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff)\]/gmu)) {
+      if (toolMatch[1] !== undefined) {
+        info.tools.add(toolMatch[1]);
       }
     }
   }
@@ -538,6 +542,52 @@ function pythonRequirementNames(source: string): string[] {
     .split("\n")
     .map((line) => pythonRequirementName(line))
     .filter((name): name is string => name !== null);
+}
+
+function pythonSetupCfgRequirementNames(source: string): string[] {
+  const names = new Set<string>();
+  let section = "";
+  let collecting = false;
+  for (const rawLine of source.split("\n")) {
+    const line = rawLine.replace(/\r$/u, "");
+    if (/^\s*(?:#|;|$)/u.test(line)) {
+      continue;
+    }
+    const header = /^\s*\[([^\]]+)\]\s*$/u.exec(line);
+    if (header?.[1] !== undefined) {
+      section = header[1].toLowerCase();
+      collecting = false;
+      continue;
+    }
+    if (section !== "options" && section !== "options.extras_require") {
+      continue;
+    }
+    const assignment = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)$/u.exec(line);
+    if (assignment !== null) {
+      const key = assignment[1]?.toLowerCase().replace(/-/gu, "_") ?? "";
+      collecting =
+        section === "options"
+          ? ["install_requires", "setup_requires", "tests_require"].includes(key)
+          : true;
+      if (collecting && assignment[2] !== undefined) {
+        addPythonRequirementNames(names, assignment[2]);
+      }
+      continue;
+    }
+    if (collecting && /^\s+/u.test(line)) {
+      addPythonRequirementNames(names, line);
+    }
+  }
+  return [...names];
+}
+
+function addPythonRequirementNames(names: Set<string>, value: string): void {
+  for (const part of value.split(",")) {
+    const name = pythonRequirementName(part);
+    if (name !== null) {
+      names.add(name);
+    }
+  }
 }
 
 function pythonRequirementName(value: string): string | null {
