@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added FastAPI route feature mapping and kept root/web Python project detection in sync.
 - Added Flask route feature mapping for Python projects, including `web/` source roots, common root entry files, non-list method literals, and Python framework detection.
 - Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.
 - Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults, thanks @xiamx.

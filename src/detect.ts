@@ -682,6 +682,11 @@ async function detectFrameworks(root: string, pkg: PackageJson | null): Promise<
         frameworks.push(name);
       }
     }
+    for (const name of await pythonImportedFrameworks(root)) {
+      if (!frameworks.includes(name)) {
+        frameworks.push(name);
+      }
+    }
   }
   return frameworks;
 }
@@ -748,12 +753,90 @@ async function isPythonProject(root: string): Promise<boolean> {
 }
 
 async function containsReviewablePythonFile(root: string): Promise<boolean> {
-  for (const prefix of ["src", "app", "apps", "lib", "scripts"]) {
-    if (await containsFileWithExtension(join(root, prefix), ".py", 4)) {
+  if (await containsRootReviewablePythonFile(root)) {
+    return true;
+  }
+  for (const prefix of pythonSourceSearchRoots) {
+    if (await containsFileMatching(join(root, prefix), 4, isReviewablePythonFileName)) {
       return true;
     }
   }
   return containsFileNamed(root, "__init__.py", 3);
+}
+
+const pythonSourceSearchRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;
+
+async function containsRootReviewablePythonFile(root: string): Promise<boolean> {
+  return (await readdir(root, { withFileTypes: true }).catch(() => [])).some(
+    (entry) => entry.isFile() && isReviewablePythonFileName(entry.name),
+  );
+}
+
+function isReviewablePythonFileName(entry: string): boolean {
+  return (
+    entry.endsWith(".py") &&
+    !/^test_[^/]+\.py$/u.test(entry) &&
+    !entry.endsWith("_test.py") &&
+    !/(?:generated|_pb2|_pb2_grpc|\.gen)\.py$/iu.test(entry)
+  );
+}
+
+async function pythonImportedFrameworks(root: string): Promise<string[]> {
+  const frameworks = new Set<string>();
+  for (const path of await pythonFrameworkScanFiles(root)) {
+    const source = await readFile(path, "utf8").catch(() => "");
+    for (const name of ["flask", "fastapi", "django"] as const) {
+      const importPattern = new RegExp(
+        `^\\s*(?:from\\s+${name}\\s+import\\s+|import\\s+${name}\\b)`,
+        "mu",
+      );
+      if (importPattern.test(source)) {
+        frameworks.add(name);
+      }
+    }
+  }
+  return [...frameworks];
+}
+
+async function pythonFrameworkScanFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (entry.isFile() && isReviewablePythonFileName(entry.name)) {
+      files.push(join(root, entry.name));
+    }
+  }
+  for (const prefix of pythonSourceSearchRoots) {
+    await collectPythonFrameworkScanFiles(join(root, prefix), 4, files);
+  }
+  return [...new Set(files)].slice(0, 200);
+}
+
+async function collectPythonFrameworkScanFiles(
+  dir: string,
+  remainingDepth: number,
+  files: string[],
+): Promise<void> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return;
+  }
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (shouldSkipSearchEntry(entry.name)) {
+      continue;
+    }
+    const full = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    if (entry.isFile() && isReviewablePythonFileName(entry.name)) {
+      files.push(full);
+    } else if (entry.isDirectory()) {
+      await collectPythonFrameworkScanFiles(full, remainingDepth - 1, files);
+    }
+  }
 }
 
 async function containsFileNamed(root: string, name: string, maxDepth: number): Promise<boolean> {
@@ -781,32 +864,7 @@ async function containsFileMatching(
     return false;
   }
   for (const entry of await readdir(dir)) {
-    if (
-      [
-        "node_modules",
-        "dist",
-        "build",
-        "target",
-        ".build",
-        ".swiftpm",
-        ".git",
-        ".clawpatch",
-        ".worktrees",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        "fixtures",
-        "__fixtures__",
-        "testdata",
-        "Pods",
-        "Carthage",
-        "SourcePackages",
-        "DerivedData",
-      ].includes(entry)
-    ) {
+    if (shouldSkipSearchEntry(entry)) {
       continue;
     }
     const full = join(dir, entry);
@@ -822,6 +880,33 @@ async function containsFileMatching(
     }
   }
   return false;
+}
+
+function shouldSkipSearchEntry(entry: string): boolean {
+  return [
+    "node_modules",
+    "dist",
+    "build",
+    "target",
+    ".build",
+    ".swiftpm",
+    ".git",
+    ".clawpatch",
+    ".worktrees",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "fixtures",
+    "__fixtures__",
+    "testdata",
+    "Pods",
+    "Carthage",
+    "SourcePackages",
+    "DerivedData",
+  ].includes(entry);
 }
 
 function stripLineComments(source: string, marker: "//"): string {

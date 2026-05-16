@@ -1419,6 +1419,116 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(result.features.some((feature) => feature.source === "python-flask-route")).toBe(false);
   });
 
+  it("maps FastAPI routes in root and web source files", async () => {
+    const root = await fixtureRoot("clawpatch-python-fastapi-routes-");
+    await writeFixture(root, "requirements.txt", "fastapi\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "@app.get('/health')",
+        "async def health():",
+        "    return {'ok': True}",
+        "",
+        "@app.api_route('/webhook/{token}', methods=['GET', 'HEAD'])",
+        "def webhook(token: str):",
+        "    return token",
+        "",
+        "@app.api_route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.post(",
+        "    path='/admin/jobs',",
+        ")",
+        "def create_job():",
+        "    return {'queued': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "tests/test_app.py", "def test_health():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const health = result.features.find((feature) => feature.title === "FastAPI route GET /health");
+    const webhook = result.features.find(
+      (feature) => feature.title === "FastAPI route GET,HEAD /webhook/{token}",
+    );
+    const submit = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /submit",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /admin/jobs",
+    );
+
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(health?.source).toBe("python-fastapi-route");
+    expect(health?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+    expect(health?.tests).toEqual([{ path: "tests/test_app.py", command: "pytest" }]);
+    expect(webhook?.entrypoints[0]?.route).toBe("GET,HEAD /webhook/{token}");
+    expect(submit?.entrypoints[0]?.route).toBe("POST /submit");
+    expect(admin?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "create_job",
+      route: "POST /admin/jobs",
+    });
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("detects metadata-free root and web Python sources", async () => {
+    const root = await fixtureRoot("clawpatch-python-root-web-detect-");
+    await writeFixture(root, "app.py", "def app():\n    pass\n");
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.get(path='/health')",
+        "def health():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rootSource = result.features.find((feature) => feature.title === "Python source root");
+    const webRoute = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /health",
+    );
+
+    expect(project.detected.languages).toContain("python");
+    expect(project.detected.packageManagers).toContain("python");
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(rootSource?.ownedFiles).toEqual([{ path: "app.py", reason: "source group root" }]);
+    expect(webRoute?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+  });
+
   it("uses Hatch pytest commands in mapped Python features", async () => {
     const root = await fixtureRoot("clawpatch-python-hatch-map-");
     await writeFixture(

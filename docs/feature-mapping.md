@@ -33,7 +33,8 @@ Supported deterministic mappers today:
 - Next.js `app/` and `pages/` routes
 - Go `cmd/*/main.go`
 - Go `internal/*` packages
-- Python project metadata, console scripts, bounded source groups, pytest suites, and Flask routes
+- Python project metadata, console scripts, root app files, bounded source groups,
+  pytest suites, and Flask/FastAPI routes
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
@@ -54,15 +55,15 @@ discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
 
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
-`[tool.poetry.scripts]` console scripts, source groups under common Python
-source roots including `web/`, pytest files, and Flask `@*.route(...)`
-handlers in source roots and common root entry files such as `app.py` and
-`wsgi.py`. Flask route methods are read from list, tuple, or set literals.
-Framework-specific route mapping for FastAPI and Django is not implemented yet.
+`[tool.poetry.scripts]` console scripts, root app files, source groups under
+common Python source roots including `web/`, pytest files, Flask `@*.route(...)`
+handlers, and FastAPI `@*.get(...)` / `@*.api_route(...)` handlers. Flask and
+FastAPI route methods are read from list, tuple, or set literals. FastAPI paths
+can be positional strings or literal `path=` keywords.
 
 Known gaps:
 
 - no Express/Fastify/Hono route mapper yet
-- no FastAPI/Django route mapper yet
+- no Django route mapper yet
 - no import graph expansion beyond nearby tests yet
 - no agent enrichment yet

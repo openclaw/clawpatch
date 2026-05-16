@@ -24,6 +24,13 @@ type FlaskRoute = {
   methods: string[];
 };
 
+type FastApiRoute = {
+  filePath: string;
+  functionName: string;
+  routePath: string;
+  methods: string[];
+};
+
 type SourceGroup = {
   label: string;
   files: string[];
@@ -36,6 +43,19 @@ type PyprojectInfo = {
 };
 
 const sourceRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;
+const fastApiRouteTargetPattern = [
+  "(?:[A-Za-z_][A-Za-z0-9_]*\\.)*",
+  "(?:app|application|api|router|[A-Za-z_][A-Za-z0-9_]*(?:app|api|router))",
+].join("");
+const fastApiRouteMethods = "api_route|get|post|put|patch|delete|options|head|trace";
+const fastApiRouteDecoratorStartPattern = new RegExp(
+  `^@${fastApiRouteTargetPattern}\\.(?:${fastApiRouteMethods})\\(`,
+  "u",
+);
+const fastApiRouteDecoratorPattern = new RegExp(
+  `^\\s*@${fastApiRouteTargetPattern}\\.(${fastApiRouteMethods})\\((.*)\\)\\s*(?:#.*)?$`,
+  "u",
+);
 const projectMetadataFiles = [
   "pyproject.toml",
   "setup.py",
@@ -114,6 +134,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   }
 
   for (const route of await flaskRouteSeeds(root, testFiles, testCommand)) {
+    seeds.push(route);
+  }
+
+  for (const route of await fastApiRouteSeeds(root, testFiles, testCommand)) {
     seeds.push(route);
   }
 
@@ -243,6 +267,7 @@ async function dependencyFileHas(root: string, dependency: string): Promise<bool
 
 async function pythonSourceGroups(root: string): Promise<SourceGroup[]> {
   const groups: SourceGroup[] = [];
+  groups.push(...(await rootPythonSourceGroups(root)));
   const seenRoots = new Set<string>();
   for (const sourceRoot of await pythonSourceRoots(root)) {
     if (seenRoots.has(sourceRoot)) {
@@ -255,6 +280,17 @@ async function pythonSourceGroups(root: string): Promise<SourceGroup[]> {
     }
   }
   return groups;
+}
+
+async function rootPythonSourceGroups(root: string): Promise<SourceGroup[]> {
+  return chunkFiles("root", await rootPythonSourceFiles(root), sourceGroupMaxOwnedFiles);
+}
+
+async function rootPythonSourceFiles(root: string): Promise<string[]> {
+  return (await readdir(root, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && isReviewablePythonSourceFile(entry.name))
+    .map((entry) => entry.name)
+    .toSorted();
 }
 
 async function pythonSourceRoots(root: string): Promise<string[]> {
@@ -328,6 +364,142 @@ async function resolvePythonScript(
     }
   }
   return { entryPath: "pyproject.toml", symbol };
+}
+
+async function fastApiRouteSeeds(
+  root: string,
+  testFiles: string[],
+  testCommand: string | null,
+): Promise<FeatureSeed[]> {
+  const routeFiles = uniquePaths([
+    ...(await rootPythonSourceFiles(root)),
+    ...(await walk(root, await pythonSourceRoots(root))).filter(isReviewablePythonSourceFile),
+  ]);
+  const seeds: FeatureSeed[] = [];
+  for (const filePath of routeFiles) {
+    const source = await readFile(join(root, filePath), "utf8");
+    if (!sourceLooksFastApi(source)) {
+      continue;
+    }
+    const routes = parseFastApiRoutes(filePath, source);
+    for (const route of routes) {
+      const methodLabel = route.methods.join(",");
+      const tests = associatedTests([route.filePath], testFiles, testCommand);
+      seeds.push({
+        title: `FastAPI route ${methodLabel} ${route.routePath}`,
+        summary:
+          `FastAPI route ${methodLabel} ${route.routePath} handled by ` +
+          `${route.functionName} in ${route.filePath}.`,
+        kind: "route",
+        source: "python-fastapi-route",
+        confidence: "high",
+        entryPath: route.filePath,
+        symbol: route.functionName,
+        route: `${methodLabel} ${route.routePath}`,
+        command: null,
+        ownedFiles: [
+          { path: route.filePath, reason: `FastAPI route handler ${route.functionName}` },
+        ],
+        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        tests,
+        tags: ["python", "fastapi", "route"],
+        trustBoundaries: fastApiRouteTrustBoundaries(route),
+        testCommand,
+        skipNearbyTests: true,
+      });
+    }
+  }
+  return seeds;
+}
+
+function sourceLooksFastApi(source: string): boolean {
+  return /^\s*(?:from\s+fastapi\s+import\s+|import\s+fastapi\b)/mu.test(source);
+}
+
+function parseFastApiRoutes(filePath: string, source: string): FastApiRoute[] {
+  const routes: FastApiRoute[] = [];
+  let pending: Array<{ routePath: string; methods: string[] }> = [];
+  let decoratorSource: string | null = null;
+  let decoratorDepth = 0;
+  for (const line of source.split("\n")) {
+    const trimmed = line.trim();
+    if (decoratorSource !== null) {
+      decoratorSource = `${decoratorSource} ${trimmed}`;
+      decoratorDepth += parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFastApiRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    if (startsFastApiRouteDecorator(trimmed)) {
+      decoratorSource = trimmed;
+      decoratorDepth = parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFastApiRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    const functionName = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line)?.[1];
+    if (functionName !== undefined && pending.length > 0) {
+      for (const item of pending) {
+        routes.push({ filePath, functionName, ...item });
+      }
+      pending = [];
+      continue;
+    }
+
+    if (
+      pending.length > 0 &&
+      trimmed !== "" &&
+      !trimmed.startsWith("@") &&
+      !trimmed.startsWith("#")
+    ) {
+      pending = [];
+    }
+  }
+  return routes;
+}
+
+function startsFastApiRouteDecorator(line: string): boolean {
+  return fastApiRouteDecoratorStartPattern.test(line);
+}
+
+function parseFastApiRouteDecorator(line: string): { routePath: string; methods: string[] } | null {
+  const match = fastApiRouteDecoratorPattern.exec(line);
+  const method = match?.[1];
+  const args = match?.[2];
+  if (method === undefined || args === undefined) {
+    return null;
+  }
+  const routePath = parseFastApiPath(args);
+  if (routePath === null) {
+    return null;
+  }
+  const methods = method === "api_route" ? parsePythonRouteMethods(args) : [method.toUpperCase()];
+  if (methods === null) {
+    return null;
+  }
+  return { routePath, methods };
+}
+
+function parseFastApiPath(args: string): string | null {
+  const positional = /^\s*(["'])(.*?)\1/u.exec(args)?.[2];
+  if (positional !== undefined) {
+    return positional;
+  }
+  return /\bpath\s*=\s*(["'])(.*?)\1/u.exec(args)?.[2] ?? null;
 }
 
 async function flaskRouteSeeds(
@@ -464,7 +636,7 @@ function parseFlaskRouteDecorator(line: string): { routePath: string; methods: s
   if (match?.[2] === undefined) {
     return null;
   }
-  const methods = parseFlaskMethods(match[3] ?? "");
+  const methods = parsePythonRouteMethods(match[3] ?? "");
   if (methods === null) {
     return null;
   }
@@ -474,12 +646,12 @@ function parseFlaskRouteDecorator(line: string): { routePath: string; methods: s
   };
 }
 
-function parseFlaskMethods(args: string): string[] | null {
+function parsePythonRouteMethods(args: string): string[] | null {
   const methodsIndex = args.search(/\bmethods\s*=/u);
   if (methodsIndex === -1) {
     return ["GET"];
   }
-  const literal = flaskMethodsLiteral(args.slice(methodsIndex));
+  const literal = pythonRouteMethodsLiteral(args.slice(methodsIndex));
   if (literal === null) {
     return null;
   }
@@ -489,7 +661,7 @@ function parseFlaskMethods(args: string): string[] | null {
   return methods.length > 0 ? [...new Set(methods)] : null;
 }
 
-function flaskMethodsLiteral(source: string): string | null {
+function pythonRouteMethodsLiteral(source: string): string | null {
   const match = /^\s*methods\s*=\s*([[({])/u.exec(source);
   if (match === null) {
     return null;
@@ -563,6 +735,17 @@ function parenDelta(line: string): number {
 }
 
 function flaskRouteTrustBoundaries(route: FlaskRoute): FeatureSeed["trustBoundaries"] {
+  const boundaries: FeatureSeed["trustBoundaries"] = ["network", "user-input", "serialization"];
+  if (
+    route.methods.some((method) => method !== "GET") ||
+    /(^|\/)(admin|auth|login|token)(\/|$)/iu.test(route.routePath)
+  ) {
+    boundaries.push("auth");
+  }
+  return boundaries;
+}
+
+function fastApiRouteTrustBoundaries(route: FastApiRoute): FeatureSeed["trustBoundaries"] {
   const boundaries: FeatureSeed["trustBoundaries"] = ["network", "user-input", "serialization"];
   if (
     route.methods.some((method) => method !== "GET") ||
@@ -777,6 +960,9 @@ function pythonShouldSkip(path: string): boolean {
 }
 
 async function containsReviewablePythonSource(root: string): Promise<boolean> {
+  if ((await rootPythonSourceFiles(root)).length > 0) {
+    return true;
+  }
   for (const sourceRoot of sourceRoots) {
     if (await containsPythonSourceInDirectory(root, sourceRoot, 4)) {
       return true;
