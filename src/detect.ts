@@ -227,6 +227,11 @@ async function detectPackageManagers(root: string): Promise<string[]> {
       found.push(name);
     }
   }
+  for (const tool of ["uv", "hatch"]) {
+    if (!found.includes(tool) && (await pyprojectHasToolSection(root, tool))) {
+      found.push(tool);
+    }
+  }
   if (!found.some((name) => pythonPackageManagers.has(name)) && (await isPythonProject(root))) {
     found.push((await pathExists(join(root, "requirements.txt"))) ? "pip" : "python");
   }
@@ -260,7 +265,7 @@ async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
 }
 
 async function pythonRunner(root: string): Promise<string | null> {
-  if (await pathExists(join(root, "uv.lock"))) {
+  if ((await pathExists(join(root, "uv.lock"))) || (await pyprojectHasToolSection(root, "uv"))) {
     return "uv";
   }
   if (await pathExists(join(root, "poetry.lock"))) {
@@ -269,10 +274,22 @@ async function pythonRunner(root: string): Promise<string | null> {
   if (await pathExists(join(root, "pdm.lock"))) {
     return "pdm";
   }
-  if (await pathExists(join(root, "hatch.toml"))) {
+  if (
+    (await pathExists(join(root, "hatch.toml"))) ||
+    (await pyprojectHasToolSection(root, "hatch"))
+  ) {
     return "hatch";
   }
   return null;
+}
+
+async function pyprojectHasToolSection(root: string, tool: string): Promise<boolean> {
+  if (!(await pathExists(join(root, "pyproject.toml")))) {
+    return false;
+  }
+  const source = await readFile(join(root, "pyproject.toml"), "utf8");
+  const escaped = tool.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`^\\s*\\[tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
 }
 
 function pythonRunCommand(runner: string | null, command: string): string {
@@ -318,7 +335,7 @@ async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
     for (const dependency of pythonSetupCfgRequirementNames(source)) {
       info.dependencies.add(dependency);
     }
-    if (/^\s*\[tool:pytest\]|\[pytest\]/mu.test(source)) {
+    if (/^\s*(?:\[tool:pytest\]|\[pytest\])\s*(?:#.*)?$/mu.test(source)) {
       info.hasPytestConfig = true;
     }
     for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff)\]/gmu)) {
@@ -334,9 +351,11 @@ function pythonDependencyNames(source: string): string[] {
   const names = new Set<string>();
   for (const table of [
     pythonTomlTable(source, "project"),
+    pythonTomlTable(source, "tool.uv"),
     pythonTomlTable(source, "tool.poetry"),
     pythonTomlTable(source, "tool.poetry.group.dev"),
     pythonTomlTable(source, "tool.pdm.dev-dependencies"),
+    ...pythonTomlTablesMatching(source, /^tool\.hatch\.envs\.[^.]+$/u),
   ]) {
     for (const section of pythonTomlArraySections(table, ["dependencies", "dev-dependencies"])) {
       for (const value of pythonTomlArrayValues(section)) {

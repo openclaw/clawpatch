@@ -186,10 +186,22 @@ async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promis
   if (await pathExists(join(root, "pdm.lock"))) {
     return "pdm run pytest";
   }
-  if (await pathExists(join(root, "hatch.toml"))) {
+  if (
+    (await pathExists(join(root, "hatch.toml"))) ||
+    (await pyprojectHasToolSection(root, "hatch"))
+  ) {
     return "hatch run pytest";
   }
   return "pytest";
+}
+
+async function pyprojectHasToolSection(root: string, tool: string): Promise<boolean> {
+  if (!(await pathExists(join(root, "pyproject.toml")))) {
+    return false;
+  }
+  const source = await readFile(join(root, "pyproject.toml"), "utf8");
+  const escaped = tool.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`^\\s*\\[tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
 }
 
 async function dependencyFileHas(root: string, dependency: string): Promise<boolean> {
@@ -603,9 +615,11 @@ function dependencyNames(source: string): Set<string> {
     }
   }
   for (const dependencyTable of [
+    table(source, "tool.uv"),
     table(source, "tool.pdm.dev-dependencies"),
     table(source, "tool.poetry.dependencies"),
     table(source, "tool.poetry.dev-dependencies"),
+    ...tablesMatching(source, /^tool\.hatch\.envs\.[^.]+$/u),
     ...tablesMatching(source, /^tool\.poetry\.group\.[^.]+\.dependencies$/u),
   ]) {
     for (const value of assignedKeysAndValues(dependencyTable)) {

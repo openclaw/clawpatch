@@ -1036,6 +1036,19 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       test: "uv run pytest",
     });
 
+    const uvDevRoot = await fixtureRoot("clawpatch-python-uv-dev-");
+    await writeFixture(
+      uvDevRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-dev"\n\n[tool.uv]\ndev-dependencies = ["pytest", "ruff", "pyright"]\n',
+    );
+    await writeFixture(uvDevRoot, "uv.lock", "");
+    expect((await detectProject(uvDevRoot)).detected.commands).toMatchObject({
+      typecheck: "uv run pyright",
+      lint: "uv run ruff check .",
+      test: "uv run pytest",
+    });
+
     const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
     await writeFixture(
       poetryRoot,
@@ -1059,6 +1072,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect((await detectProject(hatchRoot)).detected.commands).toMatchObject({
       lint: "hatch run ruff check .",
       test: "hatch run pytest",
+    });
+
+    const hatchPyprojectRoot = await fixtureRoot("clawpatch-python-hatch-pyproject-");
+    await writeFixture(
+      hatchPyprojectRoot,
+      "pyproject.toml",
+      '[project]\nname = "hatch-pyproject"\n\n[tool.hatch.envs.default]\ndependencies = ["pytest", "ruff"]\n',
+    );
+    expect((await detectProject(hatchPyprojectRoot)).detected).toMatchObject({
+      packageManagers: ["hatch"],
+      commands: {
+        lint: "hatch run ruff check .",
+        test: "hatch run pytest",
+      },
     });
 
     const setupCfgRoot = await fixtureRoot("clawpatch-python-setup-cfg-tools-");
@@ -1085,6 +1112,14 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       format: null,
       test: null,
     });
+
+    const setupCfgCommentRoot = await fixtureRoot("clawpatch-python-setup-cfg-pytest-comment-");
+    await writeFixture(
+      setupCfgCommentRoot,
+      "setup.cfg",
+      "[metadata]\nname = comment-only\n# [pytest]\ndescription = mentions [pytest]\n",
+    );
+    expect((await detectProject(setupCfgCommentRoot)).detected.commands.test).toBeNull();
 
     const setupCfgExtrasValueRoot = await fixtureRoot("clawpatch-python-setup-cfg-extras-value-");
     await writeFixture(
@@ -1192,9 +1227,8 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "pyproject.toml",
-      '[project]\nname = "hatch-map"\ndependencies = ["pytest"]\n',
+      '[project]\nname = "hatch-map"\n\n[tool.hatch.envs.default]\ndependencies = ["pytest"]\n',
     );
-    await writeFixture(root, "hatch.toml", "");
     await writeFixture(root, "src/hatch_map/app.py", "def app():\n    pass\n");
     await writeFixture(root, "src/hatch_map/test_app.py", "def test_app():\n    pass\n");
 
