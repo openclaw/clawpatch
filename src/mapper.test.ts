@@ -918,7 +918,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "pyproject.toml",
-      '[project]\nname = "py-tool"\ndependencies = ["pytest; python_version >= \'3.12\'", "ruff"]\n# "mypy"\n\n[project.scripts]\npytool = "py_tool.cli:main"\n',
+      '[project] # package metadata\nname = "py-tool"\ndependencies = ["pytest; python_version >= \'3.12\'", "ruff"]\n# "mypy"\n\n[project.scripts] # console scripts\npytool = "py_tool.cli:main"\n',
     );
     await writeFixture(root, "uv.lock", "");
     await writeFixture(root, "src/py_tool/__init__.py", "");
@@ -1050,6 +1050,19 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(pdmRoot, "pdm.lock", "");
     expect((await detectProject(pdmRoot)).detected.commands).toMatchObject({
       typecheck: "pdm run ruff check .",
+      lint: "pdm run ruff check .",
+      test: "pdm run pytest",
+    });
+
+    const pdmPyprojectRoot = await fixtureRoot("clawpatch-python-pdm-pyproject-");
+    await writeFixture(
+      pdmPyprojectRoot,
+      "pyproject.toml",
+      '[tool.pdm.dev-dependencies]\ndev = ["pytest", "ruff", "pyright"]\n',
+    );
+    await writeFixture(pdmPyprojectRoot, "pdm.lock", "");
+    expect((await detectProject(pdmPyprojectRoot)).detected.commands).toMatchObject({
+      typecheck: "pdm run pyright",
       lint: "pdm run ruff check .",
       test: "pdm run pytest",
     });

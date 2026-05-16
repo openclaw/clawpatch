@@ -469,25 +469,25 @@ function pythonShouldSkip(path: string): boolean {
 
 function table(source: string, name: string): string {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const match = new RegExp(`^\\s*\\[${escapedName}\\]\\s*$`, "mu").exec(source);
+  const match = new RegExp(`^\\s*\\[${escapedName}\\]\\s*(?:#.*)?$`, "mu").exec(source);
   if (match?.index === undefined) {
     return "";
   }
   const rest = source.slice(match.index + match[0].length);
-  const nextSection = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+  const nextSection = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
   return nextSection?.index === undefined ? rest : rest.slice(0, nextSection.index);
 }
 
 function tablesMatching(source: string, pattern: RegExp): string[] {
   const tables: string[] = [];
-  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*$/gmu)) {
+  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/gmu)) {
     const name = match[1];
     if (name === undefined || !pattern.test(name)) {
       continue;
     }
     const start = match.index + match[0].length;
     const rest = source.slice(start);
-    const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+    const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
     tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
   }
   return tables;
@@ -520,6 +520,7 @@ function dependencyNames(source: string): Set<string> {
     }
   }
   for (const dependencyTable of [
+    table(source, "tool.pdm.dev-dependencies"),
     table(source, "tool.poetry.dependencies"),
     table(source, "tool.poetry.dev-dependencies"),
     ...tablesMatching(source, /^tool\.poetry\.group\.[^.]+\.dependencies$/u),
@@ -534,6 +535,7 @@ function dependencyNames(source: string): Set<string> {
   for (const dependencyTable of [
     table(source, "project.optional-dependencies"),
     table(source, "dependency-groups"),
+    table(source, "tool.pdm.dev-dependencies"),
   ]) {
     for (const value of assignedValues(dependencyTable)) {
       const name = requirementName(value);

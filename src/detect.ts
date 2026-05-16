@@ -332,6 +332,7 @@ function pythonDependencyNames(source: string): string[] {
     pythonTomlTable(source, "project"),
     pythonTomlTable(source, "tool.poetry"),
     pythonTomlTable(source, "tool.poetry.group.dev"),
+    pythonTomlTable(source, "tool.pdm.dev-dependencies"),
   ]) {
     for (const section of pythonTomlArraySections(table, ["dependencies", "dev-dependencies"])) {
       for (const value of pythonTomlArrayValues(section)) {
@@ -356,6 +357,7 @@ function pythonDependencyNames(source: string): string[] {
   for (const table of pythonTomlTables(source, [
     "project.optional-dependencies",
     "dependency-groups",
+    "tool.pdm.dev-dependencies",
   ])) {
     for (const value of pythonTomlAssignedValues(table)) {
       const name = pythonRequirementName(value);
@@ -369,18 +371,18 @@ function pythonDependencyNames(source: string): string[] {
 
 function pythonTomlTable(source: string, name: string): string {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const match = new RegExp(`^\\s*\\[${escaped}\\]\\s*$`, "mu").exec(source);
+  const match = new RegExp(`^\\s*\\[${escaped}\\]\\s*(?:#.*)?$`, "mu").exec(source);
   if (match?.index === undefined) {
     return "";
   }
   const rest = source.slice(match.index + match[0].length);
-  const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+  const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
   return next?.index === undefined ? rest : rest.slice(0, next.index);
 }
 
 function pythonToolSections(source: string): string[] {
   const tools = new Set<string>();
-  for (const match of source.matchAll(/^\s*\[tool\.([A-Za-z0-9_.-]+)[^\]]*\]\s*$/gmu)) {
+  for (const match of source.matchAll(/^\s*\[tool\.([A-Za-z0-9_.-]+)[^\]]*\]\s*(?:#.*)?$/gmu)) {
     const name = match[1]?.split(".")[0];
     if (name !== undefined) {
       tools.add(name);
@@ -404,11 +406,11 @@ function pythonTomlTables(source: string, names: string[]): string[] {
   const tables: string[] = [];
   for (const name of names) {
     const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-    const pattern = new RegExp(`^\\s*\\[${escaped}\\]\\s*$`, "gmu");
+    const pattern = new RegExp(`^\\s*\\[${escaped}\\]\\s*(?:#.*)?$`, "gmu");
     for (const match of source.matchAll(pattern)) {
       const start = match.index + match[0].length;
       const rest = source.slice(start);
-      const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+      const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
       tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
     }
   }
@@ -417,14 +419,14 @@ function pythonTomlTables(source: string, names: string[]): string[] {
 
 function pythonTomlTablesMatching(source: string, pattern: RegExp): string[] {
   const tables: string[] = [];
-  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*$/gmu)) {
+  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*(?:#.*)?$/gmu)) {
     const name = match[1];
     if (name === undefined || !pattern.test(name)) {
       continue;
     }
     const start = match.index + match[0].length;
     const rest = source.slice(start);
-    const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+    const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
     tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
   }
   return tables;
