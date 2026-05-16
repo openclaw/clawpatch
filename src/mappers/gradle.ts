@@ -1093,7 +1093,7 @@ function methodReturnEvidence(info: JavaFileInfo, projectPackages: Set<string>):
 }
 
 function isExternalProjectImport(full: string, projectPackages: Set<string>): boolean {
-  if (/^(?:java|javax|jakarta|kotlin)\./u.test(full)) {
+  if (/^(?:java|kotlin)\./u.test(full)) {
     return false;
   }
   for (const packageName of projectPackages) {
@@ -1435,18 +1435,16 @@ async function gradleTags(
 }
 
 function appliesAndroidGradlePlugin(source: string): boolean {
-  for (const line of source.split("\n")) {
-    if (
-      (/\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']/u.test(
-        line,
-      ) ||
-        /\balias\s*\(\s*libs\.plugins\.[A-Za-z0-9_.]*android[A-Za-z0-9_.]*\s*\)/iu.test(line)) &&
-      !/(?:\bapply\s+false\b|\.apply\s*\(\s*false\s*\))/u.test(line)
-    ) {
-      return true;
-    }
-  }
-  return false;
+  const androidPluginPattern =
+    String.raw`\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']\s*\)?` +
+    "|" +
+    String.raw`\balias\s*\(\s*libs\.plugins\.[A-Za-z0-9_.]*android[A-Za-z0-9_.]*\s*\)`;
+  const disabledAndroidPlugin = new RegExp(
+    String.raw`(?:${androidPluginPattern})(?:\s*\.version\s*\([^)]*\)|\s+version\s+["'][^"']+["'])?\s*(?:\.apply\s*\(\s*false\s*\)|\bapply\s+false\b)`,
+    "giu",
+  );
+  const activeSource = source.replace(disabledAndroidPlugin, "");
+  return new RegExp(androidPluginPattern, "iu").test(activeSource);
 }
 
 function stripGradleComments(source: string): string {

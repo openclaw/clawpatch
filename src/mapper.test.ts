@@ -2811,7 +2811,10 @@ describe("mapFeatures", () => {
       "apps/android/build.gradle.kts",
       [
         'plugins { id("org.jetbrains.kotlin.jvm") }',
-        "plugins { alias(libs.plugins.android.application).apply(false) }",
+        "plugins {",
+        "  alias(libs.plugins.android.application)",
+        "    .apply(false)",
+        "}",
         '// id("com.android.application")',
         '/* android { namespace = "example" } */',
         "",
@@ -3411,6 +3414,18 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/main/java/com/acme/ext/ServletFilter.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import jakarta.servlet.Filter;",
+        "",
+        "public class ServletFilter implements Filter {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
       "src/main/java/com/acme/local/LocalCommandAdapter.java",
       [
         "package com.acme.local;",
@@ -3463,6 +3478,7 @@ describe("mapFeatures", () => {
         "src/main/java/com/acme/ext/HelperFirstAdapter.java",
         "src/main/java/com/acme/ext/PluginAdapter.java",
         "src/main/java/com/acme/ext/RecordPlugin.java",
+        "src/main/java/com/acme/ext/ServletFilter.java",
         "src/main/java/com/acme/jobs/GenericJobFactory.java",
         "src/main/java/com/acme/jobs/JobFactory.java",
       ].toSorted(),
@@ -3476,6 +3492,7 @@ describe("mapFeatures", () => {
       "src/main/java/com/acme/ext/HelperFirstAdapter.java",
       "src/main/java/com/acme/ext/PluginAdapter.java",
       "src/main/java/com/acme/ext/RecordPlugin.java",
+      "src/main/java/com/acme/ext/ServletFilter.java",
       "src/main/java/com/acme/local/LocalCommandAdapter.java",
       "src/main/java/com/google/myapp/GuavaAdapter.java",
     ]);
