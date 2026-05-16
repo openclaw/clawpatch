@@ -24,7 +24,16 @@ type RouteRef = {
   action: string | null;
 };
 
-const composerScriptNames = ["setup", "dev", "test", "lint", "format", "analyse", "analyze"];
+const composerScriptNames = [
+  "setup",
+  "dev",
+  "test",
+  "typecheck",
+  "lint",
+  "format",
+  "analyse",
+  "analyze",
+];
 const groupedMaxOwnedFiles = 12;
 const maxAssociatedTests = 8;
 
@@ -392,13 +401,20 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
       routes.push({
         file,
         method,
-        uri: routeUriWithPrefixes(fluentRoutePrefixes(chain), uri),
+        uri: routeUriWithPrefixes(
+          [...fileDefaultRoutePrefixes(file), ...fluentRoutePrefixes(chain)],
+          uri,
+        ),
         controllerClass,
         action: match[7] ?? null,
       });
     }
   }
   return routes;
+}
+
+function fileDefaultRoutePrefixes(file: string): string[] {
+  return file === "routes/api.php" ? ["api"] : [];
 }
 
 function fluentRoutePrefixes(chain: string): string[] {

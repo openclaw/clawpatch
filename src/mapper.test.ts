@@ -3106,7 +3106,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       "routes/api.php",
       "<?php\n" +
         "use App\\Http\\Controllers\\Api\\UserController;\n" +
-        "Route::get('/api/users', UserController::class);\n",
+        "Route::get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -3393,6 +3393,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
             php: "^8.3",
           },
           scripts: {
+            typecheck: "vendor/bin/phpstan analyse --level=max",
             analyse: "vendor/bin/phpstan analyse",
             lint: "vendor/bin/phpcs",
             format: "vendor/bin/php-cs-fixer fix --dry-run",
@@ -3414,12 +3415,13 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
 
     expect(project.detected.commands).toEqual({
-      typecheck: "composer analyse",
+      typecheck: "composer typecheck",
       lint: "composer lint",
       format: "composer format",
       test: "composer test",
     });
     expect(titles).toContain("Composer script test");
+    expect(titles).toContain("Composer script typecheck");
     expect(phpTestSuite?.tags).toEqual(["php", "test"]);
     expect(titles).not.toContain("Laravel project php-tool");
   });
