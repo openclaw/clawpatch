@@ -47,7 +47,7 @@ export async function nearbyTests(
           path.endsWith(".swift") &&
           (isTestPath(path) ||
             seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix)))) ||
-        (!isRustEntry && !isSwiftEntry && isJsTestPath(path)),
+        (!isRustEntry && !isSwiftEntry && !isCOrCppEntry && isJsTestPath(path)),
     )
     .filter(
       (path) =>

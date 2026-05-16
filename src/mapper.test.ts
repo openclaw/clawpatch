@@ -1263,29 +1263,67 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     ).not.toContain("../outside.c");
   });
 
+  it("uses the CMake source that defines main as the executable entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-cpp-main-entry-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app src/app.cpp src/main.cpp)\n");
+    await writeFixture(root, "src/app.cpp", "int helper(void) { return 0; }\n");
+    await writeFixture(root, "src/main.cpp", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+    const mainFeatures = result.features.filter(
+      (feature) =>
+        feature.kind === "cli-command" && feature.entrypoints[0]?.path === "src/main.cpp",
+    );
+
+    expect(app?.entrypoints[0]?.path).toBe("src/main.cpp");
+    expect(mainFeatures).toHaveLength(1);
+    expect(result.features.map((feature) => feature.title)).not.toContain("C++ binary main");
+  });
+
   it("maps autotools C and C++ binary and library targets", async () => {
     const root = await fixtureRoot("clawpatch-autotools-cpp-map-");
     await writeFixture(
       root,
       "Makefile.am",
-      "bin_PROGRAMS = thing\nthing_SOURCES = thing.c \\\n  util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = core.cc core_util.cc\n",
+      "bin_PROGRAMS = thing my-tool # installed helpers\nthing_SOURCES = thing.c \\\n  util.c\nmy_tool_SOURCES = main.c tool-util.c\nlib_LTLIBRARIES = libcore.la libcore-extra.la\nlibcore_la_SOURCES = core.cc core_util.cc\nlibcore_extra_la_SOURCES = extra.cc\n",
     );
     await writeFixture(root, "thing.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
+    await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "tool-util.c", "int tool_util(void) { return 1; }\n");
     await writeFixture(root, "core.cc", "int core() { return 1; }\n");
     await writeFixture(root, "core_util.cc", "int coreUtil() { return 2; }\n");
+    await writeFixture(root, "extra.cc", "int extra() { return 3; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const thing = result.features.find((feature) => feature.title === "Autotools binary thing");
+    const myTool = result.features.find((feature) => feature.title === "Autotools binary my-tool");
     const core = result.features.find((feature) => feature.title === "Autotools library libcore");
+    const extra = result.features.find(
+      (feature) => feature.title === "Autotools library libcore-extra",
+    );
+    const titles = result.features.map((feature) => feature.title);
 
     expect(project.detected.packageManagers).toContain("autotools");
+    expect(titles).not.toContain("Autotools binary installed");
+    expect(titles).not.toContain("Autotools binary helpers");
     expect(thing?.entrypoints[0]).toMatchObject({
       path: "thing.c",
       symbol: "main",
       command: "thing",
     });
+    expect(myTool?.entrypoints[0]).toMatchObject({
+      path: "main.c",
+      symbol: "main",
+      command: "my-tool",
+    });
+    expect(myTool?.ownedFiles).toEqual([
+      { path: "main.c", reason: "target source" },
+      { path: "tool-util.c", reason: "target source" },
+    ]);
     expect(thing?.ownedFiles).toEqual([
       { path: "thing.c", reason: "target source" },
       { path: "util.c", reason: "target source" },
@@ -1295,6 +1333,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       { path: "core.cc", reason: "target source" },
       { path: "core_util.cc", reason: "target source" },
     ]);
+    expect(extra?.ownedFiles).toEqual([{ path: "extra.cc", reason: "target source" }]);
   });
 
   it("maps standalone C main files without php-src extension semantics", async () => {
@@ -1321,6 +1360,41 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(
       result.features.some((feature) => feature.entrypoints[0]?.path === "ext/iconv/config.m4"),
     ).toBe(false);
+  });
+
+  it("skips C and C++ sample project paths", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-sample-paths-");
+    await writeFixture(root, "fixtures/example/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "testdata/CMakeLists.txt", "add_executable(sample main.c)\n");
+    await writeFixture(root, "testdata/main.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some((feature) =>
+        ["c-main", "cmake-bin", "cmake-lib", "autotools-bin", "autotools-lib"].includes(
+          feature.source,
+        ),
+      ),
+    ).toBe(false);
+    expect(
+      result.features.some((feature) => feature.entrypoints[0]?.path.includes("fixtures/")),
+    ).toBe(false);
+  });
+
+  it("does not attach JavaScript tests to C and C++ entries", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-js-test-");
+    await writeFixture(root, "package.json", JSON.stringify({ scripts: { test: "vitest" } }));
+    await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/app.test.ts", "test('app', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "C++ binary app");
+
+    expect(app?.tests).toEqual([]);
+    expect(app?.contextFiles).toEqual([]);
   });
 
   it("maps Python project metadata, console scripts, source groups, and tests", async () => {

@@ -3,6 +3,7 @@ import { join, relative } from "node:path";
 import {
   isSafeFile,
   isCOrCppTestPath,
+  isSampleProjectPath,
   normalize,
   packageTrustBoundaries,
   stripLineComments,
@@ -12,7 +13,8 @@ import { FeatureSeed } from "./types.js";
 
 export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
   const files = (await walk(root, [""])).filter(
-    (path) => isCOrCppSource(path) || isMakefile(path) || isCMake(path),
+    (path) =>
+      !isSampleProjectPath(path) && (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
   );
   if (files.length === 0) {
     return [];
@@ -21,7 +23,9 @@ export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
   seeds.push(...(await autotoolsTargets(root, files)));
   seeds.push(...(await cmakeTargets(root, files)));
   const alreadySeeded = new Set(
-    seeds.filter((seed) => seed.kind === "cli-command").map((seed) => seed.entryPath),
+    seeds
+      .filter((seed) => seed.kind === "cli-command")
+      .flatMap((seed) => [seed.entryPath, ...(seed.ownedFiles?.map((file) => file.path) ?? [])]),
   );
   seeds.push(...(await mainFunctionTargets(root, files, alreadySeeded)));
   return dedupeByEntry(seeds);
@@ -54,7 +58,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
   const libPattern = /^\s*lib_LTLIBRARIES\s*=\s*(.+)$/gmu;
   for (const makefile of makefiles) {
     const body = collapseBackslashContinuations(
-      await readFile(join(root, makefile), "utf8").catch(() => ""),
+      stripLineComments(await readFile(join(root, makefile), "utf8").catch(() => ""), "#"),
     );
     const dir = parentDir(makefile);
     for (const match of body.matchAll(binPattern)) {
@@ -62,9 +66,9 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         if (!isValidTargetName(target)) {
           continue;
         }
-        const sources = readTargetSources(body, target);
+        const sources = readTargetSources(body, automakeVariableName(target));
         const sourcePaths = await targetSourcePaths(root, dir, sources);
-        const entryPath = pickEntry(sourcePaths, target) ?? makefile;
+        const entryPath = (await pickExecutableEntry(root, sourcePaths, target)) ?? makefile;
         const tag = languageTag(entryPath);
         seeds.push({
           title: `Autotools binary ${target}`,
@@ -90,7 +94,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
           continue;
         }
         const target = rawTarget.replace(/\.la$/u, "");
-        const sources = readTargetSources(body, rawTarget.replace(/\./gu, "_"));
+        const sources = readTargetSources(body, automakeVariableName(rawTarget));
         const sourcePaths = await targetSourcePaths(root, dir, sources);
         const entryPath = pickEntry(sourcePaths, target) ?? makefile;
         const tag = languageTag(entryPath);
@@ -134,7 +138,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
-      const entryPath = pickEntry(sourcePaths, target) ?? cmakeFile;
+      const entryPath = (await pickExecutableEntry(root, sourcePaths, target)) ?? cmakeFile;
       const tag = languageTag(entryPath);
       seeds.push({
         title: `CMake binary ${target}`,
@@ -245,6 +249,20 @@ function splitWords(value: string): string[] {
   return value.split(/\s+/u).filter((word) => word.length > 0);
 }
 
+async function pickExecutableEntry(
+  root: string,
+  candidates: string[],
+  targetName: string,
+): Promise<string | null> {
+  for (const candidate of candidates) {
+    const source = await readFile(join(root, candidate), "utf8").catch(() => "");
+    if (source.length <= 2_000_000 && definesMain(source)) {
+      return candidate;
+    }
+  }
+  return pickEntry(candidates, targetName);
+}
+
 function pickEntry(candidates: string[], targetName: string): string | null {
   if (candidates.length === 0) {
     return null;
@@ -278,6 +296,10 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
 
 function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {
   return sources.map((source) => ({ path: source, reason: "target source" }));
+}
+
+function automakeVariableName(target: string): string {
+  return target.replace(/[^A-Za-z0-9@]/gu, "_");
 }
 
 function prefixDir(dir: string, file: string): string {
