@@ -93,6 +93,21 @@ describe("mapFeatures", () => {
       "src/pages/about.tsx",
       "export default function About() { return null; }\n",
     );
+    await writeFixture(
+      root,
+      "src/pages/_app.tsx",
+      "export default function App() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/_document.tsx",
+      "export default function Document() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/_error.tsx",
+      "export default function ErrorPage() { return null; }\n",
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -106,6 +121,9 @@ describe("mapFeatures", () => {
     expect(bySource("/dashboard")).toBe("next-app-route");
     expect(bySource("/api/health")).toBe("next-app-route");
     expect(bySource("/about")).toBe("next-pages-route");
+    expect(titles).not.toContain("Route /_app");
+    expect(titles).not.toContain("Route /_document");
+    expect(titles).not.toContain("Route /_error");
   });
 
   it("does not map src app-shaped routes without a Next project signal", async () => {

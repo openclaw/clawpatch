@@ -12,7 +12,7 @@ export async function nextSeeds(root: string): Promise<FeatureSeed[]> {
   const routeFiles = files.filter(
     (file) =>
       /(^|\/)(page|route)\.(tsx|ts|jsx|js)$/u.test(file) ||
-      /^(src\/)?pages\/.+\.(tsx|ts|jsx|js)$/u.test(file),
+      (/^(src\/)?pages\/.+\.(tsx|ts|jsx|js)$/u.test(file) && !isPagesFrameworkFile(file)),
   );
   return routeFiles.map((file) => ({
     title: `Route ${routeFromFile(file)}`,
@@ -31,6 +31,10 @@ export async function nextSeeds(root: string): Promise<FeatureSeed[]> {
 
 function isAppRoute(file: string): boolean {
   return file.startsWith("app/") || file.startsWith("src/app/");
+}
+
+function isPagesFrameworkFile(file: string): boolean {
+  return /^(src\/)?pages\/_(app|document|error)\.(tsx|ts|jsx|js)$/u.test(file);
 }
 
 async function isNextProject(root: string): Promise<boolean> {
