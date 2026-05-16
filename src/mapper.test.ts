@@ -3368,6 +3368,34 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect((await detectProject(root)).detected.commands.test).toBe("vendor/bin/phpunit");
   });
 
+  it("uses Pest and PHPStan defaults for PHP packages", async () => {
+    const root = await fixtureRoot("clawpatch-php-quality-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/php-quality",
+          require: {
+            php: "^8.3",
+          },
+          "require-dev": {
+            "pestphp/pest": "^3.0",
+            "phpstan/phpstan": "^2.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "src/PackageService.php", "<?php\nfinal class PackageService {}\n");
+
+    expect((await detectProject(root)).detected.commands).toMatchObject({
+      typecheck: "vendor/bin/phpstan analyse",
+      test: "vendor/bin/pest",
+    });
+  });
+
   it("uses PHPUnit dependency test commands for Laravel package features", async () => {
     const root = await fixtureRoot("clawpatch-laravel-package-feature-tests-");
     await writeFixture(

@@ -355,15 +355,24 @@ async function phpDefaultCommands(
   const dependencies = composerDependencyNames(composer);
   const hasArtisan = await pathExists(join(root, "artisan"));
   const hasPint = dependencies.has("laravel/pint");
+  const hasPhpStan = dependencies.has("phpstan/phpstan") || dependencies.has("larastan/larastan");
+  const hasPest = dependencies.has("pestphp/pest");
   const hasPhpunit =
     dependencies.has("phpunit/phpunit") ||
+    dependencies.has("phpunit/phpunit-selenium") ||
     (await pathExists(join(root, "phpunit.xml"))) ||
     (await pathExists(join(root, "phpunit.xml.dist")));
   return {
-    typecheck: null,
+    typecheck: hasPhpStan ? "vendor/bin/phpstan analyse" : null,
     lint: hasPint ? "vendor/bin/pint --test" : null,
     format: hasPint ? "vendor/bin/pint --test" : null,
-    test: hasArtisan ? "php artisan test" : hasPhpunit ? "vendor/bin/phpunit" : null,
+    test: hasArtisan
+      ? "php artisan test"
+      : hasPest
+        ? "vendor/bin/pest"
+        : hasPhpunit
+          ? "vendor/bin/phpunit"
+          : null,
   };
 }
 
