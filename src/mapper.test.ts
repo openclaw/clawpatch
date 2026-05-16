@@ -3442,6 +3442,26 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("maps escaped CMake source paths containing spaces and semicolons", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-escaped-source-path-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app src/main\\ file.cpp src/helper\\;part.cpp)\n",
+    );
+    await writeFixture(root, "src/main file.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/helper;part.cpp", "int helper(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main file.cpp", reason: "target source" },
+      { path: "src/helper;part.cpp", reason: "target source" },
+    ]);
+  });
+
   it("keeps target_sources scoped to standalone CMake projects", async () => {
     const root = await fixtureRoot("clawpatch-cmake-target-sources-scope-");
     await writeFixture(
@@ -4272,6 +4292,23 @@ add_executable(headerapp include/headers.hpp)
     const project = await detectProject(root);
 
     expect(project.detected.languages).toEqual(expect.arrayContaining(["python", "java"]));
+  });
+
+  it("ignores top-level vendored native project metadata during detection", async () => {
+    const root = await fixtureRoot("clawpatch-top-vendor-native-detect-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "host" }, null, 2));
+    await writeFixture(
+      root,
+      "vendor/Dependency/Package.swift",
+      'import PackageDescription\nlet package = Package(name: "Dependency")\n',
+    );
+    await writeFixture(root, "vendor/Dependency/build.gradle.kts", 'plugins { id("java") }\n');
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).not.toContain("swift");
+    expect(project.detected.packageManagers).not.toContain("swiftpm");
+    expect(project.detected.packageManagers).not.toContain("gradle");
   });
 
   it("maps Python project metadata, console scripts, source groups, and tests", async () => {

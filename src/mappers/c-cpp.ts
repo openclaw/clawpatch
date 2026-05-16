@@ -809,7 +809,7 @@ type CMakeWord = {
 
 function splitWords(value: string): string[] {
   return cmakeWords(value)
-    .flatMap((word) => (word.quoted ? [word.value] : word.value.split(";")))
+    .flatMap((word) => (word.quoted ? [word.value] : splitCMakeUnquotedWord(word.value)))
     .filter((word) => word.length > 0);
 }
 
@@ -840,10 +840,37 @@ function cmakeWords(value: string): CMakeWord[] {
       continue;
     }
     const start = index;
-    while (index < value.length && !/\s/u.test(value[index] ?? "")) {
+    while (index < value.length) {
+      if (value[index] === "\\" && index + 1 < value.length) {
+        index += 2;
+        continue;
+      }
+      if (/\s/u.test(value[index] ?? "")) {
+        break;
+      }
       index += 1;
     }
     words.push({ value: value.slice(start, index), quoted: false });
+  }
+  return words;
+}
+
+function splitCMakeUnquotedWord(value: string): string[] {
+  const words = [""];
+  for (let index = 0; index < value.length; ) {
+    const char = value[index];
+    if (char === "\\" && index + 1 < value.length) {
+      words[words.length - 1] += value[index + 1] ?? "";
+      index += 2;
+      continue;
+    }
+    if (char === ";") {
+      words.push("");
+      index += 1;
+      continue;
+    }
+    words[words.length - 1] += char ?? "";
+    index += 1;
   }
   return words;
 }

@@ -1149,7 +1149,7 @@ async function containsFileNamed(
   root: string,
   name: string,
   maxDepth: number,
-  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
   return containsFileMatching(root, maxDepth, (entry) => entry === name, skipEntry);
 }
@@ -1158,7 +1158,7 @@ async function containsFileWithExtension(
   root: string,
   extension: string,
   maxDepth: number,
-  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
   return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension), skipEntry);
 }
@@ -1167,7 +1167,7 @@ async function containsFileWithExtensionIgnoringCase(
   root: string,
   extension: string,
   maxDepth: number,
-  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
   const lowercaseExtension = extension.toLowerCase();
   return containsFileMatching(
@@ -1182,7 +1182,8 @@ async function containsFileMatching(
   dir: string,
   remainingDepth: number,
   predicate: (entry: string) => boolean,
-  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
 ): Promise<boolean> {
   if (remainingDepth < 0 || !(await pathExists(dir))) {
     return false;
@@ -1192,7 +1193,8 @@ async function containsFileMatching(
     return false;
   }
   for (const entry of await readdir(dir)) {
-    if (skipEntry(entry)) {
+    const relativePath = relativeDir.length === 0 ? entry : `${relativeDir}/${entry}`;
+    if (skipEntry(entry, relativePath)) {
       continue;
     }
     const full = join(dir, entry);
@@ -1205,7 +1207,7 @@ async function containsFileMatching(
     }
     if (
       info.isDirectory() &&
-      (await containsFileMatching(full, remainingDepth - 1, predicate, skipEntry))
+      (await containsFileMatching(full, remainingDepth - 1, predicate, skipEntry, relativePath))
     ) {
       return true;
     }
@@ -1213,7 +1215,10 @@ async function containsFileMatching(
   return false;
 }
 
-function shouldSkipSearchEntry(entry: string): boolean {
+function shouldSkipSearchEntry(entry: string, relativePath = entry): boolean {
+  if (entry === "vendor" && relativePath === "vendor") {
+    return true;
+  }
   return [
     "node_modules",
     "dist",
