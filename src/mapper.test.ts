@@ -1423,28 +1423,53 @@ add_executable(headerapp include/headers.hpp)
     expect(result.features.map((feature) => feature.title)).not.toContain("C++ binary main");
   });
 
+  it("resolves targets from included CMake modules relative to the source dir", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-include-source-dir-");
+    await writeFixture(root, "CMakeLists.txt", "include(cmake/Targets.cmake)\n");
+    await writeFixture(root, "cmake/Targets.cmake", "add_executable(app src/main.c src/util.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+    ]);
+  });
+
   it("maps autotools C and C++ binary and library targets", async () => {
     const root = await fixtureRoot("clawpatch-autotools-cpp-map-");
     await writeFixture(
       root,
       "Makefile.am",
-      "bin_PROGRAMS = thing my-tool defaulted header-tool # installed helpers\nthing_SOURCES = thing.c \\\n  util.c\nmy_tool_SOURCES = main.c tool-util.c\nheader_tool_SOURCES = include/header.hpp\nlib_LTLIBRARIES = libcore.la libcore-extra.la\nlibcore_la_SOURCES = core.cc core_util.cc\nlibcore_extra_la_SOURCES = extra.cc\n",
+      "bin_PROGRAMS = thing my-tool defaulted header-tool # installed helpers\nbin_PROGRAMS += appended\nthing_SOURCES = thing.c \\\n  util.c\nmy_tool_SOURCES = main.c tool-util.c\nappended_SOURCES = appended.c\nappended_SOURCES += appended_util.c\nheader_tool_SOURCES = include/header.hpp\nlib_LTLIBRARIES = libcore.la libcore-extra.la\nlib_LTLIBRARIES += libmore.la\nlibcore_la_SOURCES = core.cc core_util.cc\nlibcore_extra_la_SOURCES = extra.cc\nlibmore_la_SOURCES = more.c\nlibmore_la_SOURCES += more_util.c\n",
     );
     await writeFixture(root, "thing.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
     await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "tool-util.c", "int tool_util(void) { return 1; }\n");
+    await writeFixture(root, "appended.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "appended_util.c", "int appended_util(void) { return 1; }\n");
     await writeFixture(root, "defaulted.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "cppdefault.cpp", "int main() { return 0; }\n");
     await writeFixture(root, "include/header.hpp", "int header(void);\n");
     await writeFixture(root, "core.cc", "int core() { return 1; }\n");
     await writeFixture(root, "core_util.cc", "int coreUtil() { return 2; }\n");
     await writeFixture(root, "extra.cc", "int extra() { return 3; }\n");
+    await writeFixture(root, "more.c", "int more(void) { return 3; }\n");
+    await writeFixture(root, "more_util.c", "int more_util(void) { return 4; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const thing = result.features.find((feature) => feature.title === "Autotools binary thing");
     const myTool = result.features.find((feature) => feature.title === "Autotools binary my-tool");
+    const appended = result.features.find(
+      (feature) => feature.title === "Autotools binary appended",
+    );
     const defaulted = result.features.find(
       (feature) => feature.title === "Autotools binary defaulted",
     );
@@ -1452,6 +1477,7 @@ add_executable(headerapp include/headers.hpp)
     const extra = result.features.find(
       (feature) => feature.title === "Autotools library libcore-extra",
     );
+    const more = result.features.find((feature) => feature.title === "Autotools library libmore");
     const titles = result.features.map((feature) => feature.title);
 
     expect(project.detected.packageManagers).toContain("autotools");
@@ -1474,6 +1500,10 @@ add_executable(headerapp include/headers.hpp)
       { path: "main.c", reason: "target source" },
       { path: "tool-util.c", reason: "target source" },
     ]);
+    expect(appended?.ownedFiles).toEqual([
+      { path: "appended.c", reason: "target source" },
+      { path: "appended_util.c", reason: "target source" },
+    ]);
     expect(defaulted?.entrypoints[0]).toMatchObject({
       path: "defaulted.c",
       symbol: "main",
@@ -1490,6 +1520,10 @@ add_executable(headerapp include/headers.hpp)
       { path: "core_util.cc", reason: "target source" },
     ]);
     expect(extra?.ownedFiles).toEqual([{ path: "extra.cc", reason: "target source" }]);
+    expect(more?.ownedFiles).toEqual([
+      { path: "more.c", reason: "target source" },
+      { path: "more_util.c", reason: "target source" },
+    ]);
   });
 
   it("maps standalone C main files without php-src extension semantics", async () => {

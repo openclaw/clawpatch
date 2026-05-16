@@ -55,76 +55,70 @@ function languageTag(path: string): "c" | "cpp" {
 async function autotoolsTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const makefiles = files.filter((file) => file.endsWith("Makefile.am"));
-  const binPattern = /^\s*bin_PROGRAMS\s*=\s*(.+)$/gmu;
-  const libPattern = /^\s*lib_LTLIBRARIES\s*=\s*(.+)$/gmu;
   for (const makefile of makefiles) {
     const body = collapseBackslashContinuations(
       stripLineComments(await readFile(join(root, makefile), "utf8").catch(() => ""), "#"),
     );
     const dir = parentDir(makefile);
-    for (const match of body.matchAll(binPattern)) {
-      for (const target of splitWords(match[1] ?? "")) {
-        if (!isValidTargetName(target)) {
-          continue;
-        }
-        const sources = await automakeTargetSources(root, dir, body, target);
-        const sourcePaths = await targetSourcePaths(root, dir, sources);
-        if (sourcePaths.length === 0) {
-          continue;
-        }
-        const entryPath = await pickExecutableEntry(root, sourcePaths, target);
-        if (entryPath === null) {
-          continue;
-        }
-        const tag = languageTag(entryPath);
-        seeds.push({
-          title: `Autotools binary ${target}`,
-          summary: `Autotools bin_PROGRAMS target declared in ${makefile}.`,
-          kind: "cli-command",
-          source: "autotools-bin",
-          confidence: "high",
-          entryPath,
-          symbol: "main",
-          route: null,
-          command: target,
-          tags: [tag, "cli"],
-          trustBoundaries: ["user-input", "filesystem", "process-exec"],
-          ownedFiles: targetSourceRefs(sourcePaths),
-          contextFiles: [{ path: makefile, reason: "build target declaration" }],
-          testPrefixes: [`${dir}tests`],
-        });
+    for (const target of readVariableWords(body, "bin_PROGRAMS")) {
+      if (!isValidTargetName(target)) {
+        continue;
       }
+      const sources = await automakeTargetSources(root, dir, body, target);
+      const sourcePaths = await targetSourcePaths(root, dir, sources);
+      if (sourcePaths.length === 0) {
+        continue;
+      }
+      const entryPath = await pickExecutableEntry(root, sourcePaths, target);
+      if (entryPath === null) {
+        continue;
+      }
+      const tag = languageTag(entryPath);
+      seeds.push({
+        title: `Autotools binary ${target}`,
+        summary: `Autotools bin_PROGRAMS target declared in ${makefile}.`,
+        kind: "cli-command",
+        source: "autotools-bin",
+        confidence: "high",
+        entryPath,
+        symbol: "main",
+        route: null,
+        command: target,
+        tags: [tag, "cli"],
+        trustBoundaries: ["user-input", "filesystem", "process-exec"],
+        ownedFiles: targetSourceRefs(sourcePaths),
+        contextFiles: [{ path: makefile, reason: "build target declaration" }],
+        testPrefixes: [`${dir}tests`],
+      });
     }
-    for (const match of body.matchAll(libPattern)) {
-      for (const rawTarget of splitWords(match[1] ?? "")) {
-        if (!isValidTargetName(rawTarget)) {
-          continue;
-        }
-        const target = rawTarget.replace(/\.la$/u, "");
-        const sources = readTargetSources(body, automakeVariableName(rawTarget));
-        const sourcePaths = await targetSourcePaths(root, dir, sources);
-        if (sourcePaths.length === 0) {
-          continue;
-        }
-        const entryPath = pickEntry(sourcePaths, target) ?? makefile;
-        const tag = languageTag(entryPath);
-        seeds.push({
-          title: `Autotools library ${target}`,
-          summary: `Autotools lib_LTLIBRARIES target declared in ${makefile}.`,
-          kind: "library",
-          source: "autotools-lib",
-          confidence: "high",
-          entryPath,
-          symbol: null,
-          route: null,
-          command: null,
-          tags: [tag, "library"],
-          trustBoundaries: packageTrustBoundaries(target),
-          ownedFiles: targetSourceRefs(sourcePaths),
-          contextFiles: [{ path: makefile, reason: "build target declaration" }],
-          testPrefixes: [`${dir}tests`],
-        });
+    for (const rawTarget of readVariableWords(body, "lib_LTLIBRARIES")) {
+      if (!isValidTargetName(rawTarget)) {
+        continue;
       }
+      const target = rawTarget.replace(/\.la$/u, "");
+      const sources = readTargetSources(body, automakeVariableName(rawTarget));
+      const sourcePaths = await targetSourcePaths(root, dir, sources);
+      if (sourcePaths.length === 0) {
+        continue;
+      }
+      const entryPath = pickEntry(sourcePaths, target) ?? makefile;
+      const tag = languageTag(entryPath);
+      seeds.push({
+        title: `Autotools library ${target}`,
+        summary: `Autotools lib_LTLIBRARIES target declared in ${makefile}.`,
+        kind: "library",
+        source: "autotools-lib",
+        confidence: "high",
+        entryPath,
+        symbol: null,
+        route: null,
+        command: null,
+        tags: [tag, "library"],
+        trustBoundaries: packageTrustBoundaries(target),
+        ownedFiles: targetSourceRefs(sourcePaths),
+        contextFiles: [{ path: makefile, reason: "build target declaration" }],
+        testPrefixes: [`${dir}tests`],
+      });
     }
   }
   return seeds;
@@ -133,12 +127,13 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
 async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const cmakeFiles = files.filter(isCMake);
+  const sourceDirs = await cmakeSourceDirs(root, cmakeFiles);
   const exePattern = /add_executable\s*\(\s*([A-Za-z_][\w-]*)\s+([^)]*)\)/gimsu;
   const libPattern =
     /add_library\s*\(\s*([A-Za-z_][\w-]*)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gimsu;
   for (const cmakeFile of cmakeFiles) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    const dir = parentDir(cmakeFile);
+    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
     for (const match of body.matchAll(exePattern)) {
       const target = match[1] ?? "";
       if (!isValidTargetName(target)) {
@@ -202,6 +197,36 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   return seeds;
 }
 
+async function cmakeSourceDirs(root: string, cmakeFiles: string[]): Promise<Map<string, string>> {
+  const dirs = new Map<string, string>();
+  const cmakeFileSet = new Set(cmakeFiles);
+  for (const cmakeFile of cmakeFiles.filter((file) => file.endsWith("CMakeLists.txt"))) {
+    const dir = parentDir(cmakeFile);
+    dirs.set(cmakeFile, dir);
+    const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    for (const include of cmakeIncludes(body)) {
+      const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
+      const full = isAbsolute(includePath) ? includePath : join(root, prefixDir(dir, includePath));
+      const rel = normalize(relative(root, full));
+      if (cmakeFileSet.has(rel)) {
+        dirs.set(rel, dir);
+      }
+    }
+  }
+  return dirs;
+}
+
+function cmakeIncludes(body: string): string[] {
+  const includes: string[] = [];
+  for (const match of body.matchAll(/include\s*\(([^)]*)\)/gimsu)) {
+    const path = splitWords(match[1] ?? "")[0];
+    if (path !== undefined && !path.startsWith("$")) {
+      includes.push(path);
+    }
+  }
+  return includes;
+}
+
 async function mainFunctionTargets(
   root: string,
   files: string[],
@@ -255,10 +280,17 @@ function collapseBackslashContinuations(source: string): string {
 }
 
 function readTargetSources(body: string, target: string): string[] {
-  const escaped = target.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const pattern = new RegExp(`^\\s*${escaped}_SOURCES\\s*=\\s*(.+)$`, "mu");
-  const raw = pattern.exec(body)?.[1] ?? "";
-  return splitWords(raw);
+  return readVariableWords(body, `${target}_SOURCES`);
+}
+
+function readVariableWords(body: string, variable: string): string[] {
+  const words: string[] = [];
+  const escaped = variable.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const pattern = new RegExp(`^\\s*${escaped}\\s*(?:\\+?=)\\s*(.+)$`, "gmu");
+  for (const match of body.matchAll(pattern)) {
+    words.push(...splitWords(match[1] ?? ""));
+  }
+  return words;
 }
 
 function stripCMakeComments(source: string): string {
