@@ -1195,6 +1195,19 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       test: null,
     });
 
+    const commentedGroupRoot = await fixtureRoot("clawpatch-python-commented-groups-");
+    await writeFixture(
+      commentedGroupRoot,
+      "pyproject.toml",
+      '[project]\nname = "commented-groups"\n\n[dependency-groups]\n#dev = ["pytest", "ruff"]\n',
+    );
+    expect((await detectProject(commentedGroupRoot)).detected.commands).toEqual({
+      typecheck: null,
+      lint: null,
+      format: null,
+      test: null,
+    });
+
     const dependencyGroupRoot = await fixtureRoot("clawpatch-python-dependency-groups-");
     await writeFixture(
       dependencyGroupRoot,
@@ -1240,6 +1253,24 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(source?.tests).toEqual([
       { path: "src/hatch_map/test_app.py", command: "hatch run pytest" },
     ]);
+  });
+
+  it("uses uv pytest commands from pyproject uv config in mapped Python features", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-pyproject-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "uv-map"\n\n[tool.uv]\ndev-dependencies = ["pytest"]\n',
+    );
+    await writeFixture(root, "src/uv_map/app.py", "def app():\n    pass\n");
+    await writeFixture(root, "src/uv_map/test_app.py", "def test_app():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Python source src");
+
+    expect(project.detected.commands.test).toBe("uv run pytest");
+    expect(source?.tests).toEqual([{ path: "src/uv_map/test_app.py", command: "uv run pytest" }]);
   });
 
   it("maps Python metadata-only projects without pyproject", async () => {
@@ -1326,6 +1357,25 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       root,
       "pyproject.toml",
       '[project]\nname = "array-table"\n\n[project.scripts]\nreal = "pkg.cli:main"\n\n[[tool.uv.index]]\nname = "private"\nurl = "https://example.invalid/simple"\n',
+    );
+    await writeFixture(root, "pkg/__init__.py", "");
+    await writeFixture(root, "pkg/cli.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const commands = result.features
+      .filter((feature) => feature.source === "python-console-script")
+      .map((feature) => feature.entrypoints[0]?.command);
+
+    expect(commands).toEqual(["real"]);
+  });
+
+  it("does not map commented Python console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-commented-script-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "commented-script"\n\n[project.scripts]\n#old = "pkg.old:main"\nreal = "pkg.cli:main"\n',
     );
     await writeFixture(root, "pkg/__init__.py", "");
     await writeFixture(root, "pkg/cli.py", "def main():\n    pass\n");

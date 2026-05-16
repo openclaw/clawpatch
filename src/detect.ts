@@ -459,7 +459,7 @@ const pythonTomlHeaderPattern = /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/mu;
 
 function pythonTomlAssignedValues(source: string): string[] {
   const values: string[] = [];
-  for (const match of source.matchAll(/^\s*["']?[^"'=\s]+["']?\s*=\s*/gmu)) {
+  for (const match of source.matchAll(/^\s*["']?[^#"'=\s]+["']?\s*=\s*/gmu)) {
     if (match.index === undefined) {
       continue;
     }
@@ -478,7 +478,7 @@ function pythonTomlAssignedValues(source: string): string[] {
 function pythonTomlAssignedKeysAndValues(source: string): string[] {
   const values = pythonTomlAssignedValues(source);
   for (const line of source.split("\n")) {
-    const key = /^\s*["']?([^"'=\s]+)["']?\s*=/u.exec(line)?.[1];
+    const key = /^\s*["']?([^#"'=\s]+)["']?\s*=/u.exec(line)?.[1];
     if (key !== undefined) {
       values.push(key);
     }

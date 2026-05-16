@@ -177,7 +177,7 @@ async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promis
   ) {
     return null;
   }
-  if (await pathExists(join(root, "uv.lock"))) {
+  if ((await pathExists(join(root, "uv.lock"))) || (await pyprojectHasToolSection(root, "uv"))) {
     return "uv run pytest";
   }
   if (await pathExists(join(root, "poetry.lock"))) {
@@ -596,7 +596,7 @@ function tomlStringValue(source: string, key: string): string | null {
 function scriptsFromTable(source: string): PythonScript[] {
   const scripts: PythonScript[] = [];
   for (const line of source.split("\n")) {
-    const match = /^\s*["']?([^"'=\s]+)["']?\s*=\s*(["'])([^"']+)\2/u.exec(line);
+    const match = /^\s*["']?([^#"'=\s]+)["']?\s*=\s*(["'])([^"']+)\2/u.exec(line);
     if (match?.[1] !== undefined && match[3] !== undefined) {
       scripts.push({ name: match[1], target: match[3] });
     }
@@ -657,7 +657,7 @@ function tomlArrayAssignments(source: string, keys: string[]): string[] {
 
 function assignedValues(source: string): string[] {
   const values: string[] = [];
-  for (const match of source.matchAll(/^\s*["']?[^"'=\s]+["']?\s*=\s*/gmu)) {
+  for (const match of source.matchAll(/^\s*["']?[^#"'=\s]+["']?\s*=\s*/gmu)) {
     if (match.index === undefined) {
       continue;
     }
@@ -676,7 +676,7 @@ function assignedValues(source: string): string[] {
 function assignedKeysAndValues(source: string): string[] {
   const values = assignedValues(source);
   for (const line of source.split("\n")) {
-    const key = /^\s*["']?([^"'=\s]+)["']?\s*=/u.exec(line)?.[1];
+    const key = /^\s*["']?([^#"'=\s]+)["']?\s*=/u.exec(line)?.[1];
     if (key !== undefined) {
       values.push(key);
     }
