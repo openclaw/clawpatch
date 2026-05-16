@@ -47,6 +47,7 @@ This discovers reviewable features:
 - Go packages and commands
 - Java/Kotlin Gradle modules
 - Python packages, console scripts, Flask routes, and pytest suites
+- JVM semantic role groups
 - Rust crates and binaries
 - SwiftPM targets and tests
 - Config files

@@ -35,6 +35,7 @@ Supported deterministic mappers today:
 - Go `internal/*` packages
 - Python project metadata, console scripts, root app files, bounded source groups,
   pytest suites, and Flask/FastAPI routes
+- JVM semantic role groups from Java annotations, imports, inheritance, interfaces, and method signatures
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
@@ -54,6 +55,9 @@ Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
 Root Gradle projects get default `gradle`/`./gradlew` build and test commands.
+Java files in Gradle modules also get role-oriented review slices when code
+evidence identifies web entrypoints, services, persistence boundaries, external
+clients, configuration, framework components, or extension boundaries.
 
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
 `[tool.poetry.scripts]` console scripts, root app files, source groups under
