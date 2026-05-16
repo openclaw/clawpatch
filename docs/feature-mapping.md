@@ -56,8 +56,9 @@ and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
 `[tool.poetry.scripts]` console scripts, source groups under common Python
 source roots including `web/`, pytest files, and Flask `@*.route(...)`
-handlers. Framework-specific route mapping for FastAPI and Django is not
-implemented yet.
+handlers in source roots and common root entry files such as `app.py` and
+`wsgi.py`. Flask route methods are read from list, tuple, or set literals.
+Framework-specific route mapping for FastAPI and Django is not implemented yet.
 
 Known gaps:
 

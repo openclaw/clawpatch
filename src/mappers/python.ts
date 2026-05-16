@@ -44,6 +44,13 @@ const projectMetadataFiles = [
 ] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
+const flaskRootEntryFiles = [
+  "app.py",
+  "wsgi.py",
+  "application.py",
+  "server.py",
+  "main.py",
+] as const;
 
 export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   if (!(await isPythonProject(root))) {
@@ -329,9 +336,7 @@ async function flaskRouteSeeds(
   testCommand: string | null,
 ): Promise<FeatureSeed[]> {
   const hasFlaskDependency = await pythonDependencyHas(root, "flask");
-  const routeFiles = (await walk(root, await pythonSourceRoots(root))).filter(
-    isReviewablePythonSourceFile,
-  );
+  const routeFiles = await flaskRouteFiles(root);
   const seeds: FeatureSeed[] = [];
   for (const filePath of routeFiles) {
     const source = await readFile(join(root, filePath), "utf8");
@@ -363,6 +368,19 @@ async function flaskRouteSeeds(
     }
   }
   return seeds;
+}
+
+async function flaskRouteFiles(root: string): Promise<string[]> {
+  const rootEntries: string[] = [];
+  for (const filePath of flaskRootEntryFiles) {
+    if (isReviewablePythonSourceFile(filePath) && (await isSafeFile(root, join(root, filePath)))) {
+      rootEntries.push(filePath);
+    }
+  }
+  const rootedFiles = (await walk(root, await pythonSourceRoots(root))).filter(
+    isReviewablePythonSourceFile,
+  );
+  return uniquePaths([...rootEntries, ...rootedFiles]);
 }
 
 async function pythonDependencyHas(root: string, dependency: string): Promise<boolean> {
@@ -446,21 +464,76 @@ function parseFlaskRouteDecorator(line: string): { routePath: string; methods: s
   if (match?.[2] === undefined) {
     return null;
   }
+  const methods = parseFlaskMethods(match[3] ?? "");
+  if (methods === null) {
+    return null;
+  }
   return {
     routePath: match[2],
-    methods: parseFlaskMethods(match[3] ?? ""),
+    methods,
   };
 }
 
-function parseFlaskMethods(args: string): string[] {
-  const match = /methods\s*=\s*\[([^\]]*)\]/u.exec(args);
-  if (match?.[1] === undefined) {
+function parseFlaskMethods(args: string): string[] | null {
+  const methodsIndex = args.search(/\bmethods\s*=/u);
+  if (methodsIndex === -1) {
     return ["GET"];
   }
-  const methods = [...match[1].matchAll(/["']([^"']+)["']/gu)]
+  const literal = flaskMethodsLiteral(args.slice(methodsIndex));
+  if (literal === null) {
+    return null;
+  }
+  const methods = [...literal.matchAll(/["']([^"']+)["']/gu)]
     .map((item) => item[1]?.toUpperCase())
     .filter((item): item is string => item !== undefined && item.length > 0);
-  return methods.length > 0 ? [...new Set(methods)] : ["GET"];
+  return methods.length > 0 ? [...new Set(methods)] : null;
+}
+
+function flaskMethodsLiteral(source: string): string | null {
+  const match = /^\s*methods\s*=\s*([[({])/u.exec(source);
+  if (match === null) {
+    return null;
+  }
+  const opener = match[1];
+  if (opener === undefined) {
+    return null;
+  }
+  const literalStart = match[0].length;
+  const closer = opener === "[" ? "]" : opener === "(" ? ")" : "}";
+  let quote: string | null = null;
+  let escaped = false;
+  let depth = 0;
+  for (let index = literalStart - 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      break;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === opener) {
+      depth += 1;
+      continue;
+    }
+    if (char === closer) {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(literalStart, index);
+      }
+    }
+  }
+  return null;
 }
 
 function parenDelta(line: string): number {

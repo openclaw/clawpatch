@@ -1340,6 +1340,56 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(admin?.trustBoundaries).toContain("auth");
   });
 
+  it("maps root-level Flask entry files and non-list methods", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-root-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "DYNAMIC_METHODS = ['POST']",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return 'submitted'",
+        "",
+        "@app.route('/token', methods={'POST', 'DELETE'})",
+        "def token():",
+        "    return 'token'",
+        "",
+        "@app.route('/dynamic', methods=DYNAMIC_METHODS)",
+        "def dynamic():",
+        "    return 'dynamic'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const routes = result.features.filter((feature) => feature.source === "python-flask-route");
+    const byTitle = (title: string) => routes.find((feature) => feature.title === title);
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(byTitle("Flask route GET /")?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(byTitle("Flask route POST /submit")?.tests).toEqual([
+      { path: "test_app.py", command: "pytest" },
+    ]);
+    expect(byTitle("Flask route POST,DELETE /token")?.trustBoundaries).toContain("auth");
+    expect(routes.map((feature) => feature.title)).not.toContain("Flask route GET /dynamic");
+  });
+
   it("does not map generic Python route decorators as Flask routes", async () => {
     const root = await fixtureRoot("clawpatch-python-generic-routes-");
     await writeFixture(root, "requirements.txt", "pytest\n");
