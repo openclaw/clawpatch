@@ -3082,6 +3082,18 @@ describe("mapFeatures", () => {
         "",
       ].join("\n"),
     );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/jobs/InternalHandler.kt",
+      [
+        "package com.example.jobs",
+        "",
+        "import org.framework.FrameworkBase",
+        "",
+        "class InternalHandler internal constructor(dep: Any) : FrameworkBase(dep)",
+        "",
+      ].join("\n"),
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -3096,6 +3108,9 @@ describe("mapFeatures", () => {
     expect(framework?.ownedFiles[0]?.reason).toContain("external type org.framework.FrameworkBase");
     expect(framework?.ownedFiles.map((file) => file.path)).toContain(
       "src/main/kotlin/com/example/jobs/InjectedHandler.kt",
+    );
+    expect(framework?.ownedFiles.map((file) => file.path)).toContain(
+      "src/main/kotlin/com/example/jobs/InternalHandler.kt",
     );
   });
 
