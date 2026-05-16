@@ -25,7 +25,7 @@ export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
   seeds.push(...(await cmakeTargets(root, files)));
   const alreadySeeded = new Set(
     seeds
-      .filter((seed) => seed.kind === "cli-command")
+      .filter((seed) => seed.kind === "cli-command" || seed.source === "cmake-test")
       .flatMap((seed) => [seed.entryPath, ...(seed.ownedFiles?.map((file) => file.path) ?? [])]),
   );
   seeds.push(...(await mainFunctionTargets(root, files, alreadySeeded)));
@@ -504,9 +504,12 @@ function readTargetSources(body: string, target: string): string[] {
 function readVariableWords(body: string, variable: string): string[] {
   const words: string[] = [];
   const escaped = variable.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const pattern = new RegExp(`^\\s*${escaped}\\s*(?:\\+?=)\\s*(.+)$`, "gmu");
+  const pattern = new RegExp(`^\\s*${escaped}\\s*(\\+?=)\\s*(.*)$`, "gmu");
   for (const match of body.matchAll(pattern)) {
-    words.push(...splitWords(match[1] ?? ""));
+    if (match[1] === "=") {
+      words.length = 0;
+    }
+    words.push(...splitWords(match[2] ?? ""));
   }
   return words;
 }

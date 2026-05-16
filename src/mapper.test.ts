@@ -1352,10 +1352,10 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(
       root,
       "CMakeLists.txt",
-      "add_executable(app src/app.cpp)\nadd_executable(unit_tests tests/unit_tests.cpp)\n",
+      "add_executable(app src/app.cpp)\nadd_executable(unit_tests src/unit.cpp)\n",
     );
     await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
-    await writeFixture(root, "tests/unit_tests.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/unit.cpp", "int main(void) { return 0; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -1366,11 +1366,12 @@ add_executable(headerapp include/headers.hpp)
 
     expect(titles).toContain("CMake binary app");
     expect(titles).not.toContain("CMake binary unit_tests");
+    expect(titles).not.toContain("C++ binary unit");
     expect(suite).toMatchObject({
       kind: "test-suite",
       source: "cmake-test",
-      entrypoints: [{ path: "tests/unit_tests.cpp", symbol: null, route: null, command: null }],
-      tests: [{ path: "tests/unit_tests.cpp", command: null }],
+      entrypoints: [{ path: "src/unit.cpp", symbol: null, route: null, command: null }],
+      ownedFiles: [{ path: "src/unit.cpp", reason: "target source" }],
     });
   });
 
@@ -1830,6 +1831,29 @@ add_executable(headerapp include/headers.hpp)
       { path: "util.c", reason: "target source" },
     ]);
     expect(core?.ownedFiles).toEqual([{ path: "core.c", reason: "target source" }]);
+  });
+
+  it("honors Automake assignment overrides", async () => {
+    const root = await fixtureRoot("clawpatch-autotools-override-");
+    await writeFixture(
+      root,
+      "Makefile.am",
+      "bin_PROGRAMS = old cleared\nbin_PROGRAMS = new\nold_SOURCES = old.c\nnew_SOURCES = stale.c\nnew_SOURCES = new.c\ncleared_SOURCES = cleared.c\ncleared_SOURCES =\n",
+    );
+    await writeFixture(root, "old.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "new.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "stale.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "cleared.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const target = result.features.find((feature) => feature.title === "Autotools binary new");
+
+    expect(titles).toContain("Autotools binary new");
+    expect(titles).not.toContain("Autotools binary old");
+    expect(titles).not.toContain("Autotools binary cleared");
+    expect(target?.ownedFiles).toEqual([{ path: "new.c", reason: "target source" }]);
   });
 
   it("maps standalone C main files without php-src extension semantics", async () => {
