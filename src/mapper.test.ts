@@ -3853,9 +3853,13 @@ add_executable(headerapp include/headers.hpp)
         feature.title === "CMake binary source_app" &&
         feature.entrypoints[0]?.path === "src/source.c",
     );
+    const sourceAppPaths = result.features
+      .filter((feature) => feature.title === "CMake binary source_app")
+      .map((feature) => feature.entrypoints[0]?.path);
 
     expect(projectApp?.entrypoints[0]?.path).toBe("sub/src/project.c");
     expect(sourceApp?.entrypoints[0]?.path).toBe("src/source.c");
+    expect(sourceAppPaths).toEqual(["src/source.c"]);
   });
 
   it("resolves nested CMake includes relative to the source dir", async () => {

@@ -369,11 +369,26 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       );
     }
   }
+  const discoveredContexts = preferredCMakeContexts([...contexts.values()]);
   return {
-    contexts: [...contexts.values()].toSorted((left, right) =>
+    contexts: discoveredContexts.toSorted((left, right) =>
       cmakeContextKey(left).localeCompare(cmakeContextKey(right)),
     ),
   };
+}
+
+function preferredCMakeContexts(contexts: CMakeContext[]): CMakeContext[] {
+  const byFile = new Map<string, CMakeContext[]>();
+  for (const context of contexts) {
+    byFile.set(context.file, [...(byFile.get(context.file) ?? []), context]);
+  }
+  return contexts.filter((context) => {
+    const fileContexts = byFile.get(context.file) ?? [];
+    if (fileContexts.length < 2 || context.cmakeSourceDir !== context.sourceDir) {
+      return true;
+    }
+    return !fileContexts.some((other) => other.cmakeSourceDir !== context.cmakeSourceDir);
+  });
 }
 
 function queueCMakeFile(
