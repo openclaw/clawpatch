@@ -55,8 +55,10 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
 - Java/Kotlin Gradle source groups and root Gradle build/test commands
-- JVM semantic roles from Java code evidence such as annotations, imports,
-  interfaces, inheritance, and method signatures
+- JVM semantic roles from Java and Kotlin code evidence such as annotations,
+  imports, interfaces, inheritance, supertypes, and method signatures
+- Kotlin Android semantic roles for UI entrypoints, ViewModels, data
+  boundaries, external clients, and dependency injection, including Metro
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
