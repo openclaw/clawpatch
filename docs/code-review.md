@@ -11,6 +11,7 @@ description: "How clawpatch reviews features with AI providers and persists find
 clawpatch review --limit 3
 clawpatch review --limit 12 --jobs 4
 clawpatch review --feature <featureId>
+clawpatch review --since origin/main
 clawpatch review --provider codex --model <model>
 ```
 
@@ -26,6 +27,24 @@ Current behavior:
 - writes findings under `.clawpatch/findings/`
 - appends analysis history to the feature record
 - releases the feature lock
+
+## Flags
+
+### --since <ref>
+
+Restrict review to features whose owned or context files have changed in
+`git diff --name-only --relative <ref>...HEAD`. Paths are compared relative to
+the selected project root, so `--root` may point at a subdirectory inside a
+larger Git repository. Useful for CI:
+
+```bash
+clawpatch review --since origin/main   # review what this branch changed
+clawpatch review --since HEAD~5        # review the last 5 commits
+```
+
+If no features are touched by the diff, `review` exits cleanly with no findings.
+The same flag is available on `revalidate`; revalidation scopes open findings to
+features whose owned files changed.
 
 Progress uses stderr so `--json` stdout remains machine-readable. The worker
 pool is per-process and still uses feature locks, so overlapping runs should not

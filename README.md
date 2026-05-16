@@ -45,18 +45,24 @@ validation commands and records a patch attempt under `.clawpatch/`.
 ## What It Maps Today
 
 - npm package bins
-- selected package scripts: `start`, `build`, `test`, `lint`, `typecheck`,
-  `format`
-- Node/TypeScript workspace packages and common nested frontend packages
-- bounded Node/TypeScript source groups
-- Next.js `app/` and `pages/` routes
+- selected root and workspace package scripts: `start`, `build`, `test`,
+  `lint`, `typecheck`, `format`
+- Node/TypeScript workspace packages under `apps/*`, `packages/*`, and package
+  workspace patterns
+- Nx project metadata from `project.json`, including project-scoped validation
+  targets
+- Next.js `app/` and `pages/` routes, including routes inside monorepo apps
 - React Router routes and React components
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
-- Python project metadata, console scripts, bounded source groups, pytest suites,
-  and FastAPI routes
+- Java/Kotlin Gradle source groups and root Gradle build/test commands
+- JVM semantic roles from Java code evidence such as annotations, imports,
+  interfaces, inheritance, and method signatures
+- Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
+- Python project metadata, console scripts, bounded source groups, pytest suites,
+  and Flask/FastAPI routes
 - SwiftPM `Sources/*` targets and `Tests/*` suites
 - common project config files
 
@@ -109,6 +115,7 @@ Useful flags:
 - `--limit <n>`
 - `--jobs <n>`
 - `--feature <id>`
+- `--project <name-or-root>`
 - `--finding <id>`
 - `--status <status>`
 - `--severity <severity>`

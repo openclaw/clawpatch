@@ -138,6 +138,137 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Route /_error");
   });
 
+  it("maps Next routes inside Nx workspace projects", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-workspace-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "yarn.lock", "");
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify(
+        {
+          name: "web",
+          sourceRoot: "apps/web/src",
+          projectType: "application",
+          targets: { test: {}, lint: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/api/things/route.ts",
+      "export function GET() { return new Response('ok'); }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/admin/package.json",
+      JSON.stringify({ name: "admin", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/project.json",
+      JSON.stringify({ name: "admin", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/src/pages/settings.tsx",
+      "export default function Settings() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const webRoute = result.features.find((feature) => feature.title === "web route /users/:id");
+    const adminRoute = result.features.find((feature) => feature.title === "admin route /settings");
+
+    expect(titles).toContain("web route /users/:id");
+    expect(titles).toContain("web route /api/things");
+    expect(titles).toContain("admin route /settings");
+    expect(webRoute?.entrypoints[0]?.path).toBe("apps/web/src/app/(dashboard)/users/[id]/page.tsx");
+    expect(webRoute?.entrypoints[0]?.route).toBe("/users/:id");
+    expect(webRoute?.tags).toEqual(
+      expect.arrayContaining(["project:web", "project-root:apps/web", "project-type:application"]),
+    );
+    expect(webRoute?.tests).toEqual([
+      {
+        path: "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+        command: "yarn nx test web",
+      },
+    ]);
+    expect(webRoute?.contextFiles).toContainEqual({
+      path: "apps/web/project.json",
+      reason: "project context",
+    });
+    expect(adminRoute?.tests.every((test) => test.command === "yarn nx test admin")).toBe(true);
+  });
+
+  it("maps Next routes inside Nx projects without package manifests", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-no-package-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "workspace-root" }, null, 2));
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(
+      root,
+      "apps/portal/project.json",
+      JSON.stringify(
+        {
+          name: "portal",
+          sourceRoot: "apps/portal/src",
+          projectType: "application",
+          targets: { test: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.tsx",
+      "export default function Account() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "portal route /account");
+
+    expect(route?.entrypoints[0]?.path).toBe("apps/portal/src/app/account/page.tsx");
+    expect(route?.tests).toEqual([
+      { path: "apps/portal/src/app/account/page.test.tsx", command: "pnpm nx test portal" },
+    ]);
+    expect(route?.tags).toEqual(
+      expect.arrayContaining([
+        "project:portal",
+        "project-root:apps/portal",
+        "project-type:application",
+      ]),
+    );
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -181,6 +312,235 @@ describe("mapFeatures", () => {
     expect(cli?.summary).toContain("source src/cli.ts");
   });
 
+  it("maps Ruby metadata, executables, source groups, and tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(
+      root,
+      "fixture.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'fixture-ruby'\n  spec.add_dependency 'redis'\nend\n",
+    );
+    await writeFixture(root, "Rakefile", "task :default\n");
+    await writeFixture(root, "exe/fixture", "#!/usr/bin/env ruby\nputs 'ok'\n");
+    await writeFixture(root, "script/helper.rb", "#!/usr/bin/env ruby\nputs 'helper'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(
+      root,
+      "lib/fixture/client.rb",
+      "module Fixture\n  class Client\n  end\nend\n",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await writeFixture(
+        root,
+        `lib/fixture/type/type${String(index).padStart(2, "0")}.rb`,
+        "module Fixture\nend\n",
+      );
+    }
+    await writeFixture(root, "spec/fixture/client_spec.rb", "RSpec.describe Fixture::Client\n");
+    await writeFixture(root, "vendor/bundle/ignored.rb", "module Ignored\nend\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === "Ruby project fixture-ruby",
+    );
+    const cli = result.features.find((feature) => feature.title === "Ruby CLI command fixture");
+    const source = result.features.find((feature) => feature.title === "Ruby source lib/fixture");
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+    expect(titles).toContain("Ruby project fixture-ruby");
+    expect(titles).toContain("Ruby CLI command fixture");
+    expect(titles).toContain("Ruby CLI command helper.rb");
+    expect(titles).toContain("Ruby Rake tasks");
+    expect(titles).toContain("Ruby source lib");
+    expect(titles).toContain("Ruby source lib/fixture");
+    expect(titles).toContain("Ruby source lib/fixture/type");
+    expect(titles).toContain("Ruby test suite spec");
+    expect(rubyProject?.ownedFiles).toContainEqual({
+      path: "fixture.gemspec",
+      reason: "ruby project metadata",
+    });
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(cli?.entrypoints[0]?.path).toBe("exe/fixture");
+    expect(source?.ownedFiles.map((ref) => ref.path)).toContain("lib/fixture/client.rb");
+    expect(source?.tests).toEqual([
+      { path: "spec/fixture/client_spec.rb", command: "bundle exec rspec" },
+    ]);
+    expect(
+      result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path)),
+    ).not.toContain("vendor/bundle/ignored.rb");
+  });
+
+  it("treats gems.rb projects as Bundler-backed", async () => {
+    const root = await fixtureRoot("clawpatch-map-gems-rb-");
+    await writeFixture(
+      root,
+      "gems.rb",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(root, "spec/fixture_spec.rb", "RSpec.describe Fixture\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+  });
+
+  it("maps Gemfile-only Jekyll sites without mistaking dependencies for project names", async () => {
+    const root = await fixtureRoot("clawpatch-map-jekyll-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'jekyll'\ngem 'jekyll-feed'\ngem 'hive-ruby'\n",
+    );
+    await writeFixture(root, "_config.yml", "title: Docs\n");
+    await writeFixture(root, "index.md", "---\nlayout: home\n---\n");
+    await writeFixture(root, "_layouts/default.html", "{{ content }}\n");
+    await writeFixture(root, "_includes/header.html", "<header></header>\n");
+    await writeFixture(root, "_sass/site.scss", "body { color: black; }\n");
+    await writeFixture(root, "assets/main.scss", "---\n---\n@import 'site';\n");
+    await writeFixture(root, "_posts/2021-01-01-one.md", "---\ntitle: One\n---\n");
+    await writeFixture(root, "_posts/2022-01-01-two.md", "---\ntitle: Two\n---\n");
+    await writeFixture(root, "_topics/ruby.md", "---\ntitle: Ruby\n---\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const siteConfig = result.features.find(
+      (feature) => feature.title === "Jekyll site configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("jekyll");
+    expect(titles).toContain(`Ruby project ${root.split("/").at(-1)}`);
+    expect(titles).not.toContain("Ruby project jekyll");
+    expect(titles).toContain("Jekyll site configuration");
+    expect(titles).toContain("Jekyll theme _layouts");
+    expect(titles).toContain("Jekyll theme _includes");
+    expect(titles).toContain("Jekyll theme _sass");
+    expect(titles).toContain("Jekyll content _posts/2021");
+    expect(titles).toContain("Jekyll content _posts/2022");
+    expect(titles).toContain("Jekyll content _topics");
+    expect(rubyProject?.entrypoints[0]?.symbol).toBeNull();
+    expect(siteConfig?.ownedFiles.map((ref) => ref.path)).toContain("index.md");
+  });
+
+  it("maps Rails app structure and skips common Rails binstubs", async () => {
+    const root = await fixtureRoot("clawpatch-map-rails-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "rails-webpacker-shell", dependencies: { "@rails/ujs": "1.0.0" } }),
+    );
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\ngem 'rails'\ngem 'pg'\n");
+    await writeFixture(root, "config/application.rb", "module FixtureRails\nend\n");
+    await writeFixture(root, "config/routes.rb", "Rails.application.routes.draw do\nend\n");
+    await writeFixture(root, "config/secrets.yml", "redacted: placeholder\n");
+    await writeFixture(
+      root,
+      "config/environments/test.rb",
+      "Rails.application.configure do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "config/initializers/filter.rb",
+      "Rails.application.config.filter_parameters += [:password]\n",
+    );
+    await writeFixture(root, "db/schema.rb", "ActiveRecord::Schema.define do\nend\n");
+    await writeFixture(
+      root,
+      "db/migrate/20200101000000_create_widgets.rb",
+      "class CreateWidgets < ActiveRecord::Migration[6.1]\nend\n",
+    );
+    await writeFixture(
+      root,
+      "bin/rails",
+      "#!/usr/bin/env ruby\nAPP_PATH = '../config/application'\n",
+    );
+    await writeFixture(
+      root,
+      "app/controllers/widgets_controller.rb",
+      "class WidgetsController < ApplicationController\nend\n",
+    );
+    await writeFixture(root, "app/models/widget.rb", "class Widget < ApplicationRecord\nend\n");
+    await writeFixture(root, "app/views/widgets/index.html.haml", "%h1 Widgets\n");
+    await writeFixture(root, "app/views/widgets/index.json.jbuilder", "json.widgets []\n");
+    await writeFixture(root, "app/assets/javascripts/widgets.coffee", "console.log 'widgets'\n");
+    await writeFixture(root, "app/assets/stylesheets/widgets.scss", ".widgets { color: black; }\n");
+    await writeFixture(
+      root,
+      "app/javascript/controllers/widgets_controller.js",
+      "export function connect() {}\n",
+    );
+    await writeFixture(root, "src/client.ts", "export function client() {}\n");
+    await writeFixture(root, "lib/client.ts", "export function libClient() {}\n");
+    await writeFixture(root, "pages/home.tsx", "export function Home() { return null; }\n");
+    await writeFixture(
+      root,
+      "test/controllers/widgets_controller_test.rb",
+      "class WidgetsControllerTest\nend\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const referencedFiles = result.features.flatMap((feature) => [
+      ...feature.ownedFiles.map((ref) => ref.path),
+      ...feature.contextFiles.map((ref) => ref.path),
+    ]);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const railsConfig = result.features.find(
+      (feature) => feature.title === "Rails application configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("rails");
+    expect(titles).not.toContain("Ruby CLI command rails");
+    expect(titles).not.toContain("Node source app");
+    expect(titles).not.toContain("Node source app/assets");
+    expect(titles).toContain("Node source app/javascript");
+    expect(titles).toContain("Node source src");
+    expect(titles).toContain("Node source lib");
+    expect(titles).toContain("Node source pages");
+    expect(titles).toContain("Rails application configuration");
+    expect(titles).toContain("Rails database schema and migrations");
+    expect(titles).toContain("Rails views app/views");
+    expect(titles).toContain("Rails assets app/assets");
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).toContain("config/routes.rb");
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain("config/secrets.yml");
+    expect(
+      result.features.filter((feature) =>
+        feature.ownedFiles.some(
+          (ref) => ref.path === "app/javascript/controllers/widgets_controller.js",
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(referencedFiles).not.toContain("config/secrets.yml");
+  });
+
   it("maps workspace packages and splits large Node source groups", async () => {
     const root = await fixtureRoot("clawpatch-node-workspace-map-");
     await writeFixture(
@@ -214,7 +574,15 @@ describe("mapFeatures", () => {
       root,
       "packages/core/package.json",
       JSON.stringify(
-        { name: "@scope/core", bin: { corecli: "src/cli.ts" }, scripts: { test: "vitest run" } },
+        {
+          name: "@scope/core",
+          bin: { corecli: "src/cli.ts" },
+          scripts: {
+            build: "tsc -p tsconfig.json",
+            lint: "oxlint .",
+            test: "vitest run",
+          },
+        },
         null,
         2,
       ),
@@ -314,6 +682,15 @@ describe("mapFeatures", () => {
       (feature) => feature.entrypoints[0]?.symbol === "packages/core/src/gateway",
     );
     const cli = result.features.find((feature) => feature.title === "CLI command corecli");
+    const workspaceBuild = result.features.find(
+      (feature) => feature.title === "Package script build (@scope/core)",
+    );
+    const workspaceLint = result.features.find(
+      (feature) => feature.title === "Package script lint (@scope/core)",
+    );
+    const workspaceTest = result.features.find(
+      (feature) => feature.title === "Package script test (@scope/core)",
+    );
 
     expect(titles).toContain("Node package @scope/core");
     expect(titles).toContain("Node package chat-plugin");
@@ -325,6 +702,11 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Node package outside-workspace");
     expect(titles).not.toContain("Node package evil-package");
     expect(titles).toContain("Node source plugins/chat/src");
+    expect(titles).toContain("Package script test");
+    expect(workspaceBuild?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceBuild?.summary).toContain("packages/core/package.json");
+    expect(workspaceLint?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceTest?.entrypoints[0]?.path).toBe("packages/core/package.json");
     expect(agentGroups.length).toBeGreaterThan(1);
     expect(agentGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
     expect(gateway?.ownedFiles).toEqual([
@@ -1604,6 +1986,55 @@ describe("mapFeatures", () => {
     expect(titles).toContain("Gradle source src");
     expect(titles).toContain("Gradle test suite src");
     expect(titles.some((title) => title.includes("./src"))).toBe(false);
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Kotlin and Gradle commands for Groovy Gradle root projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-kotlin-gradle-detect-");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'org.jetbrains.kotlin.jvm' }\n");
+    await writeFixture(root, "src/main/kotlin/com/example/app/App.kt", "class App\n");
+    await writeFixture(root, "src/test/kotlin/com/example/app/AppTest.kt", "class AppTest\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Java and wrapper Gradle commands for root Gradle projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-java-gradle-detect-");
+    await writeFixture(root, "gradlew", "#!/bin/sh\n");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'java' }\n");
+    await writeFixture(root, "src/main/java/com/example/App.java", "class App {}\n");
+    await writeFixture(root, "src/test/java/com/example/AppTest.java", "class AppTest {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("java");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "./gradlew build",
+      test: "./gradlew test",
+    });
+  });
+
+  it("does not detect Java from documentation-only Java files", async () => {
+    const root = await fixtureRoot("clawpatch-docs-java-detect-");
+    await writeFixture(root, "docs/Example.java", "class Example {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).not.toContain("java");
   });
 
   it("maps build.gradle-only roots without empty Gradle groups", async () => {
@@ -1637,8 +2068,223 @@ describe("mapFeatures", () => {
     const titles = result.features.map((feature) => feature.title);
 
     expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands.typecheck).toBeNull();
+    expect(project.detected.commands.test).toBeNull();
     expect(titles).toContain("Gradle module apps/android");
     expect(titles).toContain("Gradle source apps/android/src");
+  });
+
+  it("maps JVM role features from Java code evidence", async () => {
+    const root = await fixtureRoot("clawpatch-jvm-role-map-");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("java") }\n');
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/api/OrderController.java",
+      [
+        "package com.acme.api;",
+        "",
+        "import org.springframework.web.bind.annotation.GetMapping;",
+        "import org.springframework.web.bind.annotation.RestController;",
+        "",
+        "@RestController",
+        "public class OrderController {",
+        '  @GetMapping("/orders")',
+        '  public String list() { return "ok"; }',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/app/BillingService.java",
+      [
+        "package com.acme.app;",
+        "",
+        "import org.springframework.stereotype.Service;",
+        "",
+        "@Service",
+        "public class BillingService {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/db/OrderEntity.java",
+      [
+        "package com.acme.db;",
+        "",
+        "import jakarta.persistence.Entity;",
+        "",
+        "@Entity",
+        "public class OrderEntity {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/client/RemoteClient.java",
+      [
+        "package com.acme.client;",
+        "",
+        "import java.net.http.HttpClient;",
+        "",
+        "public class RemoteClient {",
+        "  private final HttpClient client = HttpClient.newHttpClient();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/client/UriHolder.java",
+      [
+        "package com.acme.client;",
+        "",
+        "import java.net.URI;",
+        "",
+        "public class UriHolder {",
+        "  private final URI endpoint;",
+        "  public UriHolder(URI endpoint) { this.endpoint = endpoint; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/jobs/JobFactory.java",
+      [
+        "package com.acme.jobs;",
+        "",
+        "import org.scheduler.Job;",
+        "",
+        "public class JobFactory {",
+        "  public Job buildJob() { return null; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/jobs/GenericJobFactory.java",
+      [
+        "package com.acme.jobs;",
+        "",
+        "import org.scheduler.Job;",
+        "import org.scheduler.JobFactoryBase;",
+        "",
+        "public class GenericJobFactory<T> extends JobFactoryBase<T> {",
+        "  public Job<T> buildJob() { return null; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/PluginAdapter.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "public class PluginAdapter implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/RecordPlugin.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "public record RecordPlugin(String name) implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "final class Helper {}",
+        "public class HelperFirstAdapter implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/local/LocalCommandAdapter.java",
+      [
+        "package com.acme.local;",
+        "",
+        "import com.acme.local.Command;",
+        "",
+        "interface Command {}",
+        "public class LocalCommandAdapter implements Command {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/google/myapp/GuavaAdapter.java",
+      [
+        "package com.google.myapp;",
+        "",
+        "import com.google.common.util.concurrent.Service;",
+        "",
+        "public class GuavaAdapter implements Service {}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const bySource = new Map(result.features.map((feature) => [feature.source, feature]));
+
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(bySource.get("jvm-role-web-entrypoint")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/api/OrderController.java",
+    );
+    expect(bySource.get("jvm-role-application-service")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/app/BillingService.java",
+    );
+    expect(bySource.get("jvm-role-persistence-boundary")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/db/OrderEntity.java",
+    );
+    expect(bySource.get("jvm-role-external-client")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/client/RemoteClient.java",
+    );
+    expect(
+      bySource
+        .get("jvm-role-framework-component")
+        ?.ownedFiles.map((file) => file.path)
+        .toSorted(),
+    ).toEqual(
+      [
+        "src/main/java/com/google/myapp/GuavaAdapter.java",
+        "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+        "src/main/java/com/acme/ext/PluginAdapter.java",
+        "src/main/java/com/acme/ext/RecordPlugin.java",
+        "src/main/java/com/acme/jobs/GenericJobFactory.java",
+        "src/main/java/com/acme/jobs/JobFactory.java",
+      ].toSorted(),
+    );
+    expect(
+      bySource
+        .get("jvm-role-extension-boundary")
+        ?.ownedFiles.map((file) => file.path)
+        .toSorted(),
+    ).toEqual([
+      "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+      "src/main/java/com/acme/ext/PluginAdapter.java",
+      "src/main/java/com/acme/ext/RecordPlugin.java",
+      "src/main/java/com/acme/local/LocalCommandAdapter.java",
+      "src/main/java/com/google/myapp/GuavaAdapter.java",
+    ]);
   });
 
   it("ignores vendored SwiftPM manifests during detection", async () => {
@@ -2070,1878 +2716,6 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
   });
 
-  it("maps FastAPI app and router routes with include prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-map-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "fastapi-app"\ndependencies = ["fastapi", "pytest"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import Depends, FastAPI",
-        "from backend.routes.auth_routes import router as auth_router",
-        "from backend.routes.health_routes import router as health_router",
-        "from backend.api import api_router",
-        "def auth():",
-        "    return True",
-        "app = FastAPI()",
-        'app.include_router(auth_router, dependencies=[Depends(auth)], prefix="/api/v1/auth")',
-        "app.include_router(health_router)",
-        'app.include_router(router=api_router, prefix="/api/v1")',
-        'app.include_router(router=api_router, prefix="/api/v2")',
-        '@app.get("/health")',
-        "def health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/api.py",
-      [
-        "from fastapi import APIRouter",
-        "from backend.routes import (",
-        "    case_routes,",
-        ")",
-        "api_router = APIRouter()",
-        'api_router.include_router(case_routes.router, prefix="/cases")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/health_routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter(",
-        '    # prefix="/stale",',
-        '    prefix="/v1",',
-        ")",
-        '@router.get("/ready")',
-        "def ready():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/auth_routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.post("/login")',
-        "def login():",
-        "    return {'token': 'x'}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/case_routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/{case_id}")',
-        "async def get_case(case_id: str):",
-        "    return {'id': case_id}",
-      ].join("\n"),
-    );
-    await writeFixture(root, "tests/test_case_routes.py", "def test_get_case():\n    pass\n");
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-    const caseRoute = result.features.find(
-      (feature) => feature.title === "FastAPI route GET /api/v1/cases/{case_id}",
-    );
-
-    expect(titles).toContain("FastAPI route GET /health");
-    expect(titles).toContain("FastAPI route GET /v1/ready");
-    expect(titles).toContain("FastAPI route POST /api/v1/auth/login");
-    expect(titles).toContain("FastAPI route GET /api/v2/cases/{case_id}");
-    expect(caseRoute?.source).toBe("fastapi-route");
-    expect(caseRoute?.entrypoints[0]).toMatchObject({
-      path: "backend/routes/case_routes.py",
-      symbol: "get_case",
-      route: "GET /api/v1/cases/{case_id}",
-    });
-    expect(caseRoute?.tests).toEqual([{ path: "tests/test_case_routes.py", command: "pytest" }]);
-  });
-
-  it("maps root-level FastAPI app modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-root-map-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "fastapi-root"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "import fastapi",
-        "app: fastapi.FastAPI = fastapi.FastAPI()",
-        '# @app.get("/old")',
-        "@app.get(",
-        '    # path="/stale",',
-        '    "/health",',
-        "    response_model=dict,",
-        ")",
-        "def health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(result.features.map((feature) => feature.title)).toContain("FastAPI route GET /health");
-    expect(result.features.map((feature) => feature.title)).not.toContain("FastAPI route GET /old");
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /stale",
-    );
-  });
-
-  it("maps root-only FastAPI apps without project metadata", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-root-only-map-");
-    await writeFixture(
-      root,
-      "server.py",
-      [
-        "from fastapi import FastAPI",
-        "app = FastAPI()",
-        '@app.get("/health")',
-        "def health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(project.detected.languages).toContain("python");
-    expect(result.features.map((feature) => feature.title)).toContain("FastAPI route GET /health");
-  });
-
-  it("does not detect root-only FastAPI apps through symlinked modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-root-symlink-");
-    const external = await fixtureRoot("clawpatch-fastapi-root-symlink-external-");
-    await writeFixture(
-      external,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "app = FastAPI()",
-        '@app.get("/outside")',
-        "def outside():",
-        "    return {}",
-      ].join("\n"),
-    );
-    await symlink(join(external, "main.py"), join(root, "main.py"));
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(project.detected.languages).not.toContain("python");
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /outside",
-    );
-  });
-
-  it("ignores quoted text in Python comments while mapping FastAPI routes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-comment-quotes-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "app = FastAPI()",
-        "# don't break parser",
-        '@app.get("/health")',
-        "def health():",
-        "    return {}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(result.features.map((feature) => feature.title)).toContain("FastAPI route GET /health");
-  });
-
-  it("does not map unimported APIRouter constructors as FastAPI routes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-unimported-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "src/app.py",
-      [
-        "from other import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/fake")',
-        "def fake():",
-        "    return {}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /fake",
-    );
-  });
-
-  it("ignores import-like strings when resolving FastAPI router aliases", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-string-import-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/fake.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/fake")',
-        "def fake():",
-        "    return {}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        "app = FastAPI()",
-        "router = APIRouter()",
-        'example = """',
-        "from backend.fake import router",
-        '"""',
-        'app.include_router(router, prefix="/api")',
-        '@router.get("/real")',
-        "def real():",
-        "    return {}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/real");
-    expect(titles).not.toContain("FastAPI route GET /api/fake");
-  });
-
-  it("applies FastAPI include prefixes from non-app application variables", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-named-app-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "named-fastapi"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes.items import router",
-        "api: FastAPI = FastAPI()",
-        'api.include_router(router, prefix="/v1")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/items.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("")',
-        "def collection():",
-        "    return []",
-        '@router.get("/items")',
-        "def items():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /v1/items");
-    expect(titles).toContain("FastAPI route GET /v1");
-    expect(titles).not.toContain("FastAPI route GET /v1/");
-    expect(titles).not.toContain("FastAPI route GET /items");
-  });
-
-  it("maps FastAPI routes through constructor aliases", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-constructor-aliases-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "import fastapi as fa",
-        "from fastapi import APIRouter as Router, FastAPI as API",
-        "app = API()",
-        'router = Router(prefix="/api")',
-        "module_router = fa.APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-        '@module_router.get("/health")',
-        "def health():",
-        "    return {'ok': True}",
-        "app.include_router(router)",
-        'app.include_router(module_router, prefix="/ops")',
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).toContain("FastAPI route GET /ops/health");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("maps FastAPI routes through parenthesized constructor aliases", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-parenthesized-aliases-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import (",
-        "    APIRouter as Router,",
-        "    FastAPI as API,",
-        ")",
-        "app = API()",
-        'router = Router(prefix="/api")',
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-        "app.include_router(router)",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("applies same-file FastAPI router include prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-local-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "import fastapi",
-        "from fastapi import Depends, FastAPI",
-        "def auth():",
-        "    return True",
-        "app = FastAPI()",
-        '# router = fastapi.APIRouter(prefix="/stale")',
-        'router: fastapi.APIRouter = fastapi.APIRouter(dependencies=[Depends(auth)], prefix="/v1")',
-        'api_router = fastapi.APIRouter(prefix="/api")',
-        "users_router = fastapi.APIRouter()",
-        'app.include_router(router, prefix="/api")',
-        'app.include_router(router, prefix="/admin")',
-        'app.include_router(api_router, prefix="/service")',
-        'api_router.include_router(users_router, prefix="/users")',
-        '# app.include_router(router, prefix="/disabled")',
-        '@router.get("/items")',
-        "def items():",
-        "    return []",
-        '@router.post(path="/keyword")',
-        "def keyword():",
-        "    return []",
-        '@users_router.get("/active")',
-        "def active_users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(result.features.map((feature) => feature.title)).toContain(
-      "FastAPI route GET /admin/v1/items",
-    );
-    expect(result.features.map((feature) => feature.title)).toContain(
-      "FastAPI route POST /admin/v1/keyword",
-    );
-    expect(result.features.map((feature) => feature.title)).toContain(
-      "FastAPI route GET /api/v1/items",
-    );
-    expect(result.features.map((feature) => feature.title)).toContain(
-      "FastAPI route POST /api/v1/keyword",
-    );
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /disabled/v1/items",
-    );
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /api/stale/items",
-    );
-    expect(result.features.map((feature) => feature.title)).toContain(
-      "FastAPI route GET /service/api/users/active",
-    );
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /api/users/active",
-    );
-  });
-
-  it("propagates child-before-parent FastAPI router prefixes in one file", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-local-prefix-order-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        "app = FastAPI()",
-        "api = APIRouter()",
-        "v1 = APIRouter()",
-        "users = APIRouter()",
-        'v1.include_router(users, prefix="/users")',
-        'api.include_router(v1, prefix="/v1")',
-        'app.include_router(api, prefix="/api")',
-        '@users.get("/active")',
-        "def active_users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/v1/users/active");
-    expect(titles).not.toContain("FastAPI route GET /active");
-    expect(titles).not.toContain("FastAPI route GET /v1/users/active");
-  });
-
-  it("ignores commented FastAPI include prefixes and maps TRACE routes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-commented-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        "app = FastAPI()",
-        "router = APIRouter(",
-        '    # prefix="/stale",',
-        '    prefix="/v1",',
-        ")",
-        "example = '''",
-        '@router.get("/fake")',
-        "def fake():",
-        "    return []",
-        "'''",
-        "app.include_router(",
-        "    router,",
-        '    # prefix="/old",',
-        '    prefix="/api",',
-        ")",
-        '@router.trace("/trace")',
-        "def trace():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route TRACE /api/v1/trace");
-    expect(titles).not.toContain("FastAPI route GET /api/fake");
-    expect(titles).not.toContain("FastAPI route TRACE /api/stale/trace");
-    expect(titles).not.toContain("FastAPI route TRACE /old/v1/trace");
-  });
-
-  it("maps FastAPI include prefixes in src layouts and relative imports", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-src-map-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "fastapi-src"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "src/myapp/__init__.py", "");
-    await writeFixture(
-      root,
-      "src/myapp/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from fastapi import APIRouter",
-        "from myapp.routes.auth import router as auth_router  # noqa",
-        "from .routes.health import router as health_router",
-        "from . import routes",
-        "from .api import router as api_router",
-        "app = FastAPI()",
-        "router = APIRouter()",
-        'app.include_router(router, prefix="/local")',
-        'app.include_router(auth_router, prefix="/api")',
-        "app.include_router(health_router)",
-        'app.include_router(routes.router, prefix="/v1")',
-        'app.include_router(api_router, prefix="/nested")',
-        '@router.get("/ping")',
-        "def local_ping():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/myapp/api.py",
-      [
-        "from fastapi import APIRouter",
-        "from .routes.users import router as users_router",
-        'router = APIRouter(prefix="/api")',
-        'router.include_router(users_router, prefix="/users")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/myapp/routes/auth.py",
-      [
-        "from fastapi import APIRouter",
-        'router = APIRouter(prefix="/users")',
-        '@router.get("/login")',
-        "def login():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/myapp/routes/health.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/ready")',
-        "def ready():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/myapp/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/status")',
-        "def status():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/myapp/routes/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/{user_id}")',
-        "def user(user_id: str):",
-        "    return {'id': user_id}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users/login");
-    expect(titles).toContain("FastAPI route GET /local/ping");
-    expect(titles).toContain("FastAPI route GET /ready");
-    expect(titles).toContain("FastAPI route GET /v1/status");
-    expect(titles).toContain("FastAPI route GET /nested/api/users/{user_id}");
-    expect(titles).not.toContain("FastAPI route GET /api/users/{user_id}");
-  });
-
-  it("does not map Flask decorators as FastAPI routes", async () => {
-    const root = await fixtureRoot("clawpatch-flask-not-fastapi-");
-    await writeFixture(root, "requirements.txt", "flask\n");
-    await writeFixture(
-      root,
-      "app.py",
-      [
-        "from flask import Flask",
-        "app = Flask(__name__)",
-        '@app.get("/health")',
-        "def health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-
-    expect(result.features.map((feature) => feature.title)).not.toContain(
-      "FastAPI route GET /health",
-    );
-  });
-
-  it("does not map non-FastAPI decorators in mixed Python apps", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-mixed-decorators-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "mixed"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "from flask import Flask",
-        "app = FastAPI()",
-        "flask_app = Flask(__name__)",
-        '@app.get("/api/health")',
-        "def api_health():",
-        "    return {'ok': True}",
-        '@flask_app.get("/flask/health")',
-        "def flask_health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/health");
-    expect(titles).not.toContain("FastAPI route GET /flask/health");
-  });
-
-  it("ignores unresolved FastAPI router imports when assigning prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-unresolved-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "from shared import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/shared")',
-        '@app.get("/health")',
-        "def health():",
-        "    return {'ok': True}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /health");
-    expect(titles).not.toContain("FastAPI route GET /shared/health");
-  });
-
-  it("keeps FastAPI prefixes separate for multiple routers in one module", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-multi-router-module-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes.routers import admin_router, public_router as mounted_router",
-        "app = FastAPI()",
-        'app.include_router(mounted_router, prefix="/public")',
-        'app.include_router(admin_router, prefix="/admin")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/routers.py",
-      [
-        "from fastapi import APIRouter",
-        "public_router = APIRouter()",
-        "admin_router = APIRouter()",
-        "child_router = APIRouter()",
-        'admin_router.include_router(child_router, prefix="/child")',
-        '@public_router.get("/users")',
-        "def users():",
-        "    return []",
-        '@admin_router.get("/stats")',
-        "def stats():",
-        "    return []",
-        '@child_router.get("/logs")',
-        "def logs():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /public/users");
-    expect(titles).toContain("FastAPI route GET /admin/stats");
-    expect(titles).not.toContain("FastAPI route GET /admin/users");
-    expect(titles).not.toContain("FastAPI route GET /public/stats");
-  });
-
-  it("does not apply an imported FastAPI router prefix to unmounted sibling routers", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-unmounted-router-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes.routers import public_router",
-        "app = FastAPI()",
-        'app.include_router(public_router, prefix="/public")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/routers.py",
-      [
-        "from fastapi import APIRouter",
-        "public_router = APIRouter()",
-        "admin_router = APIRouter()",
-        "child_router = APIRouter()",
-        'admin_router.include_router(child_router, prefix="/child")',
-        '@public_router.get("/users")',
-        "def users():",
-        "    return []",
-        '@admin_router.get("/stats")',
-        "def stats():",
-        "    return []",
-        '@child_router.get("/logs")',
-        "def logs():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /public/users");
-    expect(titles).toContain("FastAPI route GET /stats");
-    expect(titles).toContain("FastAPI route GET /child/logs");
-    expect(titles).not.toContain("FastAPI route GET /public/stats");
-    expect(titles).not.toContain("FastAPI route GET /public/child/logs");
-    expect(titles).not.toContain("FastAPI route GET /logs");
-  });
-
-  it("maps local and multi-segment FastAPI router includes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-local-and-dotted-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "import backend.routes",
-        "app = FastAPI()",
-        'app.include_router(backend.routes.router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes.py",
-      [
-        "from fastapi import APIRouter",
-        'router = APIRouter(prefix="/v1")',
-        "users_router = APIRouter()",
-        'router.include_router(users_router, prefix="/users")',
-        '@users_router.get("/{user_id}")',
-        "def user(user_id: str):",
-        "    return {'id': user_id}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/v1/users/{user_id}");
-    expect(titles).not.toContain("FastAPI route GET /{user_id}");
-  });
-
-  it("resolves simple FastAPI include prefix constants", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-constant-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        'API_PREFIX = "/api/v1"',
-        "app = FastAPI()",
-        "app.include_router(router, prefix=API_PREFIX)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/v1/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("resolves annotated FastAPI include prefix constants", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-annotated-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        'API_PREFIX: str = "/api"',
-        "app = FastAPI()",
-        "app.include_router(router, prefix=API_PREFIX)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("resolves simple FastAPI APIRouter prefix constants", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-router-prefix-constant-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        'API_PREFIX = "/api"',
-        "app = FastAPI()",
-        "router = APIRouter(prefix=API_PREFIX)",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-        "app.include_router(router)",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not map FastAPI APIRouter routes with unresolved router prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-router-prefix-unresolved-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        "app = FastAPI()",
-        "router = APIRouter(prefix=settings.api_prefix)",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-        "app.include_router(router)",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("maps root FastAPI apps with sibling router modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-root-sibling-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "from routes import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-    const users = result.features.find(
-      (feature) => feature.title === "FastAPI route GET /api/users",
-    );
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(users?.contextFiles).toContainEqual({
-      path: "main.py",
-      reason: "FastAPI include_router mount",
-    });
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not resolve bare FastAPI imports to nested sibling modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-bare-import-no-suffix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import FastAPI",
-        "from routes import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(root, "src/myapp/__init__.py", "");
-    await writeFixture(
-      root,
-      "src/myapp/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/users");
-  });
-
-  it("resolves src-layout package re-exports for FastAPI prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-src-package-reexport-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "src/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from api import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(root, "src/api/__init__.py", "from .users import router\n");
-    await writeFixture(
-      root,
-      "src/api/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("resolves flat src-layout FastAPI router imports", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-flat-src-import-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "src/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from routes import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "src/app/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/wrong")',
-        "def wrong():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /api/wrong");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("reads FastAPI include prefixes only from top-level arguments", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-top-level-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import Depends, FastAPI",
-        "from backend.users import router",
-        "app = FastAPI()",
-        "def dep(prefix: str):",
-        "    return prefix",
-        'app.include_router(router, dependencies=[Depends(dep(prefix="wrong"))], prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /wrong/users");
-  });
-
-  it("ignores Python comments while balancing FastAPI call arguments", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-commented-delimiter-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import Depends, FastAPI",
-        "from backend.users import router",
-        "app = FastAPI()",
-        "def dep(note: str):",
-        "    return note",
-        "app.include_router(",
-        "    router,  # mounted here)",
-        "    dependencies=[Depends(dep(note='issue #1'))],",
-        '    prefix="/api",',
-        ")",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        "@router.get(",
-        '    "/users",  # route closes later)',
-        ")",
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("reads FastAPI route keyword paths only from top-level arguments", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-top-level-route-path-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(
-      root,
-      "main.py",
-      [
-        "from fastapi import Depends, FastAPI",
-        "app = FastAPI()",
-        "def dep(path: str):",
-        "    return path",
-        '@app.get(dependencies=[Depends(dep(path="/wrong"))], path="/right")',
-        "def route():",
-        "    return {}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /right");
-    expect(titles).not.toContain("FastAPI route GET /wrong");
-  });
-
-  it("does not map FastAPI routes through unresolved include prefix expressions", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-unresolved-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix=settings.api_prefix + "/v1")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not propagate FastAPI prefixes through dynamic include targets", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-dynamic-include-target-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import get_router",
-        "app = FastAPI()",
-        'app.include_router(get_router(), prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        "def get_router():",
-        "    return router",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/users");
-  });
-
-  it("does not resolve FastAPI prefix constants from function scope", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-function-scope-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        "app = FastAPI()",
-        "def configure():",
-        '    API_PREFIX = "/api"',
-        "    return API_PREFIX",
-        "app.include_router(router, prefix=API_PREFIX)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not resolve FastAPI prefix constants from docstrings", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-docstring-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        '"""',
-        'API_PREFIX = "/wrong"',
-        '"""',
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        'API_PREFIX = "/api"',
-        "app = FastAPI()",
-        "app.include_router(router, prefix=API_PREFIX)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /wrong/users");
-  });
-
-  it("does not map nested FastAPI routers under unresolved parent prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-nested-unresolved-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import APIRouter, FastAPI",
-        "from backend.users import router as users_router",
-        "app = FastAPI()",
-        "api_router = APIRouter()",
-        'api_router.include_router(users_router, prefix="/users")',
-        "app.include_router(api_router, prefix=settings.api_prefix)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not infer imported FastAPI child routers under unresolved local prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-local-import-unresolved-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.api import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/api.py",
-      [
-        "from fastapi import APIRouter",
-        "from backend.routes.users import router as users_router",
-        "router = APIRouter()",
-        "router.include_router(users_router, prefix=settings.api_prefix)",
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/active")',
-        "def active_users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/v1/users/active");
-    expect(titles).not.toContain("FastAPI route GET /active");
-  });
-
-  it("does not infer FastAPI re-exported router routes under unresolved prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-reexport-unresolved-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes import router",
-        "app = FastAPI()",
-        "app.include_router(router, prefix=settings.api_prefix)",
-      ].join("\n"),
-    );
-    await writeFixture(root, "backend/routes/__init__.py", "from .users import router\n");
-    await writeFixture(
-      root,
-      "backend/routes/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /users");
-    expect(titles).not.toContain("FastAPI route GET /api/v1/users/users");
-  });
-
-  it("does not partially resolve composed FastAPI prefix constants", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-composed-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        'API_PREFIX = "/api"',
-        "app = FastAPI()",
-        'app.include_router(router, prefix=API_PREFIX + "/v1")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not partially resolve composed FastAPI prefix literals", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-composed-prefix-literal-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.users import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api" + "/v1")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/users.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).not.toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("does not double inferred FastAPI route file prefixes with router prefixes", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-inferred-router-prefix-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/routes/users.py",
-      [
-        "from fastapi import APIRouter",
-        'router = APIRouter(prefix="/users")',
-        '@router.get("/{id}")',
-        "def user(id: str):",
-        "    return {}",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /users/{id}");
-    expect(titles).not.toContain("FastAPI route GET /api/v1/users/users/{id}");
-  });
-
-  it("applies FastAPI prefixes to dotted router includes in multi-router modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-dotted-multi-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend import routes",
-        "app = FastAPI()",
-        'app.include_router(routes.router, prefix="/v1")',
-        'app.include_router(routes.admin_router, prefix="/admin")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        "admin_router = APIRouter()",
-        '@router.get("/status")',
-        "def status():",
-        "    return []",
-        '@admin_router.get("/stats")',
-        "def stats():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /v1/status");
-    expect(titles).toContain("FastAPI route GET /admin/stats");
-    expect(titles).not.toContain("FastAPI route GET /stats");
-    expect(titles).not.toContain("FastAPI route GET /v1/stats");
-  });
-
-  it("applies FastAPI prefixes to aliased routers in multi-router modules", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-aliased-router-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes import api as users_api",
-        "app = FastAPI()",
-        'app.include_router(users_api, prefix="/users")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes.py",
-      [
-        "from fastapi import APIRouter",
-        "api = APIRouter()",
-        "admin = APIRouter()",
-        '@api.get("/me")',
-        "def me():",
-        "    return []",
-        '@admin.get("/stats")',
-        "def stats():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /users/me");
-    expect(titles).toContain("FastAPI route GET /stats");
-    expect(titles).not.toContain("FastAPI route GET /me");
-    expect(titles).not.toContain("FastAPI route GET /users/stats");
-  });
-
-  it("applies FastAPI prefixes through package router re-exports", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-router-reexport-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes import router",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(root, "backend/routes/__init__.py", "from .users import router\n");
-    await writeFixture(
-      root,
-      "backend/routes/users.py",
-      [
-        "from fastapi import APIRouter",
-        'router = APIRouter(prefix="/v1")',
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/v1/users");
-    expect(titles).not.toContain("FastAPI route GET /v1/users");
-  });
-
-  it("prefers FastAPI router submodules over package files for router imports", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-router-submodule-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes import router",
-        "app = FastAPI()",
-        'app.include_router(router.router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/router.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.get("/users")',
-        "def users():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route GET /api/users");
-    expect(titles).not.toContain("FastAPI route GET /users");
-  });
-
-  it("resolves FastAPI *_router imports as modules before router objects", async () => {
-    const root = await fixtureRoot("clawpatch-fastapi-router-module-import-");
-    await writeFixture(
-      root,
-      "pyproject.toml",
-      '[project]\nname = "api"\ndependencies = ["fastapi"]\n',
-    );
-    await writeFixture(root, "backend/__init__.py", "");
-    await writeFixture(root, "backend/routes/__init__.py", "");
-    await writeFixture(
-      root,
-      "backend/main.py",
-      [
-        "from fastapi import FastAPI",
-        "from backend.routes import auth_router",
-        "app = FastAPI()",
-        'app.include_router(auth_router.router, prefix="/auth")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "backend/routes/auth_router.py",
-      [
-        "from fastapi import APIRouter",
-        "router = APIRouter()",
-        '@router.post("/login")',
-        "def login():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-
-    expect(titles).toContain("FastAPI route POST /auth/login");
-    expect(titles).not.toContain("FastAPI route POST /login");
-    expect(titles).not.toContain("FastAPI route POST /api/v1/auth/login");
-  });
-
   it("resolves Python console scripts and tests from non-src package roots", async () => {
     const root = await fixtureRoot("clawpatch-python-roots-");
     await writeFixture(
@@ -4044,6 +2818,21 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
         test: "uv run pytest",
       },
     });
+
+    const blackRoot = await fixtureRoot("clawpatch-python-black-");
+    await writeFixture(blackRoot, "requirements.txt", "black\n");
+    expect((await detectProject(blackRoot)).detected.commands.format).toBe("black --check .");
+
+    const uvBlackRoot = await fixtureRoot("clawpatch-python-uv-black-");
+    await writeFixture(
+      uvBlackRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-black"\ndependencies = ["black"]\n',
+    );
+    await writeFixture(uvBlackRoot, "uv.lock", "");
+    expect((await detectProject(uvBlackRoot)).detected.commands.format).toBe(
+      "uv run black --check .",
+    );
 
     const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
     await writeFixture(
@@ -4259,6 +3048,259 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
   });
 
+  it("maps Flask routes under web source roots", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/api/items', methods=['GET', 'POST'])",
+        "def items():",
+        "    return 'items'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/blueprints/admin.py",
+      [
+        "from flask import Blueprint",
+        "",
+        "admin_bp = Blueprint('admin', __name__)",
+        "",
+        "@admin_bp.route(",
+        "    '/admin/run-once',",
+        "    methods=['POST'],",
+        ")",
+        "def run_once():",
+        "    return 'queued'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "web/test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const index = result.features.find((feature) => feature.title === "Flask route GET /");
+    const items = result.features.find(
+      (feature) => feature.title === "Flask route GET,POST /api/items",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "Flask route POST /admin/run-once",
+    );
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(titles).toContain("Python source web");
+    expect(index?.source).toBe("python-flask-route");
+    expect(index?.entrypoints[0]).toMatchObject({
+      path: "web/app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(index?.tests).toEqual([{ path: "web/test_app.py", command: "pytest" }]);
+    expect(items?.entrypoints[0]?.route).toBe("GET,POST /api/items");
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("maps root-level Flask entry files and non-list methods", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-root-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "DYNAMIC_METHODS = ['POST']",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return 'submitted'",
+        "",
+        "@app.route('/token', methods={'POST', 'DELETE'})",
+        "def token():",
+        "    return 'token'",
+        "",
+        "@app.route('/dynamic', methods=DYNAMIC_METHODS)",
+        "def dynamic():",
+        "    return 'dynamic'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const routes = result.features.filter((feature) => feature.source === "python-flask-route");
+    const byTitle = (title: string) => routes.find((feature) => feature.title === title);
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(byTitle("Flask route GET /")?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(byTitle("Flask route POST /submit")?.tests).toEqual([
+      { path: "test_app.py", command: "pytest" },
+    ]);
+    expect(byTitle("Flask route POST,DELETE /token")?.trustBoundaries).toContain("auth");
+    expect(routes.map((feature) => feature.title)).not.toContain("Flask route GET /dynamic");
+  });
+
+  it("does not map generic Python route decorators as Flask routes", async () => {
+    const root = await fixtureRoot("clawpatch-python-generic-routes-");
+    await writeFixture(root, "requirements.txt", "pytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "class Router:",
+        "    def route(self, path):",
+        "        def wrapper(fn):",
+        "            return fn",
+        "        return wrapper",
+        "",
+        "router = Router()",
+        "",
+        "@router.route('/not-flask')",
+        "def handler():",
+        "    return 'ok'",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.frameworks).not.toContain("flask");
+    expect(result.features.some((feature) => feature.source === "python-flask-route")).toBe(false);
+  });
+
+  it("maps FastAPI routes in root and web source files", async () => {
+    const root = await fixtureRoot("clawpatch-python-fastapi-routes-");
+    await writeFixture(root, "requirements.txt", "fastapi\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "@app.get('/health')",
+        "async def health():",
+        "    return {'ok': True}",
+        "",
+        "@app.api_route('/webhook/{token}', methods=['GET', 'HEAD'])",
+        "def webhook(token: str):",
+        "    return token",
+        "",
+        "@app.api_route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.post(",
+        "    path='/admin/jobs',",
+        ")",
+        "def create_job():",
+        "    return {'queued': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "tests/test_app.py", "def test_health():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const health = result.features.find((feature) => feature.title === "FastAPI route GET /health");
+    const webhook = result.features.find(
+      (feature) => feature.title === "FastAPI route GET,HEAD /webhook/{token}",
+    );
+    const submit = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /submit",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /admin/jobs",
+    );
+
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(health?.source).toBe("python-fastapi-route");
+    expect(health?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+    expect(health?.tests).toEqual([{ path: "tests/test_app.py", command: "pytest" }]);
+    expect(webhook?.entrypoints[0]?.route).toBe("GET,HEAD /webhook/{token}");
+    expect(submit?.entrypoints[0]?.route).toBe("POST /submit");
+    expect(admin?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "create_job",
+      route: "POST /admin/jobs",
+    });
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("detects metadata-free root and web Python sources", async () => {
+    const root = await fixtureRoot("clawpatch-python-root-web-detect-");
+    await writeFixture(root, "app.py", "def app():\n    pass\n");
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.get(path='/health')",
+        "def health():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rootSource = result.features.find((feature) => feature.title === "Python source root");
+    const webRoute = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /health",
+    );
+
+    expect(project.detected.languages).toContain("python");
+    expect(project.detected.packageManagers).toContain("python");
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(rootSource?.ownedFiles).toEqual([{ path: "app.py", reason: "source group root" }]);
+    expect(webRoute?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+  });
+
   it("uses Hatch pytest commands in mapped Python features", async () => {
     const root = await fixtureRoot("clawpatch-python-hatch-map-");
     await writeFixture(
@@ -4368,6 +3410,60 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       { path: "setup.cfg", reason: "python project metadata" },
       { path: "requirements.txt", reason: "python project metadata" },
     ]);
+  });
+
+  it("maps setup.cfg Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-cfg-entry-points-");
+    await writeFixture(
+      root,
+      "setup.cfg",
+      [
+        "[metadata]",
+        "name = legacy-cli",
+        "",
+        "[options.entry_points]",
+        "console_scripts =",
+        "    legacy = legacy.cli:main",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "legacy/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "tests/test_cli.py", "def test_cli():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command legacy");
+
+    expect(titles).toContain("Python project legacy-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "legacy/cli.py", symbol: "main" });
+    expect(cli?.tests).toEqual([{ path: "tests/test_cli.py", command: "pytest" }]);
+  });
+
+  it("maps setup.py Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-py-entry-points-");
+    await writeFixture(
+      root,
+      "setup.py",
+      [
+        "from setuptools import setup",
+        "",
+        "setup(",
+        "    name='setup-cli',",
+        "    entry_points={'console_scripts': ['setcli=setup_cli.cli:main']},",
+        ")",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "setup_cli/cli.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command setcli");
+
+    expect(titles).toContain("Python project setup-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "setup_cli/cli.py", symbol: "main" });
   });
 
   it("keeps Python source group ids stable when a root gains files", async () => {

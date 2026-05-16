@@ -15,43 +15,26 @@ import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
 type PythonScript = {
   name: string;
   target: string;
+  metadataPath: string;
+};
+
+type FlaskRoute = {
+  filePath: string;
+  functionName: string;
+  routePath: string;
+  methods: string[];
+};
+
+type FastApiRoute = {
+  filePath: string;
+  functionName: string;
+  routePath: string;
+  methods: string[];
 };
 
 type SourceGroup = {
   label: string;
   files: string[];
-};
-
-type FastApiRoute = {
-  method: string;
-  path: string;
-  functionName: string;
-  file: string;
-};
-
-type FastApiPrefixInfo = {
-  filePrefixes: Map<string, string[]>;
-  routerMountPrefixesByFile: Map<string, Map<string, string[]>>;
-  blockedRouterMountsByFile: Map<string, Set<string>>;
-  fastApiReceiversByFile: Map<string, Set<string>>;
-  contextFilesByFile: Map<string, SeedFileRef[]>;
-};
-
-type PythonImportAliases = {
-  files: Map<string, string>;
-  routerNames: Map<string, string>;
-};
-
-type FastApiConstructorAliases = {
-  moduleNames: Set<string>;
-  appNames: Set<string>;
-  routerNames: Set<string>;
-};
-
-type IncludeRouterCall = {
-  receiver: string;
-  target: string;
-  prefix: string | null;
 };
 
 type PyprojectInfo = {
@@ -60,7 +43,20 @@ type PyprojectInfo = {
   hasPytest: boolean;
 };
 
-const sourceRoots = ["src", "app", "apps", "lib", "scripts"] as const;
+const sourceRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;
+const fastApiRouteTargetPattern = [
+  "(?:[A-Za-z_][A-Za-z0-9_]*\\.)*",
+  "(?:app|application|api|router|[A-Za-z_][A-Za-z0-9_]*(?:app|api|router))",
+].join("");
+const fastApiRouteMethods = "api_route|get|post|put|patch|delete|options|head|trace";
+const fastApiRouteDecoratorStartPattern = new RegExp(
+  `^@${fastApiRouteTargetPattern}\\.(?:${fastApiRouteMethods})\\(`,
+  "u",
+);
+const fastApiRouteDecoratorPattern = new RegExp(
+  `^\\s*@${fastApiRouteTargetPattern}\\.(${fastApiRouteMethods})\\((.*)\\)\\s*(?:#.*)?$`,
+  "u",
+);
 const projectMetadataFiles = [
   "pyproject.toml",
   "setup.py",
@@ -69,68 +65,65 @@ const projectMetadataFiles = [
 ] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
-const fastApiMethods = [
-  "get",
-  "post",
-  "put",
-  "patch",
-  "delete",
-  "options",
-  "head",
-  "trace",
+const flaskRootEntryFiles = [
+  "app.py",
+  "wsgi.py",
+  "application.py",
+  "server.py",
+  "main.py",
 ] as const;
 
 export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   if (!(await isPythonProject(root))) {
     return [];
   }
-  const pyproject = await readPyproject(root);
+  const metadata = await readPythonProjectMetadata(root);
   const metadataFiles = await pythonMetadataFiles(root);
-  const testCommand = await pythonTestCommand(root, pyproject);
+  const testCommand = await pythonTestCommand(root, metadata);
   const testFiles = await pythonTestFiles(root);
   const seeds: FeatureSeed[] = [];
 
   if (metadataFiles.length > 0) {
     seeds.push({
-      title: `Python project ${pyproject.name ?? basename(root)}`,
+      title: `Python project ${metadata.name ?? basename(root)}`,
       summary: `Python project metadata in ${metadataFiles.join(", ")}.`,
-      kind: packageKind(pyproject.name ?? basename(root)),
+      kind: packageKind(metadata.name ?? basename(root)),
       source: "python-project",
       confidence: "medium",
       entryPath: metadataFiles[0] ?? "pyproject.toml",
-      symbol: pyproject.name,
+      symbol: metadata.name,
       route: null,
       command: null,
       ownedFiles: metadataFiles.map((path) => ({ path, reason: "python project metadata" })),
       contextFiles: await pythonProjectContextFiles(root, metadataFiles),
       tags: ["python", "package"],
-      trustBoundaries: packageTrustBoundaries(pyproject.name ?? basename(root)),
+      trustBoundaries: packageTrustBoundaries(metadata.name ?? basename(root)),
       skipNearbyTests: true,
     });
   }
 
-  for (const script of pyproject.scripts) {
-    const resolved = await resolvePythonScript(root, script.target);
+  for (const script of metadata.scripts) {
+    const resolved = await resolvePythonScript(root, script.target, script.metadataPath);
     const tests =
-      resolved.entryPath === "pyproject.toml"
+      resolved.entryPath === script.metadataPath
         ? []
         : associatedTests([resolved.entryPath], testFiles, testCommand);
     seeds.push({
       title: `Python CLI command ${script.name}`,
       summary:
-        resolved.entryPath === "pyproject.toml"
+        resolved.entryPath === script.metadataPath
           ? `Python console script '${script.name}' targets ${script.target}.`
           : `Python console script '${script.name}' targets ${script.target}, source ${resolved.entryPath}.`,
       kind: "cli-command",
       source: "python-console-script",
-      confidence: resolved.entryPath === "pyproject.toml" ? "medium" : "high",
+      confidence: resolved.entryPath === script.metadataPath ? "medium" : "high",
       entryPath: resolved.entryPath,
       symbol: resolved.symbol,
       route: null,
       command: script.name,
       ownedFiles:
-        resolved.entryPath === "pyproject.toml"
-          ? [{ path: "pyproject.toml", reason: "console script metadata" }]
+        resolved.entryPath === script.metadataPath
+          ? [{ path: script.metadataPath, reason: "console script metadata" }]
           : [{ path: resolved.entryPath, reason: "console script source" }],
       contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
       tests,
@@ -139,6 +132,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
       testCommand,
       skipNearbyTests: true,
     });
+  }
+
+  for (const route of await flaskRouteSeeds(root, testFiles, testCommand)) {
+    seeds.push(route);
   }
 
   for (const route of await fastApiRouteSeeds(root, testFiles, testCommand)) {
@@ -177,1022 +174,6 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   return seeds;
 }
 
-async function fastApiRouteSeeds(
-  root: string,
-  testFiles: string[],
-  testCommand: string | null,
-): Promise<FeatureSeed[]> {
-  const files = await pythonSourceFiles(root);
-  const sources = new Map<string, string>();
-  for (const file of files) {
-    sources.set(file, await readFile(join(root, file), "utf8"));
-  }
-  if (!(await hasFastApiSignal(root, sources))) {
-    return [];
-  }
-  const prefixes = routePrefixes(sources);
-  const seeds: FeatureSeed[] = [];
-  for (const [file, source] of sources) {
-    for (const route of fastApiRoutesInFile(file, source, prefixes)) {
-      const tests = associatedTests([route.file], testFiles, testCommand);
-      seeds.push({
-        title: `FastAPI route ${route.method.toUpperCase()} ${route.path}`,
-        summary: `FastAPI ${route.method.toUpperCase()} route '${route.path}' handled by ${route.functionName}.`,
-        kind: "route",
-        source: "fastapi-route",
-        confidence: "high",
-        entryPath: route.file,
-        symbol: route.functionName,
-        route: `${route.method.toUpperCase()} ${route.path}`,
-        command: null,
-        ownedFiles: [{ path: route.file, reason: "route handler" }],
-        contextFiles: uniqueFileRefs([
-          ...(prefixes.contextFilesByFile.get(route.file) ?? []),
-          ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
-        ]),
-        tests,
-        tags: ["python", "fastapi", "route"],
-        trustBoundaries: ["user-input", "network", "serialization", "auth"],
-        testCommand,
-        skipNearbyTests: true,
-      });
-    }
-  }
-  return seeds;
-}
-
-async function pythonSourceFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  for (const file of await rootPythonAppFiles(root)) {
-    files.push(file);
-  }
-  for (const sourceRoot of await pythonSourceRoots(root)) {
-    files.push(...(await walk(root, [sourceRoot])).filter(isReviewablePythonSourceFile));
-  }
-  return uniquePaths(files);
-}
-
-async function rootPythonAppFiles(root: string): Promise<string[]> {
-  const files: string[] = [];
-  for (const entry of await readdir(root).catch(() => [])) {
-    if ((await isSafeFile(root, join(root, entry))) && isReviewablePythonSourceFile(entry)) {
-      files.push(entry);
-    }
-  }
-  for (const file of ["app.py", "main.py"]) {
-    if ((await isSafeFile(root, join(root, file))) && isReviewablePythonSourceFile(file)) {
-      files.push(file);
-    }
-  }
-  return uniquePaths(files);
-}
-
-function fastApiRoutesInFile(
-  file: string,
-  source: string,
-  prefixes: FastApiPrefixInfo,
-): FastApiRoute[] {
-  const routes: FastApiRoute[] = [];
-  const lines = source.split("\n");
-  const routerPrefixes = apiRouterPrefixes(source);
-  const routerMountPrefixes = prefixes.routerMountPrefixesByFile.get(file) ?? new Map();
-  const blockedRouterMounts = prefixes.blockedRouterMountsByFile.get(file) ?? new Set();
-  const acceptedReceivers = prefixes.fastApiReceiversByFile.get(file) ?? new Set();
-  for (const decorator of fastApiDecorators(source)) {
-    if (!acceptedReceivers.has(decorator.receiver)) {
-      continue;
-    }
-    const functionName = nextFunctionName(lines, decorator.lineIndex + 1);
-    if (functionName === null) {
-      continue;
-    }
-    const mountPrefixes = routerMountPrefixes.get(decorator.receiver);
-    if (mountPrefixes === undefined && blockedRouterMounts.has(decorator.receiver)) {
-      continue;
-    }
-    const filePrefixes =
-      acceptedReceivers.size <= 1 ? (prefixes.filePrefixes.get(file) ?? [""]) : [""];
-    for (const mountPrefix of mountPrefixes ?? filePrefixes) {
-      const routerPrefix = routerPrefixes.has(decorator.receiver)
-        ? routerPrefixes.get(decorator.receiver)
-        : "";
-      if (routerPrefix === null || routerPrefix === undefined) {
-        continue;
-      }
-      const decoratorPrefix = joinRoutePaths(mountPrefix, routerPrefix);
-      routes.push({
-        method: decorator.method,
-        path: joinRoutePaths(decoratorPrefix, decorator.path),
-        functionName,
-        file,
-      });
-    }
-  }
-  return uniqueFastApiRoutes(routes);
-}
-
-function apiRouterPrefixes(source: string): Map<string, string | null> {
-  const aliases = fastApiConstructorAliases(source);
-  const routerConstructor = fastApiConstructorPattern(aliases, "router");
-  const prefixes = new Map<string, string | null>();
-  for (const match of source.matchAll(
-    new RegExp(
-      `^\\s*([A-Za-z_][A-Za-z0-9_]*)(?:\\s*:\\s*[^=\\n]+)?\\s*=\\s*${routerConstructor}\\(`,
-      "gmu",
-    ),
-  )) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const receiver = match[1];
-    const openParenIndex = match.index + match[0].length - 1;
-    const args = stripPythonLineComments(readPythonCallArgs(source, openParenIndex));
-    const prefixExpression = topLevelKeywordValue(args, "prefix");
-    const prefixConstant =
-      prefixExpression === undefined
-        ? undefined
-        : /^([A-Za-z_][A-Za-z0-9_]*)$/u.exec(prefixExpression)?.[1];
-    const prefix =
-      prefixExpression === undefined
-        ? undefined
-        : (pythonStringLiteralExpression(prefixExpression) ??
-          (prefixConstant === undefined ? null : pythonStringConstant(source, prefixConstant)));
-    if (receiver !== undefined && prefix !== undefined) {
-      prefixes.set(receiver, prefix);
-    }
-  }
-  return prefixes;
-}
-
-function fastApiReceivers(source: string): Set<string> {
-  const aliases = fastApiConstructorAliases(source);
-  const constructors = fastApiConstructorPattern(aliases, "any");
-  const receivers = new Set<string>();
-  for (const match of source.matchAll(
-    new RegExp(
-      `^\\s*([A-Za-z_][A-Za-z0-9_]*)(?:\\s*:\\s*[^=\\n]+)?\\s*=\\s*${constructors}\\(`,
-      "gmu",
-    ),
-  )) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const receiver = match[1];
-    if (receiver !== undefined) {
-      receivers.add(receiver);
-    }
-  }
-  return receivers;
-}
-
-function fastApiAppReceivers(source: string): Set<string> {
-  const aliases = fastApiConstructorAliases(source);
-  const appConstructor = fastApiConstructorPattern(aliases, "app");
-  const receivers = new Set<string>();
-  for (const match of source.matchAll(
-    new RegExp(
-      `^\\s*([A-Za-z_][A-Za-z0-9_]*)(?:\\s*:\\s*[^=\\n]+)?\\s*=\\s*${appConstructor}\\(`,
-      "gmu",
-    ),
-  )) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const receiver = match[1];
-    if (receiver !== undefined) {
-      receivers.add(receiver);
-    }
-  }
-  return receivers;
-}
-
-function fastApiConstructorAliases(source: string): FastApiConstructorAliases {
-  const aliases: FastApiConstructorAliases = {
-    moduleNames: new Set(["fastapi"]),
-    appNames: new Set(),
-    routerNames: new Set(),
-  };
-  for (const match of source.matchAll(
-    /^import\s+fastapi(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gmu,
-  )) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    aliases.moduleNames.add(match[1] ?? "fastapi");
-  }
-  for (const match of source.matchAll(/^from\s+fastapi\s+import\s+\(([\s\S]*?)\)/gmu)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    addFastApiConstructorImportAliases(aliases, match[1] ?? "");
-  }
-  for (const match of source.matchAll(/^from\s+fastapi\s+import\s+(.+)$/gmu)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    addFastApiConstructorImportAliases(aliases, match[1] ?? "");
-  }
-  return aliases;
-}
-
-function addFastApiConstructorImportAliases(
-  aliases: FastApiConstructorAliases,
-  imports: string,
-): void {
-  for (const item of imports.split(",")) {
-    if (item.replace(/#.*/gu, "").trim() === "*") {
-      aliases.appNames.add("FastAPI");
-      aliases.routerNames.add("APIRouter");
-      continue;
-    }
-    const parsed = /^\s*(FastAPI|APIRouter)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*$/u.exec(
-      item.replace(/#.*/gu, ""),
-    );
-    if (parsed?.[1] === "FastAPI") {
-      aliases.appNames.add(parsed[2] ?? "FastAPI");
-    } else if (parsed?.[1] === "APIRouter") {
-      aliases.routerNames.add(parsed[2] ?? "APIRouter");
-    }
-  }
-}
-
-function fastApiConstructorPattern(
-  aliases: FastApiConstructorAliases,
-  kind: "app" | "router" | "any",
-): string {
-  const directNames =
-    kind === "app"
-      ? aliases.appNames
-      : kind === "router"
-        ? aliases.routerNames
-        : new Set([...aliases.appNames, ...aliases.routerNames]);
-  const moduleConstructor =
-    kind === "app" ? "FastAPI" : kind === "router" ? "APIRouter" : "(?:FastAPI|APIRouter)";
-  const patterns = [`(?:${regexUnion(aliases.moduleNames)})\\.${moduleConstructor}`];
-  if (directNames.size > 0) {
-    patterns.push(`(?:${regexUnion(directNames)})`);
-  }
-  return `(?:${patterns.join("|")})`;
-}
-
-function regexUnion(values: Iterable<string>): string {
-  return [...values].map(escapeRegExp).join("|");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
-function fastApiDecorators(
-  source: string,
-): Array<{ receiver: string; method: string; path: string; lineIndex: number }> {
-  const decorators: Array<{ receiver: string; method: string; path: string; lineIndex: number }> =
-    [];
-  const methods = fastApiMethods.join("|");
-  const pattern = new RegExp(`^\\s*@([A-Za-z_][A-Za-z0-9_]*)\\.(${methods})\\(`, "gmu");
-  for (const match of source.matchAll(pattern)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const receiver = match[1];
-    const method = match[2];
-    const openParenIndex = match.index + match[0].length - 1;
-    const args = stripPythonLineComments(readPythonCallArgs(source, openParenIndex));
-    const path = fastApiPathArg(args);
-    if (receiver !== undefined && method !== undefined && path !== undefined) {
-      decorators.push({
-        receiver,
-        method,
-        path,
-        lineIndex: source.slice(0, match.index).split("\n").length - 1,
-      });
-    }
-  }
-  return decorators;
-}
-
-function fastApiPathArg(args: string): string | undefined {
-  const positionalExpression = firstTopLevelArg(args);
-  const positional =
-    positionalExpression === undefined
-      ? undefined
-      : pythonStringLiteralExpression(positionalExpression);
-  if (positional !== undefined) {
-    return positional;
-  }
-  const pathExpression = topLevelKeywordValue(args, "path");
-  return pathExpression === undefined ? undefined : pythonStringLiteralExpression(pathExpression);
-}
-
-function nextFunctionName(lines: string[], start: number): string | null {
-  for (let index = start; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    if (/^\s*@/u.test(line)) {
-      continue;
-    }
-    const match = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line);
-    if (match?.[1] !== undefined) {
-      return match[1];
-    }
-  }
-  return null;
-}
-
-function routePrefixes(sources: Map<string, string>): FastApiPrefixInfo {
-  const prefixes = new Map<string, string[]>();
-  const sourceFiles = new Set(sources.keys());
-  const aliasesByFile = new Map<string, PythonImportAliases>();
-  const includesByFile = new Map<string, ReturnType<typeof includeRouterCalls>>();
-  const routerPrefixesByFile = new Map<string, Map<string, string | null>>();
-  const routerMountPrefixesByFile = new Map<string, Map<string, string[]>>();
-  const blockedRouterMountsByFile = new Map<string, Set<string>>();
-  const fastApiReceiversByFile = new Map<string, Set<string>>();
-  const fastApiAppReceiversByFile = new Map<string, Set<string>>();
-  const contextFilesByFile = new Map<string, SeedFileRef[]>();
-  for (const [file, source] of sources) {
-    aliasesByFile.set(file, pythonImportAliases(file, source, sourceFiles));
-    includesByFile.set(file, includeRouterCalls(source));
-    routerPrefixesByFile.set(file, apiRouterPrefixes(source));
-    routerMountPrefixesByFile.set(file, new Map());
-    blockedRouterMountsByFile.set(file, new Set());
-    fastApiReceiversByFile.set(file, fastApiReceivers(source));
-    fastApiAppReceiversByFile.set(file, fastApiAppReceivers(source));
-  }
-  const includeCount = [...includesByFile.values()].reduce(
-    (count, includes) => count + includes.length,
-    0,
-  );
-  for (let pass = 0; pass < includeCount + 1; pass += 1) {
-    let changed = false;
-    for (const [file, includes] of includesByFile) {
-      const aliases = aliasesByFile.get(file) ?? emptyPythonImportAliases();
-      const localRouterPrefixes =
-        routerPrefixesByFile.get(file) ?? new Map<string, string | null>();
-      const mounts = routerMountPrefixesByFile.get(file);
-      const appReceivers = fastApiAppReceiversByFile.get(file) ?? new Set<string>();
-      const receiverCount = fastApiReceiversByFile.get(file)?.size ?? 0;
-      for (const include of includes) {
-        if ((blockedRouterMountsByFile.get(file) ?? new Set()).has(include.receiver)) {
-          changed =
-            blockRouterTarget(
-              file,
-              include.target,
-              aliases,
-              aliasesByFile,
-              blockedRouterMountsByFile,
-            ) || changed;
-          continue;
-        }
-        const receiverRouterPrefix = localRouterPrefixes.has(include.receiver)
-          ? localRouterPrefixes.get(include.receiver)
-          : "";
-        if (receiverRouterPrefix === null || receiverRouterPrefix === undefined) {
-          changed =
-            blockRouterTarget(
-              file,
-              include.target,
-              aliases,
-              aliasesByFile,
-              blockedRouterMountsByFile,
-            ) || changed;
-          continue;
-        }
-        const mountedPrefixes = mounts?.get(include.receiver);
-        const filePrefixes = prefixes.get(file);
-        const fallbackPrefixes = receiverCount <= 1 ? filePrefixes : undefined;
-        const parentPrefixes = appReceivers.has(include.receiver)
-          ? [""]
-          : (mountedPrefixes ?? fallbackPrefixes)?.map((prefix) =>
-              joinRoutePaths(prefix, receiverRouterPrefix),
-            );
-        if (parentPrefixes === undefined) {
-          continue;
-        }
-        for (const parentPrefix of parentPrefixes) {
-          if (include.prefix === null) {
-            changed =
-              blockRouterTarget(
-                file,
-                include.target,
-                aliases,
-                aliasesByFile,
-                blockedRouterMountsByFile,
-              ) || changed;
-            continue;
-          }
-          const fullPrefix = joinRoutePaths(parentPrefix, include.prefix);
-          if (!include.target.includes(".") && mounts !== undefined) {
-            changed = addMapValue(mounts, include.target, fullPrefix) || changed;
-          }
-          const moduleFile = moduleFileForRouterTarget(include.target, aliases);
-          if (moduleFile !== undefined) {
-            changed = addMapValue(prefixes, moduleFile, fullPrefix) || changed;
-            changed =
-              addContextFile(contextFilesByFile, moduleFile, {
-                path: file,
-                reason: "FastAPI include_router mount",
-              }) || changed;
-            const moduleMounts = routerMountPrefixesByFile.get(moduleFile);
-            const targetRouter = importedRouterName(include.target, aliases);
-            if (moduleMounts !== undefined && targetRouter !== undefined) {
-              changed = addMapValue(moduleMounts, targetRouter, fullPrefix) || changed;
-              const moduleAliases = aliasesByFile.get(moduleFile) ?? emptyPythonImportAliases();
-              const exportedFile = moduleFileForRouterTarget(targetRouter, moduleAliases);
-              if (exportedFile !== undefined && exportedFile !== moduleFile) {
-                changed = addMapValue(prefixes, exportedFile, fullPrefix) || changed;
-                changed =
-                  addContextFile(contextFilesByFile, exportedFile, {
-                    path: file,
-                    reason: "FastAPI include_router mount",
-                  }) || changed;
-                const exportedRouter = importedRouterName(targetRouter, moduleAliases);
-                const exportedMounts = routerMountPrefixesByFile.get(exportedFile);
-                if (exportedRouter !== undefined && exportedMounts !== undefined) {
-                  changed = addMapValue(exportedMounts, exportedRouter, fullPrefix) || changed;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-    if (!changed) {
-      break;
-    }
-  }
-  for (const file of sources.keys()) {
-    const aliases = aliasesByFile.get(file) ?? emptyPythonImportAliases();
-    const localRouterPrefixes = routerPrefixesByFile.get(file) ?? new Map<string, string | null>();
-    const mounts = routerMountPrefixesByFile.get(file);
-    const receivers = fastApiReceiversByFile.get(file) ?? new Set<string>();
-    for (const include of includesByFile.get(file) ?? []) {
-      if (receivers.has(include.receiver) && mounts !== undefined) {
-        if (mounts.has(include.receiver)) {
-          continue;
-        }
-        const receiverPrefix = localRouterPrefixes.has(include.receiver)
-          ? localRouterPrefixes.get(include.receiver)
-          : "";
-        if (receiverPrefix === null || receiverPrefix === undefined) {
-          blockRouterTarget(
-            file,
-            include.target,
-            aliases,
-            aliasesByFile,
-            blockedRouterMountsByFile,
-          );
-          continue;
-        }
-        if (include.prefix === null) {
-          blockRouterTarget(
-            file,
-            include.target,
-            aliases,
-            aliasesByFile,
-            blockedRouterMountsByFile,
-          );
-        } else {
-          addMapValue(mounts, include.target, joinRoutePaths(receiverPrefix, include.prefix));
-        }
-      }
-    }
-    const hasLocalRouterPrefix = (routerPrefixesByFile.get(file)?.size ?? 0) > 0;
-    if (!prefixes.has(file) && !hasLocalRouterPrefix && /(^|\/)routes\/[^/]+\.py$/u.test(file)) {
-      prefixes.set(file, [inferredRoutePrefix(file)]);
-    }
-  }
-  return {
-    filePrefixes: prefixes,
-    routerMountPrefixesByFile,
-    blockedRouterMountsByFile,
-    fastApiReceiversByFile,
-    contextFilesByFile,
-  };
-}
-
-function addMapValue(map: Map<string, string[]>, key: string, value: string): boolean {
-  const values = map.get(key) ?? [];
-  if (values.includes(value)) {
-    return false;
-  }
-  map.set(key, [...values, value]);
-  return true;
-}
-
-function addSetValue(set: Set<string> | undefined, value: string): boolean {
-  if (set === undefined || set.has(value)) {
-    return false;
-  }
-  set.add(value);
-  return true;
-}
-
-function addContextFile(map: Map<string, SeedFileRef[]>, key: string, value: SeedFileRef): boolean {
-  if (key === value.path) {
-    return false;
-  }
-  const values = map.get(key) ?? [];
-  if (values.some((ref) => ref.path === value.path)) {
-    return false;
-  }
-  map.set(key, [...values, value]);
-  return true;
-}
-
-function blockRouterTarget(
-  currentFile: string,
-  target: string,
-  aliases: PythonImportAliases,
-  aliasesByFile: ReadonlyMap<string, PythonImportAliases>,
-  blockedRouterMountsByFile: Map<string, Set<string>>,
-): boolean {
-  let changed = false;
-  if (!target.includes(".")) {
-    changed = addSetValue(blockedRouterMountsByFile.get(currentFile), target) || changed;
-  }
-  const moduleFile = moduleFileForRouterTarget(target, aliases);
-  if (moduleFile === undefined) {
-    return changed;
-  }
-  const targetRouter = importedRouterName(target, aliases);
-  if (targetRouter === undefined) {
-    return changed;
-  }
-  changed = addSetValue(blockedRouterMountsByFile.get(moduleFile), targetRouter) || changed;
-  const moduleAliases = aliasesByFile.get(moduleFile) ?? emptyPythonImportAliases();
-  const exportedFile = moduleFileForRouterTarget(targetRouter, moduleAliases);
-  if (exportedFile === undefined || exportedFile === moduleFile) {
-    return changed;
-  }
-  const exportedRouter = importedRouterName(targetRouter, moduleAliases);
-  return (
-    (exportedRouter === undefined
-      ? false
-      : addSetValue(blockedRouterMountsByFile.get(exportedFile), exportedRouter)) || changed
-  );
-}
-
-function emptyPythonImportAliases(): PythonImportAliases {
-  return { files: new Map(), routerNames: new Map() };
-}
-
-function moduleFileForRouterTarget(
-  target: string,
-  aliases: PythonImportAliases,
-): string | undefined {
-  const parts = target.split(".");
-  for (let length = parts.length; length > 0; length -= 1) {
-    const file = aliases.files.get(parts.slice(0, length).join("."));
-    if (file !== undefined) {
-      return file;
-    }
-  }
-  return undefined;
-}
-
-function importedRouterName(target: string, aliases: PythonImportAliases): string | undefined {
-  const parts = target.split(".");
-  const localName = parts[0];
-  if (parts.length > 1) {
-    return parts.at(-1);
-  }
-  return localName === undefined ? undefined : (aliases.routerNames.get(localName) ?? localName);
-}
-
-function includeRouterCalls(source: string): IncludeRouterCall[] {
-  const calls: IncludeRouterCall[] = [];
-  for (const match of source.matchAll(/^\s*([A-Za-z_][A-Za-z0-9_]*)\.include_router\(/gmu)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const receiver = match[1];
-    const openParenIndex = match.index + match[0].length - 1;
-    const args = stripPythonLineComments(readPythonCallArgs(source, openParenIndex));
-    const target = includeRouterTarget(args);
-    const prefix = includeRouterPrefix(args, source);
-    if (receiver !== undefined && target !== undefined) {
-      calls.push({ receiver, target, prefix });
-    }
-  }
-  return calls;
-}
-
-function includeRouterPrefix(args: string, source: string): string | null {
-  const expression = topLevelKeywordValue(args, "prefix");
-  if (expression === undefined) {
-    return "";
-  }
-  const literal = pythonStringLiteralExpression(expression);
-  if (literal !== undefined) {
-    return literal;
-  }
-  const constant = /^([A-Za-z_][A-Za-z0-9_]*)$/u.exec(expression)?.[1];
-  return constant === undefined ? null : pythonStringConstant(source, constant);
-}
-
-function pythonStringConstant(source: string, name: string): string | null {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  const pattern = new RegExp(
-    `^${escaped}(?:\\s*:\\s*[^=\\n]+)?\\s*=\\s*(['"])([^'"]*)\\1\\s*(?:#.*)?$`,
-    "gmu",
-  );
-  for (const match of source.matchAll(pattern)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    return match[2] ?? null;
-  }
-  return null;
-}
-
-function pythonStringLiteralExpression(expression: string): string | undefined {
-  return /^(['"])([^'"]*)\1$/u.exec(expression.trim())?.[2];
-}
-
-function stripPythonLineComments(source: string): string {
-  let output = "";
-  let quote: "'" | '"' | "'''" | '"""' | null = null;
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index] ?? "";
-    if (quote !== null) {
-      output += char;
-      if (quote.length === 3) {
-        if (source.slice(index, index + 3) === quote) {
-          output += source.slice(index + 1, index + 3);
-          quote = null;
-          index += 2;
-        }
-      } else if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (source.slice(index, index + 3) === "'''") {
-      quote = "'''";
-      output += "'''";
-      index += 2;
-    } else if (source.slice(index, index + 3) === '"""') {
-      quote = '"""';
-      output += '"""';
-      index += 2;
-    } else if (char === "'" || char === '"') {
-      quote = char;
-      output += char;
-    } else if (char === "#") {
-      const nextNewline = source.indexOf("\n", index + 1);
-      if (nextNewline === -1) {
-        break;
-      }
-      output += "\n";
-      index = nextNewline;
-    } else {
-      output += char;
-    }
-  }
-  return output;
-}
-
-function isInsidePythonString(source: string, offset: number): boolean {
-  let quote: "'" | '"' | "'''" | '"""' | null = null;
-  let escaped = false;
-  for (let index = 0; index < offset; index += 1) {
-    const char = source[index];
-    if (quote !== null) {
-      if (quote.length === 3) {
-        if (source.slice(index, index + 3) === quote) {
-          quote = null;
-          index += 2;
-        }
-      } else if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (source.slice(index, index + 3) === "'''") {
-      quote = "'''";
-      index += 2;
-    } else if (source.slice(index, index + 3) === '"""') {
-      quote = '"""';
-      index += 2;
-    } else if (char === "#") {
-      const nextNewline = source.indexOf("\n", index + 1);
-      if (nextNewline === -1) {
-        return false;
-      }
-      index = nextNewline;
-    } else if (char === "'" || char === '"') {
-      quote = char;
-    }
-  }
-  return quote !== null;
-}
-
-function includeRouterTarget(args: string): string | undefined {
-  const expression = topLevelKeywordValue(args, "router") ?? firstTopLevelArg(args);
-  const target = expression?.trim();
-  return target !== undefined &&
-    /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/u.test(target)
-    ? target
-    : undefined;
-}
-
-function topLevelKeywordValue(args: string, name: string): string | undefined {
-  for (const part of topLevelArgs(args)) {
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([\s\S]*)$/u.exec(part);
-    if (match?.[1] === name) {
-      return match[2]?.trim();
-    }
-  }
-  return undefined;
-}
-
-function firstTopLevelArg(args: string): string | undefined {
-  return topLevelArgs(args).find((part) => !/^[A-Za-z_][A-Za-z0-9_]*\s*=/u.test(part));
-}
-
-function topLevelArgs(args: string): string[] {
-  const parts: string[] = [];
-  let start = 0;
-  let depth = 0;
-  let quote: string | null = null;
-  let escaped = false;
-  for (let index = 0; index < args.length; index += 1) {
-    const char = args[index];
-    if (quote !== null) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-    } else if (char === "(" || char === "[" || char === "{") {
-      depth += 1;
-    } else if (char === ")" || char === "]" || char === "}") {
-      depth = Math.max(0, depth - 1);
-    } else if (char === "," && depth === 0) {
-      parts.push(args.slice(start, index).trim());
-      start = index + 1;
-    }
-  }
-  parts.push(args.slice(start).trim());
-  return parts.filter((part) => part.length > 0);
-}
-
-function uniqueFastApiRoutes(routes: FastApiRoute[]): FastApiRoute[] {
-  const seen = new Set<string>();
-  const output: FastApiRoute[] = [];
-  for (const route of routes) {
-    const key = `${route.method}\0${route.path}\0${route.functionName}\0${route.file}`;
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    output.push(route);
-  }
-  return output;
-}
-
-function readPythonCallArgs(source: string, openParenIndex: number): string {
-  let depth = 0;
-  let quote: string | null = null;
-  let escaped = false;
-  for (let index = openParenIndex; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote !== null) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-    } else if (char === "#") {
-      const nextNewline = source.indexOf("\n", index + 1);
-      if (nextNewline === -1) {
-        return source.slice(openParenIndex + 1);
-      }
-      index = nextNewline;
-    } else if (char === "(" || char === "[" || char === "{") {
-      depth += 1;
-    } else if (char === ")" || char === "]" || char === "}") {
-      depth -= 1;
-      if (depth === 0) {
-        return source.slice(openParenIndex + 1, index);
-      }
-    }
-  }
-  return source.slice(openParenIndex + 1);
-}
-
-function pythonImportAliases(
-  file: string,
-  source: string,
-  sourceFiles: ReadonlySet<string>,
-): PythonImportAliases {
-  const aliases = emptyPythonImportAliases();
-  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+\(([\s\S]*?)\)/gmu)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const moduleName = match[1];
-    const imports = match[2];
-    if (moduleName !== undefined && imports !== undefined) {
-      addPythonImportAliases(aliases, file, moduleName, imports, sourceFiles);
-    }
-  }
-  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+)$/gmu)) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const moduleName = match[1];
-    const imports = match[2];
-    if (moduleName === undefined || imports === undefined) {
-      continue;
-    }
-    addPythonImportAliases(aliases, file, moduleName, imports, sourceFiles);
-  }
-  for (const match of source.matchAll(
-    /^import\s+([A-Za-z0-9_.]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gmu,
-  )) {
-    if (isInsidePythonString(source, match.index)) {
-      continue;
-    }
-    const moduleName = match[1];
-    const alias = match[2] ?? moduleName?.split(".").at(-1);
-    const moduleFile =
-      moduleName === undefined ? null : resolvePythonModuleFile(file, moduleName, sourceFiles);
-    if (moduleName !== undefined && alias !== undefined && moduleFile !== null) {
-      aliases.files.set(moduleName, moduleFile);
-      aliases.files.set(alias, moduleFile);
-    }
-  }
-  return aliases;
-}
-
-function addPythonImportAliases(
-  aliases: PythonImportAliases,
-  currentFile: string,
-  moduleName: string,
-  imports: string,
-  sourceFiles: ReadonlySet<string>,
-): void {
-  for (const imported of imports.replace(/[()]/gu, "").split(",")) {
-    const item = imported.replace(/#.*/u, "").trim();
-    if (item.length === 0) {
-      continue;
-    }
-    const itemMatch = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/u.exec(item);
-    const importedName = itemMatch?.[1];
-    const alias = itemMatch?.[2] ?? importedName;
-    if (importedName === undefined || alias === undefined) {
-      continue;
-    }
-    const nestedModuleName = appendPythonModuleName(moduleName, importedName);
-    const nestedFile = resolvePythonModuleFile(currentFile, nestedModuleName, sourceFiles);
-    const moduleFile = resolvePythonModuleFile(currentFile, moduleName, sourceFiles);
-    const importedFile = nestedFile ?? moduleFile;
-    if (importedFile !== null) {
-      aliases.files.set(alias, importedFile);
-      aliases.routerNames.set(alias, importedName);
-    }
-  }
-}
-
-async function hasFastApiSignal(
-  root: string,
-  sources: ReadonlyMap<string, string>,
-): Promise<boolean> {
-  if (await pythonDependencyHas(root, "fastapi")) {
-    return true;
-  }
-  return [...sources.values()].some((source) =>
-    /(?:^|\n)\s*(?:from\s+fastapi\s+import\b|import\s+fastapi\b)/u.test(source),
-  );
-}
-
-async function pythonDependencyHas(root: string, dependency: string): Promise<boolean> {
-  if (await pathExists(join(root, "pyproject.toml"))) {
-    const source = await readFile(join(root, "pyproject.toml"), "utf8");
-    if (dependencyNames(source).has(dependency)) {
-      return true;
-    }
-  }
-  return dependencyFileHas(root, dependency);
-}
-
-function appendPythonModuleName(moduleName: string, importedName: string): string {
-  if (moduleName === ".") {
-    return `.${importedName}`;
-  }
-  return moduleName.endsWith(".")
-    ? `${moduleName}${importedName}`
-    : `${moduleName}.${importedName}`;
-}
-
-function resolvePythonModuleFile(
-  currentFile: string,
-  moduleName: string,
-  sourceFiles: ReadonlySet<string>,
-): string | null {
-  const candidates = modulePathCandidates(currentFile, moduleName);
-  for (const candidate of sourceRootModulePathCandidates(currentFile, moduleName, candidates)) {
-    if (sourceFiles.has(candidate)) {
-      return candidate;
-    }
-  }
-  for (const candidate of candidates) {
-    if (sourceFiles.has(candidate)) {
-      return candidate;
-    }
-  }
-  for (const candidate of candidates) {
-    if (moduleName.includes(".") || /^[^/]+\/__init__\.py$/u.test(candidate)) {
-      const suffix = `/${candidate}`;
-      const match = [...sourceFiles].find((file) => file.endsWith(suffix));
-      if (match !== undefined) {
-        return match;
-      }
-    }
-  }
-  return null;
-}
-
-function sourceRootModulePathCandidates(
-  currentFile: string,
-  moduleName: string,
-  candidates: string[],
-): string[] {
-  if (moduleName.startsWith(".") || moduleName.includes(".")) {
-    return [];
-  }
-  const currentDir = dirname(currentFile);
-  return sourceRoots.includes(currentDir as (typeof sourceRoots)[number])
-    ? candidates.map((candidate) => join(currentDir, candidate))
-    : [];
-}
-
-function modulePathCandidates(currentFile: string, moduleName: string): string[] {
-  const modulePath = moduleName.startsWith(".")
-    ? relativePythonModulePath(currentFile, moduleName)
-    : moduleName.replace(/\./gu, "/");
-  if (modulePath === null || modulePath.length === 0) {
-    return [];
-  }
-  return [`${modulePath}.py`, `${modulePath}/__init__.py`];
-}
-
-function relativePythonModulePath(currentFile: string, moduleName: string): string | null {
-  const prefix = /^(\.+)(.*)$/u.exec(moduleName);
-  const dots = prefix?.[1];
-  const rest = prefix?.[2];
-  if (dots === undefined || rest === undefined) {
-    return null;
-  }
-  let base = dirname(currentFile);
-  for (let depth = 1; depth < dots.length; depth += 1) {
-    base = dirname(base);
-  }
-  const suffix = rest.replace(/^\./u, "").replace(/\./gu, "/");
-  return suffix.length === 0 ? base : `${base}/${suffix}`;
-}
-
-function inferredRoutePrefix(file: string): string {
-  const stem = basename(file)
-    .replace(/_routes\.py$/u, "")
-    .replace(/\.py$/u, "");
-  if (stem === "main" || stem === "router" || stem === "__init__") {
-    return "";
-  }
-  const base = file.startsWith("backend/routes/") ? "/api/v1" : "";
-  return joinRoutePaths(base, `/${stem}`);
-}
-
-function joinRoutePaths(prefix: string, path: string): string {
-  if (path.length === 0) {
-    return prefix.replace(/\/$/u, "") || "/";
-  }
-  const joined = `${prefix.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`.replace(/\/+/gu, "/");
-  return joined === "" ? "/" : joined;
-}
-
 async function isPythonProject(root: string): Promise<boolean> {
   return (
     (await pathExists(join(root, "pyproject.toml"))) ||
@@ -1203,22 +184,32 @@ async function isPythonProject(root: string): Promise<boolean> {
   );
 }
 
-async function readPyproject(root: string): Promise<PyprojectInfo> {
-  if (!(await pathExists(join(root, "pyproject.toml")))) {
-    return { name: null, scripts: [], hasPytest: false };
-  }
-  const source = await readFile(join(root, "pyproject.toml"), "utf8");
-  return {
-    name:
+async function readPythonProjectMetadata(root: string): Promise<PyprojectInfo> {
+  const metadata: PyprojectInfo = { name: null, scripts: [], hasPytest: false };
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    const source = await readFile(join(root, "pyproject.toml"), "utf8");
+    metadata.name =
       tomlStringValue(table(source, "project"), "name") ??
-      tomlStringValue(table(source, "tool.poetry"), "name"),
-    scripts: [
-      ...scriptsFromTable(table(source, "project.scripts")),
-      ...scriptsFromTable(table(source, "tool.poetry.scripts")),
-    ],
-    hasPytest:
-      table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest"),
-  };
+      tomlStringValue(table(source, "tool.poetry"), "name");
+    metadata.scripts.push(
+      ...scriptsFromTable(table(source, "project.scripts"), "pyproject.toml"),
+      ...scriptsFromTable(table(source, "tool.poetry.scripts"), "pyproject.toml"),
+    );
+    metadata.hasPytest =
+      table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest");
+  }
+  if (await pathExists(join(root, "setup.cfg"))) {
+    const source = await readFile(join(root, "setup.cfg"), "utf8");
+    metadata.name ??= setupCfgStringValue(source, "metadata", "name");
+    metadata.scripts.push(...setupCfgConsoleScripts(source));
+    metadata.hasPytest ||= /^\s*(?:\[tool:pytest\]|\[pytest\])\s*(?:#.*)?$/mu.test(source);
+  }
+  if (await pathExists(join(root, "setup.py"))) {
+    const source = await readFile(join(root, "setup.py"), "utf8");
+    metadata.name ??= setupPyStringValue(source, "name");
+    metadata.scripts.push(...setupPyConsoleScripts(source));
+  }
+  return metadata;
 }
 
 async function pythonMetadataFiles(root: string): Promise<string[]> {
@@ -1287,6 +278,7 @@ async function dependencyFileHas(root: string, dependency: string): Promise<bool
 
 async function pythonSourceGroups(root: string): Promise<SourceGroup[]> {
   const groups: SourceGroup[] = [];
+  groups.push(...(await rootPythonSourceGroups(root)));
   const seenRoots = new Set<string>();
   for (const sourceRoot of await pythonSourceRoots(root)) {
     if (seenRoots.has(sourceRoot)) {
@@ -1299,6 +291,17 @@ async function pythonSourceGroups(root: string): Promise<SourceGroup[]> {
     }
   }
   return groups;
+}
+
+async function rootPythonSourceGroups(root: string): Promise<SourceGroup[]> {
+  return chunkFiles("root", await rootPythonSourceFiles(root), sourceGroupMaxOwnedFiles);
+}
+
+async function rootPythonSourceFiles(root: string): Promise<string[]> {
+  return (await readdir(root, { withFileTypes: true }).catch(() => []))
+    .filter((entry) => entry.isFile() && isReviewablePythonSourceFile(entry.name))
+    .map((entry) => entry.name)
+    .toSorted();
 }
 
 async function pythonSourceRoots(root: string): Promise<string[]> {
@@ -1354,10 +357,11 @@ async function pythonProjectContextFiles(
 async function resolvePythonScript(
   root: string,
   target: string,
+  metadataPath: string,
 ): Promise<{ entryPath: string; symbol: string | null }> {
   const [moduleName, symbol = null] = target.split(":");
   if (moduleName === undefined || moduleName.length === 0) {
-    return { entryPath: "pyproject.toml", symbol };
+    return { entryPath: metadataPath, symbol };
   }
   const modulePath = `${moduleName.replace(/\./gu, "/")}.py`;
   const packageInitPath = `${moduleName.replace(/\./gu, "/")}/__init__.py`;
@@ -1371,7 +375,493 @@ async function resolvePythonScript(
       return { entryPath: candidate, symbol };
     }
   }
-  return { entryPath: "pyproject.toml", symbol };
+  return { entryPath: metadataPath, symbol };
+}
+
+async function fastApiRouteSeeds(
+  root: string,
+  testFiles: string[],
+  testCommand: string | null,
+): Promise<FeatureSeed[]> {
+  const routeFiles = uniquePaths([
+    ...(await rootPythonSourceFiles(root)),
+    ...(await walk(root, await pythonSourceRoots(root))).filter(isReviewablePythonSourceFile),
+  ]);
+  const sources = new Map<string, string>();
+  for (const filePath of routeFiles) {
+    sources.set(filePath, await readFile(join(root, filePath), "utf8"));
+  }
+  const prefixes = fastApiRoutePrefixes(sources);
+  const seeds: FeatureSeed[] = [];
+  for (const [filePath, source] of sources) {
+    if (!sourceLooksFastApi(source)) {
+      continue;
+    }
+    const routes = parseFastApiRoutes(filePath, source);
+    for (const route of routes) {
+      const methodLabel = route.methods.join(",");
+      const routePath = joinRoutePaths(prefixes.get(route.filePath) ?? "", route.routePath);
+      const tests = associatedTests([route.filePath], testFiles, testCommand);
+      seeds.push({
+        title: `FastAPI route ${methodLabel} ${routePath}`,
+        summary:
+          `FastAPI route ${methodLabel} ${routePath} handled by ` +
+          `${route.functionName} in ${route.filePath}.`,
+        kind: "route",
+        source: "python-fastapi-route",
+        confidence: "high",
+        entryPath: route.filePath,
+        symbol: route.functionName,
+        route: `${methodLabel} ${routePath}`,
+        command: null,
+        ownedFiles: [
+          { path: route.filePath, reason: `FastAPI route handler ${route.functionName}` },
+        ],
+        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        tests,
+        tags: ["python", "fastapi", "route"],
+        trustBoundaries: fastApiRouteTrustBoundaries(route),
+        testCommand,
+        skipNearbyTests: true,
+      });
+    }
+  }
+  return seeds;
+}
+
+function sourceLooksFastApi(source: string): boolean {
+  return /^\s*(?:from\s+fastapi\s+import\s+|import\s+fastapi\b)/mu.test(source);
+}
+
+function parseFastApiRoutes(filePath: string, source: string): FastApiRoute[] {
+  const routes: FastApiRoute[] = [];
+  let pending: Array<{ routePath: string; methods: string[] }> = [];
+  let decoratorSource: string | null = null;
+  let decoratorDepth = 0;
+  for (const line of source.split("\n")) {
+    const trimmed = line.trim();
+    if (decoratorSource !== null) {
+      decoratorSource = `${decoratorSource} ${trimmed}`;
+      decoratorDepth += parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFastApiRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    if (startsFastApiRouteDecorator(trimmed)) {
+      decoratorSource = trimmed;
+      decoratorDepth = parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFastApiRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    const functionName = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line)?.[1];
+    if (functionName !== undefined && pending.length > 0) {
+      for (const item of pending) {
+        routes.push({ filePath, functionName, ...item });
+      }
+      pending = [];
+      continue;
+    }
+
+    if (
+      pending.length > 0 &&
+      trimmed !== "" &&
+      !trimmed.startsWith("@") &&
+      !trimmed.startsWith("#")
+    ) {
+      pending = [];
+    }
+  }
+  return routes;
+}
+
+function startsFastApiRouteDecorator(line: string): boolean {
+  return fastApiRouteDecoratorStartPattern.test(line);
+}
+
+function parseFastApiRouteDecorator(line: string): { routePath: string; methods: string[] } | null {
+  const match = fastApiRouteDecoratorPattern.exec(line);
+  const method = match?.[1];
+  const args = match?.[2];
+  if (method === undefined || args === undefined) {
+    return null;
+  }
+  const routePath = parseFastApiPath(args);
+  if (routePath === null) {
+    return null;
+  }
+  const methods = method === "api_route" ? parsePythonRouteMethods(args) : [method.toUpperCase()];
+  if (methods === null) {
+    return null;
+  }
+  return { routePath, methods };
+}
+
+function parseFastApiPath(args: string): string | null {
+  const positional = /^\s*(["'])(.*?)\1/u.exec(args)?.[2];
+  if (positional !== undefined) {
+    return positional;
+  }
+  return /\bpath\s*=\s*(["'])(.*?)\1/u.exec(args)?.[2] ?? null;
+}
+
+function fastApiRoutePrefixes(sources: Map<string, string>): Map<string, string> {
+  const exportedRouterPrefixes = new Map<string, string>();
+  const prefixes = new Map<string, string>();
+  for (const [filePath, source] of sources) {
+    const aliases = pythonImportAliases(filePath, source);
+    for (const include of includeRouterCalls(source)) {
+      const parentPrefix =
+        include.receiver === "app" ? "" : (exportedRouterPrefixes.get(include.receiver) ?? "");
+      const fullPrefix = joinRoutePaths(parentPrefix, include.prefix);
+      if (!include.target.includes(".")) {
+        exportedRouterPrefixes.set(include.target, fullPrefix);
+      }
+      const moduleFile = aliases.get(include.target.split(".")[0] ?? "");
+      if (moduleFile !== undefined) {
+        prefixes.set(moduleFile, fullPrefix);
+      }
+    }
+  }
+  return prefixes;
+}
+
+function includeRouterCalls(
+  source: string,
+): Array<{ receiver: string; target: string; prefix: string }> {
+  const calls: Array<{ receiver: string; target: string; prefix: string }> = [];
+  for (const match of source.matchAll(
+    /([A-Za-z_][A-Za-z0-9_]*)\.include_router\(\s*([A-Za-z_][A-Za-z0-9_]*(?:\.router)?)\s*,[^)]*?\bprefix\s*=\s*(["'])([^"']*)\3/gsu,
+  )) {
+    if (match[1] !== undefined && match[2] !== undefined && match[4] !== undefined) {
+      calls.push({ receiver: match[1], target: match[2], prefix: match[4] });
+    }
+  }
+  return calls;
+}
+
+function pythonImportAliases(currentFile: string, source: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+\(([\s\S]*?)\)/gmu)) {
+    const moduleName = match[1];
+    const imports = match[2];
+    if (moduleName !== undefined && imports !== undefined) {
+      addPythonImportAliases(aliases, currentFile, moduleName, imports);
+    }
+  }
+  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+)$/gmu)) {
+    const moduleName = match[1];
+    const imports = match[2];
+    if (moduleName !== undefined && imports !== undefined) {
+      addPythonImportAliases(aliases, currentFile, moduleName, imports);
+    }
+  }
+  return aliases;
+}
+
+function addPythonImportAliases(
+  aliases: Map<string, string>,
+  currentFile: string,
+  moduleName: string,
+  imports: string,
+): void {
+  for (const imported of imports.replace(/[()]/gu, "").split(",")) {
+    const item = imported.trim();
+    if (item.length === 0) {
+      continue;
+    }
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/u.exec(item);
+    const importedName = match?.[1];
+    const alias = match?.[2] ?? importedName;
+    if (importedName === undefined || alias === undefined) {
+      continue;
+    }
+    const importedFile =
+      importedName === "router" || importedName.endsWith("_router")
+        ? moduleToPath(moduleName)
+        : (moduleToPath(`${moduleName}.${importedName}`) ?? moduleToPath(moduleName));
+    aliases.set(alias, importedFile ?? currentFile);
+  }
+}
+
+function moduleToPath(moduleName: string): string | null {
+  if (!moduleName.includes(".")) {
+    return null;
+  }
+  return `${moduleName.replace(/\./gu, "/")}.py`;
+}
+
+function joinRoutePaths(prefix: string, path: string): string {
+  const joined = `${prefix.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`.replace(/\/+/gu, "/");
+  return joined === "" ? "/" : joined;
+}
+
+async function flaskRouteSeeds(
+  root: string,
+  testFiles: string[],
+  testCommand: string | null,
+): Promise<FeatureSeed[]> {
+  const hasFlaskDependency = await pythonDependencyHas(root, "flask");
+  const routeFiles = await flaskRouteFiles(root);
+  const seeds: FeatureSeed[] = [];
+  for (const filePath of routeFiles) {
+    const source = await readFile(join(root, filePath), "utf8");
+    if (!hasFlaskDependency && !sourceLooksFlask(source)) {
+      continue;
+    }
+    const routes = parseFlaskRoutes(filePath, source);
+    for (const route of routes) {
+      const methodLabel = route.methods.join(",");
+      const tests = associatedTests([route.filePath], testFiles, testCommand);
+      seeds.push({
+        title: `Flask route ${methodLabel} ${route.routePath}`,
+        summary: `Flask route ${methodLabel} ${route.routePath} handled by ${route.functionName} in ${route.filePath}.`,
+        kind: "route",
+        source: "python-flask-route",
+        confidence: "high",
+        entryPath: route.filePath,
+        symbol: route.functionName,
+        route: `${methodLabel} ${route.routePath}`,
+        command: null,
+        ownedFiles: [{ path: route.filePath, reason: `Flask route handler ${route.functionName}` }],
+        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        tests,
+        tags: ["python", "flask", "route"],
+        trustBoundaries: flaskRouteTrustBoundaries(route),
+        testCommand,
+        skipNearbyTests: true,
+      });
+    }
+  }
+  return seeds;
+}
+
+async function flaskRouteFiles(root: string): Promise<string[]> {
+  const rootEntries: string[] = [];
+  for (const filePath of flaskRootEntryFiles) {
+    if (isReviewablePythonSourceFile(filePath) && (await isSafeFile(root, join(root, filePath)))) {
+      rootEntries.push(filePath);
+    }
+  }
+  const rootedFiles = (await walk(root, await pythonSourceRoots(root))).filter(
+    isReviewablePythonSourceFile,
+  );
+  return uniquePaths([...rootEntries, ...rootedFiles]);
+}
+
+async function pythonDependencyHas(root: string, dependency: string): Promise<boolean> {
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    const source = await readFile(join(root, "pyproject.toml"), "utf8");
+    if (dependencyNames(source).has(dependency)) {
+      return true;
+    }
+  }
+  return dependencyFileHas(root, dependency);
+}
+
+function sourceLooksFlask(source: string): boolean {
+  return /^\s*(?:from\s+flask\s+import\s+|import\s+flask\b)/mu.test(source);
+}
+
+function parseFlaskRoutes(filePath: string, source: string): FlaskRoute[] {
+  const routes: FlaskRoute[] = [];
+  let pending: Array<{ routePath: string; methods: string[] }> = [];
+  let decoratorSource: string | null = null;
+  let decoratorDepth = 0;
+  for (const line of source.split("\n")) {
+    const trimmed = line.trim();
+    if (decoratorSource !== null) {
+      decoratorSource = `${decoratorSource} ${trimmed}`;
+      decoratorDepth += parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFlaskRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    if (startsFlaskRouteDecorator(trimmed)) {
+      decoratorSource = trimmed;
+      decoratorDepth = parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFlaskRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    const functionName = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line)?.[1];
+    if (functionName !== undefined && pending.length > 0) {
+      for (const item of pending) {
+        routes.push({ filePath, functionName, ...item });
+      }
+      pending = [];
+      continue;
+    }
+
+    if (
+      pending.length > 0 &&
+      trimmed !== "" &&
+      !trimmed.startsWith("@") &&
+      !trimmed.startsWith("#")
+    ) {
+      pending = [];
+    }
+  }
+  return routes;
+}
+
+function startsFlaskRouteDecorator(line: string): boolean {
+  return /^@[A-Za-z_][A-Za-z0-9_.]*\.route\(/u.test(line);
+}
+
+function parseFlaskRouteDecorator(line: string): { routePath: string; methods: string[] } | null {
+  const match = /^\s*@[A-Za-z_][A-Za-z0-9_.]*\.route\(\s*(["'])(.*?)\1(.*)\)\s*(?:#.*)?$/u.exec(
+    line,
+  );
+  if (match?.[2] === undefined) {
+    return null;
+  }
+  const methods = parsePythonRouteMethods(match[3] ?? "");
+  if (methods === null) {
+    return null;
+  }
+  return {
+    routePath: match[2],
+    methods,
+  };
+}
+
+function parsePythonRouteMethods(args: string): string[] | null {
+  const methodsIndex = args.search(/\bmethods\s*=/u);
+  if (methodsIndex === -1) {
+    return ["GET"];
+  }
+  const literal = pythonRouteMethodsLiteral(args.slice(methodsIndex));
+  if (literal === null) {
+    return null;
+  }
+  const methods = [...literal.matchAll(/["']([^"']+)["']/gu)]
+    .map((item) => item[1]?.toUpperCase())
+    .filter((item): item is string => item !== undefined && item.length > 0);
+  return methods.length > 0 ? [...new Set(methods)] : null;
+}
+
+function pythonRouteMethodsLiteral(source: string): string | null {
+  const match = /^\s*methods\s*=\s*([[({])/u.exec(source);
+  if (match === null) {
+    return null;
+  }
+  const opener = match[1];
+  if (opener === undefined) {
+    return null;
+  }
+  const literalStart = match[0].length;
+  const closer = opener === "[" ? "]" : opener === "(" ? ")" : "}";
+  let quote: string | null = null;
+  let escaped = false;
+  let depth = 0;
+  for (let index = literalStart - 1; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      break;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === opener) {
+      depth += 1;
+      continue;
+    }
+    if (char === closer) {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(literalStart, index);
+      }
+    }
+  }
+  return null;
+}
+
+function parenDelta(line: string): number {
+  let delta = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (const char of line) {
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      delta += 1;
+    } else if (char === ")") {
+      delta -= 1;
+    }
+  }
+  return delta;
+}
+
+function flaskRouteTrustBoundaries(route: FlaskRoute): FeatureSeed["trustBoundaries"] {
+  const boundaries: FeatureSeed["trustBoundaries"] = ["network", "user-input", "serialization"];
+  if (
+    route.methods.some((method) => method !== "GET") ||
+    /(^|\/)(admin|auth|login|token)(\/|$)/iu.test(route.routePath)
+  ) {
+    boundaries.push("auth");
+  }
+  return boundaries;
+}
+
+function fastApiRouteTrustBoundaries(route: FastApiRoute): FeatureSeed["trustBoundaries"] {
+  const boundaries: FeatureSeed["trustBoundaries"] = ["network", "user-input", "serialization"];
+  if (
+    route.methods.some((method) => method !== "GET") ||
+    /(^|\/)(admin|auth|login|token)(\/|$)/iu.test(route.routePath)
+  ) {
+    boundaries.push("auth");
+  }
+  return boundaries;
 }
 
 function standaloneTestSuites(testFiles: string[], command: string | null): FeatureSeed[] {
@@ -1578,11 +1068,8 @@ function pythonShouldSkip(path: string): boolean {
 }
 
 async function containsReviewablePythonSource(root: string): Promise<boolean> {
-  for (const file of await rootPythonAppFiles(root)) {
-    const source = await readFile(join(root, file), "utf8");
-    if (/(?:^|\n)\s*(?:from\s+fastapi\s+import\b|import\s+fastapi\b)/u.test(source)) {
-      return true;
-    }
+  if ((await rootPythonSourceFiles(root)).length > 0) {
+    return true;
   }
   for (const sourceRoot of sourceRoots) {
     if (await containsPythonSourceInDirectory(root, sourceRoot, 4)) {
@@ -1664,15 +1151,101 @@ function tomlStringValue(source: string, key: string): string | null {
   return new RegExp(`^\\s*${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "mu").exec(source)?.[2] ?? null;
 }
 
-function scriptsFromTable(source: string): PythonScript[] {
+function scriptsFromTable(source: string, metadataPath: string): PythonScript[] {
   const scripts: PythonScript[] = [];
   for (const line of source.split("\n")) {
     const match = /^\s*["']?([^#"'=\s]+)["']?\s*=\s*(["'])([^"']+)\2/u.exec(line);
     if (match?.[1] !== undefined && match[3] !== undefined) {
-      scripts.push({ name: match[1], target: match[3] });
+      scripts.push({ name: match[1], target: match[3], metadataPath });
     }
   }
   return scripts;
+}
+
+function setupCfgStringValue(source: string, sectionName: string, keyName: string): string | null {
+  const section = iniSection(source, sectionName);
+  const escapedKey = keyName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return (
+    new RegExp(`^\\s*${escapedKey}\\s*=\\s*([^#;\\r\\n]+)`, "imu").exec(section)?.[1]?.trim() ??
+    null
+  );
+}
+
+function setupCfgConsoleScripts(source: string): PythonScript[] {
+  const scripts: PythonScript[] = [];
+  const section = iniSection(source, "options.entry_points");
+  let inConsoleScripts = false;
+  for (const rawLine of section.split("\n")) {
+    const line = rawLine.replace(/\r$/u, "");
+    if (/^\s*(?:#|;|$)/u.test(line)) {
+      continue;
+    }
+    const assignment = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)$/u.exec(line);
+    if (assignment !== null) {
+      if (!/^\s/u.test(line)) {
+        inConsoleScripts = assignment[1] === "console_scripts";
+        const inlineScript = inConsoleScripts ? consoleScriptFromEntry(assignment[2] ?? "") : null;
+        if (inlineScript !== null) {
+          scripts.push({ ...inlineScript, metadataPath: "setup.cfg" });
+        }
+        continue;
+      }
+      if (inConsoleScripts) {
+        scripts.push({
+          name: assignment[1] ?? "",
+          target: (assignment[2] ?? "").trim(),
+          metadataPath: "setup.cfg",
+        });
+      }
+      continue;
+    }
+    const script = inConsoleScripts ? consoleScriptFromEntry(line) : null;
+    if (script !== null) {
+      scripts.push({ ...script, metadataPath: "setup.cfg" });
+    }
+  }
+  return scripts.filter((script) => script.name.length > 0 && script.target.length > 0);
+}
+
+function setupPyStringValue(source: string, keyName: string): string | null {
+  const escapedKey = keyName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`\\b${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "su").exec(source)?.[2] ?? null;
+}
+
+function setupPyConsoleScripts(source: string): PythonScript[] {
+  const scripts: PythonScript[] = [];
+  for (const block of source.matchAll(/console_scripts["']?\s*[:=]\s*\[([\s\S]*?)\]/gu)) {
+    const entries = block[1] ?? "";
+    for (const match of entries.matchAll(/["']([^"']+)["']/gu)) {
+      const script = consoleScriptFromEntry(match[1] ?? "");
+      if (script !== null) {
+        scripts.push({ ...script, metadataPath: "setup.py" });
+      }
+    }
+  }
+  return scripts;
+}
+
+function consoleScriptFromEntry(source: string): Omit<PythonScript, "metadataPath"> | null {
+  const match =
+    /^\s*([A-Za-z0-9_.-]+)\s*=\s*([A-Za-z_][A-Za-z0-9_.]*(?::[A-Za-z_][A-Za-z0-9_]*)?)\s*$/u.exec(
+      source,
+    );
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return null;
+  }
+  return { name: match[1], target: match[2] };
+}
+
+function iniSection(source: string, sectionName: string): string {
+  const escapedName = sectionName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = new RegExp(`^\\s*\\[${escapedName}\\]\\s*(?:[#;].*)?$`, "imu").exec(source);
+  if (match?.index === undefined) {
+    return "";
+  }
+  const rest = source.slice(match.index + match[0].length);
+  const next = /^\s*\[[^\]]+\]\s*(?:[#;].*)?$/mu.exec(rest);
+  return next?.index === undefined ? rest : rest.slice(0, next.index);
 }
 
 function dependencyNames(source: string): Set<string> {
@@ -1891,17 +1464,4 @@ function requirementName(value: string): string | null {
 
 function uniquePaths(paths: string[]): string[] {
   return [...new Set(paths)];
-}
-
-function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
-  }
-  return output;
 }
