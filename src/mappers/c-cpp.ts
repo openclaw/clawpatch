@@ -127,16 +127,30 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const seeds: FeatureSeed[] = [];
   const { contexts } = await referencedCMakeFiles(root, files);
   const extraSources = await cmakeTargetSources(root, contexts);
-  for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
+  for (const {
+    file: cmakeFile,
+    sourceDir: dir,
+    targetScope: scope,
+    cmakeSourceDir,
+    projectSourceDir,
+  } of contexts) {
     const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    const effectiveProjectSourceDir = cmakeDeclaresProject(body) ? dir : projectSourceDir;
     for (const args of cmakeCommandArgs(body, "add_executable")) {
       const [target = "", ...sources] = splitWords(args);
       if (!isValidTargetName(target)) {
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, sources, listDir, scope)),
+        ...(await targetSourcePaths(
+          root,
+          dir,
+          sources,
+          listDir,
+          cmakeSourceDir,
+          effectiveProjectSourceDir,
+        )),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -193,7 +207,14 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, sources, listDir, scope)),
+        ...(await targetSourcePaths(
+          root,
+          dir,
+          sources,
+          listDir,
+          cmakeSourceDir,
+          effectiveProjectSourceDir,
+        )),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -229,6 +250,8 @@ type CMakeContext = {
   file: string;
   sourceDir: string;
   targetScope: string;
+  cmakeSourceDir: string;
+  projectSourceDir: string;
 };
 
 async function referencedCMakeFiles(root: string, files: string[]): Promise<CMakeDiscovery> {
@@ -237,19 +260,43 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
   const pending: CMakeContext[] = [];
   for (const cmakeList of files.filter((file) => file.endsWith("CMakeLists.txt"))) {
     const dir = parentDir(cmakeList);
-    queueCMakeFile({ file: cmakeList, sourceDir: dir, targetScope: dir }, contexts, pending);
+    queueCMakeFile(
+      {
+        file: cmakeList,
+        sourceDir: dir,
+        targetScope: dir,
+        cmakeSourceDir: dir,
+        projectSourceDir: dir,
+      },
+      contexts,
+      pending,
+    );
   }
   while (pending.length > 0) {
     const context = pending.shift();
     if (context === undefined) {
       continue;
     }
-    const { file: cmakeFile, sourceDir: dir, targetScope: scope } = context;
+    const {
+      file: cmakeFile,
+      sourceDir: dir,
+      targetScope: scope,
+      cmakeSourceDir,
+      projectSourceDir,
+    } = context;
     const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    const effectiveProjectSourceDir = cmakeDeclaresProject(body) ? dir : projectSourceDir;
     for (const include of cmakeIncludes(body)) {
       const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
-      const full = resolveCMakePath(root, dir, listDir, scope, includePath);
+      const full = resolveCMakePath(
+        root,
+        dir,
+        listDir,
+        cmakeSourceDir,
+        effectiveProjectSourceDir,
+        includePath,
+      );
       if (full === null) {
         continue;
       }
@@ -257,10 +304,27 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       if (!cmakeFileSet.has(rel)) {
         continue;
       }
-      queueCMakeFile({ file: rel, sourceDir: dir, targetScope: scope }, contexts, pending);
+      queueCMakeFile(
+        {
+          file: rel,
+          sourceDir: dir,
+          targetScope: scope,
+          cmakeSourceDir,
+          projectSourceDir: effectiveProjectSourceDir,
+        },
+        contexts,
+        pending,
+      );
     }
     for (const child of cmakeSubdirectories(body)) {
-      const childFull = resolveCMakePath(root, dir, listDir, scope, child);
+      const childFull = resolveCMakePath(
+        root,
+        dir,
+        listDir,
+        cmakeSourceDir,
+        effectiveProjectSourceDir,
+        child,
+      );
       if (childFull === null) {
         continue;
       }
@@ -270,7 +334,13 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
         continue;
       }
       queueCMakeFile(
-        { file: rel, sourceDir: parentDir(rel), targetScope: scope },
+        {
+          file: rel,
+          sourceDir: parentDir(rel),
+          targetScope: scope,
+          cmakeSourceDir,
+          projectSourceDir: effectiveProjectSourceDir,
+        },
         contexts,
         pending,
       );
@@ -296,7 +366,13 @@ function queueCMakeFile(
 }
 
 function cmakeContextKey(context: CMakeContext): string {
-  return `${context.file}\0${context.sourceDir}\0${context.targetScope}`;
+  return [
+    context.file,
+    context.sourceDir,
+    context.targetScope,
+    context.cmakeSourceDir,
+    context.projectSourceDir,
+  ].join("\0");
 }
 
 async function cmakeTargetSources(
@@ -304,9 +380,16 @@ async function cmakeTargetSources(
   contexts: CMakeContext[],
 ): Promise<Map<string, string[]>> {
   const sources = new Map<string, string[]>();
-  for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
+  for (const {
+    file: cmakeFile,
+    sourceDir: dir,
+    targetScope: scope,
+    cmakeSourceDir,
+    projectSourceDir,
+  } of contexts) {
     const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    const effectiveProjectSourceDir = cmakeDeclaresProject(body) ? dir : projectSourceDir;
     for (const args of cmakeCommandArgs(body, "target_sources")) {
       const [target = "", ...sourceTokens] = splitWords(args);
       if (!isValidTargetName(target)) {
@@ -318,12 +401,23 @@ async function cmakeTargetSources(
         key,
         uniqueStrings([
           ...existing,
-          ...(await targetSourcePaths(root, dir, sourceTokens, listDir, scope)),
+          ...(await targetSourcePaths(
+            root,
+            dir,
+            sourceTokens,
+            listDir,
+            cmakeSourceDir,
+            effectiveProjectSourceDir,
+          )),
         ]),
       );
     }
   }
   return sources;
+}
+
+function cmakeDeclaresProject(body: string): boolean {
+  return cmakeCommandArgs(body, "project").length > 0;
 }
 
 function cmakeTargetKey(dir: string, target: string): string {
@@ -798,11 +892,12 @@ async function targetSourcePaths(
   dir: string,
   sources: string[],
   listDir = dir,
-  projectDir = dir,
+  cmakeSourceDir = dir,
+  projectSourceDir = dir,
 ): Promise<string[]> {
   const paths: string[] = [];
   for (const source of sources.filter(isCOrCppSource)) {
-    const full = resolveCMakePath(root, dir, listDir, projectDir, source);
+    const full = resolveCMakePath(root, dir, listDir, cmakeSourceDir, projectSourceDir, source);
     if (full === null) {
       continue;
     }
@@ -823,10 +918,18 @@ function resolveCMakePath(
   root: string,
   sourceDir: string,
   listDir: string,
-  projectDir: string,
+  cmakeSourceDir: string,
+  projectSourceDir: string,
   value: string,
 ): string | null {
-  const expanded = expandCMakeDirVariables(root, sourceDir, listDir, projectDir, value);
+  const expanded = expandCMakeDirVariables(
+    root,
+    sourceDir,
+    listDir,
+    cmakeSourceDir,
+    projectSourceDir,
+    value,
+  );
   if (expanded.includes("$")) {
     return null;
   }
@@ -837,16 +940,18 @@ function expandCMakeDirVariables(
   root: string,
   sourceDir: string,
   listDir: string,
-  projectDir: string,
+  cmakeSourceDir: string,
+  projectSourceDir: string,
   value: string,
 ): string {
   const sourceRoot = join(root, sourceDir);
   const listRoot = join(root, listDir);
-  const projectRoot = join(root, projectDir);
+  const cmakeRoot = join(root, cmakeSourceDir);
+  const projectRoot = join(root, projectSourceDir);
   return value
     .replace(/\$\{CMAKE_CURRENT_SOURCE_DIR\}/gu, sourceRoot)
     .replace(/\$\{CMAKE_CURRENT_LIST_DIR\}/gu, listRoot)
-    .replace(/\$\{CMAKE_SOURCE_DIR\}/gu, projectRoot)
+    .replace(/\$\{CMAKE_SOURCE_DIR\}/gu, cmakeRoot)
     .replace(/\$\{PROJECT_SOURCE_DIR\}/gu, projectRoot);
 }
 

@@ -3742,6 +3742,38 @@ add_executable(headerapp include/headers.hpp)
     expect(sourceApp?.entrypoints[0]?.path).toBe("sub/src/source.c");
   });
 
+  it("resets PROJECT_SOURCE_DIR when nested CMakeLists declares project", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-nested-project-source-dir-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "cmake_minimum_required(VERSION 3.20)\nproject(Root C)\nadd_subdirectory(sub)\n",
+    );
+    await writeFixture(
+      root,
+      "sub/CMakeLists.txt",
+      "project(Sub C)\nadd_executable(project_app ${PROJECT_SOURCE_DIR}/src/project.c)\nadd_executable(source_app ${CMAKE_SOURCE_DIR}/src/source.c)\n",
+    );
+    await writeFixture(root, "src/project.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/source.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "sub/src/project.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "sub/src/source.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const projectApp = result.features.find(
+      (feature) => feature.title === "CMake binary project_app",
+    );
+    const sourceApp = result.features.find(
+      (feature) =>
+        feature.title === "CMake binary source_app" &&
+        feature.entrypoints[0]?.path === "src/source.c",
+    );
+
+    expect(projectApp?.entrypoints[0]?.path).toBe("sub/src/project.c");
+    expect(sourceApp?.entrypoints[0]?.path).toBe("src/source.c");
+  });
+
   it("resolves nested CMake includes relative to the source dir", async () => {
     const root = await fixtureRoot("clawpatch-cmake-nested-include-source-dir-");
     await writeFixture(root, "CMakeLists.txt", "include(cmake/A.cmake)\n");
