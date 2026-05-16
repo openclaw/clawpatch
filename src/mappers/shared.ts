@@ -18,25 +18,29 @@ export async function nearbyTests(
   const dir = dirname(entryPath);
   const base = entryPath.replace(/\.[^.]+$/u, "");
   const rustTestPrefixes = rustTestPrefixesForEntry(entryPath);
-  const all = await walk(root, [
-    dir === "." ? "" : dir,
-    "test",
-    "Tests",
-    "tests",
-    "__tests__",
-    "src",
-    ...rustTestPrefixes,
-    ...seedTestPrefixes,
-  ]);
+  const isRustEntry = entryPath.endsWith(".rs");
+  const isSwiftEntry = entryPath.endsWith(".swift");
+  const isCOrCppEntry = isCOrCppPath(entryPath);
+  const all = await walk(
+    root,
+    [
+      dir === "." ? "" : dir,
+      "test",
+      "Tests",
+      "tests",
+      "__tests__",
+      "src",
+      ...rustTestPrefixes,
+      ...seedTestPrefixes,
+    ],
+    isCOrCppEntry ? shouldSkipCOrCppNearbyPath : shouldSkip,
+  );
   const stem =
     entryPath
       .split("/")
       .at(-1)
       ?.replace(/\.[^.]+$/u, "") ?? "";
   const swiftTestPrefixes = seedTestPrefixes.length > 0 ? [] : swiftTestPrefixesForEntry(entryPath);
-  const isRustEntry = entryPath.endsWith(".rs");
-  const isSwiftEntry = entryPath.endsWith(".swift");
-  const isCOrCppEntry = isCOrCppPath(entryPath);
   const tests = all
     .filter((path) => path !== entryPath)
     .filter(
@@ -265,6 +269,14 @@ export function isCOrCppTestPath(path: string): boolean {
     /(?:^|[_-])tests?\./iu.test(base) ||
     /Tests?\.[^.]+$/u.test(base)
   );
+}
+
+function shouldSkipCOrCppNearbyPath(path: string): boolean {
+  return shouldSkip(path) || isCOrCppDependencyPath(path) || isSampleProjectPath(path);
+}
+
+function isCOrCppDependencyPath(path: string): boolean {
+  return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
 function swiftTestPrefixesForEntry(entryPath: string): string[] {

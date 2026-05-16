@@ -60,7 +60,8 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
       stripLineComments(await readFile(join(root, makefile), "utf8").catch(() => ""), "#"),
     );
     const dir = parentDir(makefile);
-    for (const target of readVariableWords(body, "bin_PROGRAMS")) {
+    for (const rawTarget of readVariableWords(body, "bin_PROGRAMS")) {
+      const target = normalizeAutomakeProgramTarget(rawTarget);
       if (!isValidTargetName(target)) {
         continue;
       }
@@ -560,6 +561,10 @@ function uniqueStrings(values: string[]): string[] {
 
 function automakeVariableName(target: string): string {
   return target.replace(/[^A-Za-z0-9@]/gu, "_");
+}
+
+function normalizeAutomakeProgramTarget(target: string): string {
+  return target.replace(/\$[({]EXEEXT[)}]|@EXEEXT@/gu, "");
 }
 
 function prefixDir(dir: string, file: string): string {

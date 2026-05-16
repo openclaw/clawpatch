@@ -1742,7 +1742,7 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(
       root,
       "Makefile.in",
-      "bin_PROGRAMS = app\napp_SOURCES = main.c util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = core.c\n",
+      "bin_PROGRAMS = app$(EXEEXT)\napp_SOURCES = main.c util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = core.c\n",
     );
     await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
@@ -1883,6 +1883,22 @@ add_executable(headerapp include/headers.hpp)
     const result = await mapFeatures(root, project, []);
 
     expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
+  });
+
+  it("does not attach dependency C and C++ tests from skipped paths", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-skipped-nearby-tests-");
+    await writeFixture(root, "app.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "vendor/app_test.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "CMakeFiles/app_test.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "cmake-build-debug/app_test.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "fixtures/app_test.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "C binary app");
+
+    expect(app?.tests).toEqual([]);
+    expect(app?.contextFiles).toEqual([]);
   });
 
   it("skips dependency trees during C and C++ discovery", async () => {
