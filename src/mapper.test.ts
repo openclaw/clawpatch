@@ -1244,6 +1244,25 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     ]);
   });
 
+  it("does not map CMake target sources outside the project root", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-cpp-safe-sources-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(tool ../outside.c src/main.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const tool = result.features.find((feature) => feature.title === "CMake binary tool");
+
+    expect(tool?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(tool?.ownedFiles).toEqual([{ path: "src/main.c", reason: "target source" }]);
+    expect(
+      result.features.flatMap((feature) => [
+        ...feature.entrypoints.map((entrypoint) => entrypoint.path),
+        ...feature.ownedFiles.map((file) => file.path),
+      ]),
+    ).not.toContain("../outside.c");
+  });
+
   it("maps autotools C and C++ binary and library targets", async () => {
     const root = await fixtureRoot("clawpatch-autotools-cpp-map-");
     await writeFixture(

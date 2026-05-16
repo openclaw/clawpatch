@@ -2,9 +2,7 @@
 
 ## Unreleased
 
-- Added generic C/C++ feature mapping for standalone `main()` files, CMake
-  `add_executable` / `add_library` targets, and autotools `bin_PROGRAMS` /
-  `lib_LTLIBRARIES` targets.
+- Added generic C/C++ feature mapping for standalone `main()` files, CMake `add_executable` / `add_library` targets, and autotools `bin_PROGRAMS` / `lib_LTLIBRARIES` targets, thanks @iliaal.
 - Added JVM semantic role mapping from Java annotations, imports, inheritance, interfaces, and method signatures.
 - Added selected package script mapping for Node workspace packages.
 - Detected Java/Kotlin language and default Gradle build/test commands for root Gradle projects.

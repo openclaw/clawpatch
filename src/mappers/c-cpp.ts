@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   isSafeFile,
   isCOrCppTestPath,
@@ -63,8 +63,8 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
           continue;
         }
         const sources = readTargetSources(body, target);
-        const entryCandidates = sources.filter(isCOrCppCompilable);
-        const entryPath = (await pickEntry(root, dir, entryCandidates, target)) ?? makefile;
+        const sourcePaths = await targetSourcePaths(root, dir, sources);
+        const entryPath = pickEntry(sourcePaths, target) ?? makefile;
         const tag = languageTag(entryPath);
         seeds.push({
           title: `Autotools binary ${target}`,
@@ -78,7 +78,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
           command: target,
           tags: [tag, "cli"],
           trustBoundaries: ["user-input", "filesystem", "process-exec"],
-          ownedFiles: targetSourceRefs(dir, sources),
+          ownedFiles: targetSourceRefs(sourcePaths),
           contextFiles: [{ path: makefile, reason: "build target declaration" }],
           testPrefixes: [`${dir}tests`],
         });
@@ -91,8 +91,8 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         }
         const target = rawTarget.replace(/\.la$/u, "");
         const sources = readTargetSources(body, rawTarget.replace(/\./gu, "_"));
-        const entryCandidates = sources.filter(isCOrCppCompilable);
-        const entryPath = (await pickEntry(root, dir, entryCandidates, target)) ?? makefile;
+        const sourcePaths = await targetSourcePaths(root, dir, sources);
+        const entryPath = pickEntry(sourcePaths, target) ?? makefile;
         const tag = languageTag(entryPath);
         seeds.push({
           title: `Autotools library ${target}`,
@@ -106,7 +106,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
           command: null,
           tags: [tag, "library"],
           trustBoundaries: packageTrustBoundaries(target),
-          ownedFiles: targetSourceRefs(dir, sources),
+          ownedFiles: targetSourceRefs(sourcePaths),
           contextFiles: [{ path: makefile, reason: "build target declaration" }],
           testPrefixes: [`${dir}tests`],
         });
@@ -133,8 +133,8 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       if (!isValidTargetName(target)) {
         continue;
       }
-      const sources = splitWords(match[2] ?? "").filter(isCOrCppCompilable);
-      const entryPath = (await pickEntry(root, dir, sources, target)) ?? cmakeFile;
+      const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
+      const entryPath = pickEntry(sourcePaths, target) ?? cmakeFile;
       const tag = languageTag(entryPath);
       seeds.push({
         title: `CMake binary ${target}`,
@@ -148,7 +148,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         command: target,
         tags: [tag, "cli"],
         trustBoundaries: ["user-input", "filesystem", "process-exec"],
-        ownedFiles: targetSourceRefs(dir, sources),
+        ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: cmakeFile, reason: "CMake target declaration" }],
         testPrefixes: [`${dir}tests`],
       });
@@ -158,8 +158,8 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       if (!isValidTargetName(target)) {
         continue;
       }
-      const sources = splitWords(match[2] ?? "").filter(isCOrCppCompilable);
-      const entryPath = (await pickEntry(root, dir, sources, target)) ?? cmakeFile;
+      const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
+      const entryPath = pickEntry(sourcePaths, target) ?? cmakeFile;
       const tag = languageTag(entryPath);
       seeds.push({
         title: `CMake library ${target}`,
@@ -173,7 +173,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         command: null,
         tags: [tag, "library"],
         trustBoundaries: packageTrustBoundaries(target),
-        ownedFiles: targetSourceRefs(dir, sources),
+        ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: cmakeFile, reason: "CMake target declaration" }],
         testPrefixes: [`${dir}tests`],
       });
@@ -245,19 +245,13 @@ function splitWords(value: string): string[] {
   return value.split(/\s+/u).filter((word) => word.length > 0);
 }
 
-async function pickEntry(
-  root: string,
-  dir: string,
-  candidates: string[],
-  targetName: string,
-): Promise<string | null> {
+function pickEntry(candidates: string[], targetName: string): string | null {
   if (candidates.length === 0) {
     return null;
   }
   for (const candidate of candidates) {
-    const full = prefixDir(dir, candidate);
-    if ((await isSafeFile(root, join(root, full))) && full.split("/").at(-1) === targetName) {
-      return full;
+    if (candidate.split("/").at(-1) === targetName) {
+      return candidate;
     }
   }
   const preferred = candidates.find((candidate) => {
@@ -265,16 +259,25 @@ async function pickEntry(
     return base.startsWith(targetName) || base.startsWith("main.");
   });
   if (preferred !== undefined) {
-    return prefixDir(dir, preferred);
+    return preferred;
   }
   const first = candidates[0];
-  return first === undefined ? null : prefixDir(dir, first);
+  return first === undefined ? null : first;
 }
 
-function targetSourceRefs(dir: string, sources: string[]): Array<{ path: string; reason: string }> {
-  return sources
-    .filter(isCOrCppCompilable)
-    .map((source) => ({ path: prefixDir(dir, source), reason: "target source" }));
+async function targetSourcePaths(root: string, dir: string, sources: string[]): Promise<string[]> {
+  const paths: string[] = [];
+  for (const source of sources.filter(isCOrCppCompilable)) {
+    const full = join(root, prefixDir(dir, source));
+    if (await isSafeFile(root, full)) {
+      paths.push(normalize(relative(root, full)));
+    }
+  }
+  return paths;
+}
+
+function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {
+  return sources.map((source) => ({ path: source, reason: "target source" }));
 }
 
 function prefixDir(dir: string, file: string): string {
