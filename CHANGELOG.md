@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.
 - Improved Node/TypeScript mapping for large workspaces by splitting package source trees into bounded review groups with package-local tests.
 - Added generic nested SwiftPM, Apple/Xcode, and Gradle/Android app mapping.
 
