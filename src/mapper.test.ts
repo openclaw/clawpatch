@@ -3255,6 +3255,88 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
   });
 
+  it("maps namespace-imported Laravel controller route references", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-namespace-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/namespace-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Api;\n" +
+        "Route::get('/api/users', Api\\UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+    expect(apiController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps parameterized Laravel fluent route prefixes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-parameterized-prefix-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/parameterized-prefix",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\DashboardController;\n" +
+        "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/DashboardController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class DashboardController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const dashboard = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/DashboardController.php",
+    );
+
+    expect(dashboard?.entrypoints[0]?.route).toBe("/{tenant}/dashboard");
+  });
+
   it("ignores commented-out Laravel routes", async () => {
     const root = await fixtureRoot("clawpatch-laravel-commented-routes-");
     await writeFixture(
@@ -3389,11 +3471,25 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       ),
     );
     await writeFixture(root, "src/PackageService.php", "<?php\nfinal class PackageService {}\n");
+    await writeFixture(
+      root,
+      "tests/PackageServiceTest.php",
+      "<?php\nit('works', function () {});\n",
+    );
 
-    expect((await detectProject(root)).detected.commands).toMatchObject({
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const phpTestSuite = result.features.find((feature) =>
+      feature.title.startsWith("PHP test suite tests"),
+    );
+
+    expect(project.detected.commands).toMatchObject({
       typecheck: "vendor/bin/phpstan analyse",
       test: "vendor/bin/pest",
     });
+    expect(phpTestSuite?.tests).toEqual([
+      { path: "tests/PackageServiceTest.php", command: "vendor/bin/pest" },
+    ]);
   });
 
   it("uses PHPUnit dependency test commands for Laravel package features", async () => {

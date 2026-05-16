@@ -380,7 +380,7 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
     const source = stripPhpComments(await readFile(join(root, file), "utf8"));
     const imports = phpUseMap(source);
     for (const match of source.matchAll(
-      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;{}]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any|resource|apiResource)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(?:\[\s*)?(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class(?:\s*,\s*(['"])([^'"]+)\6)?/gmsu,
+      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any|resource|apiResource)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(?:\[\s*)?(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class(?:\s*,\s*(['"])([^'"]+)\6)?/gmsu,
     )) {
       const chain = match[1] ?? "";
       const method = match[2];
@@ -500,6 +500,11 @@ function resolveImportedClassName(imports: Map<string, string>, className: strin
     return null;
   }
   if (normalized.includes("\\")) {
+    const [head, ...tail] = normalized.split("\\");
+    const imported = head === undefined ? undefined : imports.get(head);
+    if (imported !== undefined && tail.length > 0) {
+      return `${imported}\\${tail.join("\\")}`;
+    }
     return normalized;
   }
   return imports.get(normalized) ?? normalized;
@@ -582,8 +587,12 @@ async function laravelTestCommand(
   if (await pathExists(join(root, "artisan"))) {
     return "php artisan test";
   }
+  if (composerDependencyNames(composer).has("pestphp/pest")) {
+    return "vendor/bin/pest";
+  }
   if (
     composerDependencyNames(composer).has("phpunit/phpunit") ||
+    composerDependencyNames(composer).has("phpunit/phpunit-selenium") ||
     (await pathExists(join(root, "phpunit.xml"))) ||
     (await pathExists(join(root, "phpunit.xml.dist")))
   ) {
