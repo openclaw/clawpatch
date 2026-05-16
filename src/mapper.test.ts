@@ -918,7 +918,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "pyproject.toml",
-      '[project]\nname = "py-tool"\ndependencies = ["pytest", "ruff"]\n\n[project.scripts]\npytool = "py_tool.cli:main"\n',
+      '[project]\nname = "py-tool"\ndependencies = ["pytest; python_version >= \'3.12\'", "ruff"]\n# "mypy"\n\n[project.scripts]\npytool = "py_tool.cli:main"\n',
     );
     await writeFixture(root, "uv.lock", "");
     await writeFixture(root, "src/py_tool/__init__.py", "");
@@ -1001,12 +1001,36 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       poetryRoot,
       "pyproject.toml",
-      '[tool.poetry]\nname = "poetry-app"\n\n[tool.poetry.dependencies]\npython = "^3.12"\npytest = "^8"\nmypy = "^1"\n',
+      '[tool.poetry]\nname = "poetry-app"\n\n[tool.poetry.dependencies]\npython = "^3.12"\nmypy = "^1"\n\n[tool.poetry.group.test.dependencies]\npytest = "^8"\n\n[tool.poetry.group.lint.dependencies]\nruff = "^0.5"\n',
     );
     await writeFixture(poetryRoot, "poetry.lock", "");
     expect((await detectProject(poetryRoot)).detected.commands).toMatchObject({
       typecheck: "poetry run mypy .",
+      lint: "poetry run ruff check .",
       test: "poetry run pytest",
+    });
+
+    const hatchRoot = await fixtureRoot("clawpatch-python-hatch-");
+    await writeFixture(
+      hatchRoot,
+      "pyproject.toml",
+      '[project]\nname = "hatch-app"\ndependencies = ["pytest", "ruff"]\n',
+    );
+    await writeFixture(hatchRoot, "hatch.toml", "");
+    expect((await detectProject(hatchRoot)).detected.commands).toMatchObject({
+      lint: "hatch run ruff check .",
+      test: "hatch run pytest",
+    });
+
+    const markerRoot = await fixtureRoot("clawpatch-python-marker-deps-");
+    await writeFixture(
+      markerRoot,
+      "pyproject.toml",
+      '[project]\nname = "markers"\ndependencies = ["ruff; python_version < \'3.13\'", "pytest"]\n# "mypy"\n',
+    );
+    expect((await detectProject(markerRoot)).detected.commands).toMatchObject({
+      lint: "ruff check .",
+      test: "pytest",
     });
 
     const pdmRoot = await fixtureRoot("clawpatch-python-pdm-");
@@ -1110,6 +1134,27 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     expect(firstSource?.featureId).toBeDefined();
     expect(secondSource?.featureId).toBe(firstSource?.featureId);
+    expect(second.stale).toBe(0);
+  });
+
+  it("keeps Python pytest suite ids stable when tests are added", async () => {
+    const root = await fixtureRoot("clawpatch-python-stable-test-id-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "stable-tests"\n');
+    await writeFixture(root, "tests/test_b.py", "def test_b():\n    pass\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstSuite = first.features.find(
+      (feature) => feature.title === "Python test suite tests",
+    );
+    await writeFixture(root, "tests/test_a.py", "def test_a():\n    pass\n");
+    const second = await mapFeatures(root, project, first.features);
+    const secondSuite = second.features.find(
+      (feature) => feature.title === "Python test suite tests",
+    );
+
+    expect(firstSuite?.featureId).toBeDefined();
+    expect(secondSuite?.featureId).toBe(firstSuite?.featureId);
     expect(second.stale).toBe(0);
   });
 

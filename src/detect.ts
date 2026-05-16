@@ -269,6 +269,9 @@ async function pythonRunner(root: string): Promise<string | null> {
   if (await pathExists(join(root, "pdm.lock"))) {
     return "pdm";
   }
+  if (await pathExists(join(root, "hatch.toml"))) {
+    return "hatch";
+  }
   return null;
 }
 
@@ -281,6 +284,9 @@ function pythonRunCommand(runner: string | null, command: string): string {
   }
   if (runner === "pdm") {
     return `pdm run ${command}`;
+  }
+  if (runner === "hatch") {
+    return `hatch run ${command}`;
   }
   return command;
 }
@@ -338,8 +344,7 @@ function pythonDependencyNames(source: string): string[] {
   for (const table of pythonTomlTables(source, [
     "tool.poetry.dependencies",
     "tool.poetry.dev-dependencies",
-    "tool.poetry.group.dev.dependencies",
-  ])) {
+  ]).concat(pythonTomlTablesMatching(source, /^tool\.poetry\.group\.[^.]+\.dependencies$/u))) {
     for (const value of pythonTomlAssignedKeysAndValues(table)) {
       const name = pythonRequirementName(value);
       if (name !== null) {
@@ -409,6 +414,21 @@ function pythonTomlTables(source: string, names: string[]): string[] {
   return tables;
 }
 
+function pythonTomlTablesMatching(source: string, pattern: RegExp): string[] {
+  const tables: string[] = [];
+  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*$/gmu)) {
+    const name = match[1];
+    if (name === undefined || !pattern.test(name)) {
+      continue;
+    }
+    const start = match.index + match[0].length;
+    const rest = source.slice(start);
+    const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+    tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
+  }
+  return tables;
+}
+
 function pythonTomlAssignedValues(source: string): string[] {
   const values: string[] = [];
   for (const match of source.matchAll(/^\s*["']?[^"'=\s]+["']?\s*=\s*/gmu)) {
@@ -423,10 +443,6 @@ function pythonTomlAssignedValues(source: string): string[] {
       continue;
     }
     values.push(...pythonTomlArrayValues(rawValue));
-    const stringValue = /^["']([^"']+)["']/u.exec(rawValue)?.[1];
-    if (stringValue !== undefined) {
-      values.push(stringValue);
-    }
   }
   return values;
 }
@@ -443,9 +459,43 @@ function pythonTomlAssignedKeysAndValues(source: string): string[] {
 }
 
 function pythonTomlArrayValues(source: string): string[] {
-  return [...source.matchAll(/(["'])([^"']+)\1/gu)].flatMap((match) =>
-    match[2] === undefined ? [] : [match[2]],
-  );
+  return pythonTomlStringValues(source);
+}
+
+function pythonTomlStringValues(source: string): string[] {
+  const values: string[] = [];
+  let quote: string | null = null;
+  let value = "";
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote !== null) {
+      if (escaped) {
+        value += char;
+        escaped = false;
+      } else if (char === "\\" && quote === '"') {
+        escaped = true;
+      } else if (char === quote) {
+        values.push(value);
+        quote = null;
+        value = "";
+      } else {
+        value += char;
+      }
+      continue;
+    }
+    if (char === "#") {
+      const nextNewline = source.indexOf("\n", index + 1);
+      if (nextNewline === -1) {
+        break;
+      }
+      index = nextNewline;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      value = "";
+    }
+  }
+  return values;
 }
 
 function readTomlBracketValue(source: string, bracketIndex: number): string {

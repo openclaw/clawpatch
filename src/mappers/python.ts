@@ -300,7 +300,7 @@ function standaloneTestSuites(testFiles: string[], command: string | null): Feat
     kind: "test-suite",
     source: "python-test-suite",
     confidence: "medium",
-    entryPath: group.files[0] ?? group.label,
+    entryPath: group.label,
     symbol: group.label,
     route: null,
     command: null,
@@ -475,6 +475,21 @@ function table(source: string, name: string): string {
   return nextSection?.index === undefined ? rest : rest.slice(0, nextSection.index);
 }
 
+function tablesMatching(source: string, pattern: RegExp): string[] {
+  const tables: string[] = [];
+  for (const match of source.matchAll(/^\s*\[([^\]]+)\]\s*$/gmu)) {
+    const name = match[1];
+    if (name === undefined || !pattern.test(name)) {
+      continue;
+    }
+    const start = match.index + match[0].length;
+    const rest = source.slice(start);
+    const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+    tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
+  }
+  return tables;
+}
+
 function tomlStringValue(source: string, key: string): string | null {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
   return new RegExp(`^\\s*${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "mu").exec(source)?.[2] ?? null;
@@ -504,7 +519,7 @@ function dependencyNames(source: string): Set<string> {
   for (const dependencyTable of [
     table(source, "tool.poetry.dependencies"),
     table(source, "tool.poetry.dev-dependencies"),
-    table(source, "tool.poetry.group.dev.dependencies"),
+    ...tablesMatching(source, /^tool\.poetry\.group\.[^.]+\.dependencies$/u),
   ]) {
     for (const value of assignedKeysAndValues(dependencyTable)) {
       const name = requirementName(value);
@@ -552,10 +567,6 @@ function assignedValues(source: string): string[] {
       continue;
     }
     values.push(...arrayValues(rawValue));
-    const stringValue = /^["']([^"']+)["']/u.exec(rawValue)?.[1];
-    if (stringValue !== undefined) {
-      values.push(stringValue);
-    }
   }
   return values;
 }
@@ -572,9 +583,43 @@ function assignedKeysAndValues(source: string): string[] {
 }
 
 function arrayValues(source: string): string[] {
-  return [...source.matchAll(/(["'])([^"']+)\1/gu)].flatMap((match) =>
-    match[2] === undefined ? [] : [match[2]],
-  );
+  return stringValues(source);
+}
+
+function stringValues(source: string): string[] {
+  const values: string[] = [];
+  let quote: string | null = null;
+  let value = "";
+  let escaped = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote !== null) {
+      if (escaped) {
+        value += char;
+        escaped = false;
+      } else if (char === "\\" && quote === '"') {
+        escaped = true;
+      } else if (char === quote) {
+        values.push(value);
+        quote = null;
+        value = "";
+      } else {
+        value += char;
+      }
+      continue;
+    }
+    if (char === "#") {
+      const nextNewline = source.indexOf("\n", index + 1);
+      if (nextNewline === -1) {
+        break;
+      }
+      index = nextNewline;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      value = "";
+    }
+  }
+  return values;
 }
 
 function readBracketValue(source: string, bracketIndex: number): string {
