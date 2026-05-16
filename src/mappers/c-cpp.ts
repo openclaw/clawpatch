@@ -13,11 +13,9 @@ import {
 import { FeatureSeed } from "./types.js";
 
 export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
-  const files = (await walk(root, [""])).filter(
+  const files = (await walk(root, [""], shouldSkipCOrCppPath)).filter(
     (path) =>
-      !isCOrCppDependencyPath(path) &&
-      !isSampleProjectPath(path) &&
-      (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
+      !isSampleProjectPath(path) && (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
   );
   if (files.length === 0) {
     return [];
@@ -126,8 +124,8 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
 
 async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
-  const cmakeFiles = await referencedCMakeFiles(root, files);
-  const sourceDirs = await cmakeSourceDirs(root, cmakeFiles);
+  const sourceDirs = await referencedCMakeSourceDirs(root, files);
+  const cmakeFiles = [...sourceDirs.keys()];
   const extraSources = await cmakeTargetSources(root, cmakeFiles, sourceDirs);
   const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
   const libPattern = /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
@@ -201,29 +199,38 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   return seeds;
 }
 
-async function referencedCMakeFiles(root: string, files: string[]): Promise<string[]> {
+async function referencedCMakeSourceDirs(
+  root: string,
+  files: string[],
+): Promise<Map<string, string>> {
   const cmakeFileSet = new Set(files.filter(isCMake));
-  const referenced = new Set(files.filter((file) => file.endsWith("CMakeLists.txt")));
-  const pending = [...referenced];
+  const sourceDirs = new Map<string, string>();
+  const pending: string[] = [];
+  for (const cmakeList of files.filter((file) => file.endsWith("CMakeLists.txt"))) {
+    sourceDirs.set(cmakeList, parentDir(cmakeList));
+    pending.push(cmakeList);
+  }
   while (pending.length > 0) {
     const cmakeFile = pending.shift();
     if (cmakeFile === undefined) {
       continue;
     }
-    const dir = parentDir(cmakeFile);
+    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const include of cmakeIncludes(body)) {
       const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
       const full = isAbsolute(includePath) ? includePath : join(root, prefixDir(dir, includePath));
       const rel = normalize(relative(root, full));
-      if (!cmakeFileSet.has(rel) || referenced.has(rel)) {
+      if (!cmakeFileSet.has(rel) || sourceDirs.has(rel)) {
         continue;
       }
-      referenced.add(rel);
+      sourceDirs.set(rel, dir);
       pending.push(rel);
     }
   }
-  return [...referenced].toSorted();
+  return new Map(
+    [...sourceDirs.entries()].toSorted(([left], [right]) => left.localeCompare(right)),
+  );
 }
 
 async function cmakeTargetSources(
@@ -252,25 +259,6 @@ async function cmakeTargetSources(
     }
   }
   return sources;
-}
-
-async function cmakeSourceDirs(root: string, cmakeFiles: string[]): Promise<Map<string, string>> {
-  const dirs = new Map<string, string>();
-  const cmakeFileSet = new Set(cmakeFiles);
-  for (const cmakeFile of cmakeFiles.filter((file) => file.endsWith("CMakeLists.txt"))) {
-    const dir = parentDir(cmakeFile);
-    dirs.set(cmakeFile, dir);
-    const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    for (const include of cmakeIncludes(body)) {
-      const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
-      const full = isAbsolute(includePath) ? includePath : join(root, prefixDir(dir, includePath));
-      const rel = normalize(relative(root, full));
-      if (cmakeFileSet.has(rel)) {
-        dirs.set(rel, dir);
-      }
-    }
-  }
-  return dirs;
 }
 
 function cmakeIncludes(body: string): string[] {
@@ -471,6 +459,10 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
 
 function isCOrCppDependencyPath(path: string): boolean {
   return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
+}
+
+function shouldSkipCOrCppPath(path: string): boolean {
+  return shouldSkip(path) || isCOrCppDependencyPath(path);
 }
 
 function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {

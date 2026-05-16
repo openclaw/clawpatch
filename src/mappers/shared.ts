@@ -66,7 +66,11 @@ export async function nearbyTests(
   return tests.map((path) => ({ path, command: testCommand }));
 }
 
-export async function walk(root: string, prefixes: string[]): Promise<string[]> {
+export async function walk(
+  root: string,
+  prefixes: string[],
+  skipPath: (path: string) => boolean = shouldSkip,
+): Promise<string[]> {
   const files: string[] = [];
   const seen = new Set<string>();
   const seenRoots = new Set<string>();
@@ -89,7 +93,7 @@ export async function walk(root: string, prefixes: string[]): Promise<string[]> 
     }
     const rel = normalize(relative(realRoot, canonicalStart));
     if (info.isFile()) {
-      if (!seen.has(rel) && !shouldSkip(rel)) {
+      if (!seen.has(rel) && !skipPath(rel)) {
         seen.add(rel);
         files.push(rel);
       }
@@ -99,7 +103,7 @@ export async function walk(root: string, prefixes: string[]): Promise<string[]> 
       continue;
     }
     seenRoots.add(canonicalStart);
-    await walkDir(realRoot, canonicalStart, files, seen);
+    await walkDir(realRoot, canonicalStart, files, seen, skipPath);
   }
   return files.toSorted();
 }
@@ -109,6 +113,7 @@ async function walkDir(
   dir: string,
   files: string[],
   seen: Set<string>,
+  skipPath: (path: string) => boolean,
 ): Promise<void> {
   const dirInfo = await lstat(dir);
   if (dirInfo.isSymbolicLink()) {
@@ -119,14 +124,14 @@ async function walkDir(
     return;
   }
   const relDir = normalize(relative(root, dir));
-  if (shouldSkip(relDir)) {
+  if (skipPath(relDir)) {
     return;
   }
   const entries = await readdir(dir);
   for (const entry of entries) {
     const full = join(dir, entry);
     const rel = normalize(relative(root, full));
-    if (seen.has(rel) || shouldSkip(rel)) {
+    if (seen.has(rel) || skipPath(rel)) {
       continue;
     }
     seen.add(rel);
@@ -135,7 +140,7 @@ async function walkDir(
       continue;
     }
     if (info.isDirectory()) {
-      await walkDir(root, full, files, seen);
+      await walkDir(root, full, files, seen, skipPath);
     } else if (info.isFile()) {
       files.push(rel);
     }

@@ -1560,6 +1560,25 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("resolves nested CMake includes relative to the source dir", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-nested-include-source-dir-");
+    await writeFixture(root, "CMakeLists.txt", "include(cmake/A.cmake)\n");
+    await writeFixture(root, "cmake/A.cmake", "include(cmake/B.cmake)\n");
+    await writeFixture(root, "cmake/B.cmake", "add_executable(app src/main.c src/util.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+    ]);
+  });
+
   it("ignores unreferenced CMake modules", async () => {
     const root = await fixtureRoot("clawpatch-cmake-unreferenced-module-");
     await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
