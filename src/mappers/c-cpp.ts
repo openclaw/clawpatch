@@ -387,7 +387,7 @@ async function mainFunctionTargets(
 }
 
 function definesMain(source: string): boolean {
-  const stripped = stripCOrCppComments(stripCOrCppLiterals(source));
+  const stripped = stripCOrCppSyntax(source);
   if (!stripped.includes("main")) {
     return false;
   }
@@ -401,7 +401,7 @@ function definesMain(source: string): boolean {
   return false;
 }
 
-function stripCOrCppComments(source: string): string {
+function stripCOrCppSyntax(source: string): string {
   let stripped = "";
   for (let index = 0; index < source.length; ) {
     const char = source[index];
@@ -429,15 +429,6 @@ function stripCOrCppComments(source: string): string {
       }
       continue;
     }
-    stripped += char;
-    index += 1;
-  }
-  return stripped;
-}
-
-function stripCOrCppLiterals(source: string): string {
-  let stripped = "";
-  for (let index = 0; index < source.length; ) {
     const raw = rawStringLiteralEnd(source, index);
     if (raw !== null) {
       stripped += blankLiteral(source.slice(index, raw));

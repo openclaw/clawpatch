@@ -2021,6 +2021,20 @@ add_executable(headerapp include/headers.hpp)
     expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
   });
 
+  it("detects C and C++ main functions after comments containing quotes", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-comment-quotes-");
+    await writeFixture(
+      root,
+      "src/app.cpp",
+      '// TODO parse "flag\n/* disabled "quoted" branch */\nint main(void) { return 0; }\n',
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
+  });
+
   it("ignores comment-only C and C++ sources", async () => {
     const root = await fixtureRoot("clawpatch-cpp-comment-only-");
     await writeFixture(root, "src/placeholder.cpp", `// ${"x".repeat(200)}\n`);
