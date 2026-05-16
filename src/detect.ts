@@ -789,12 +789,14 @@ async function containsCFile(root: string): Promise<boolean> {
 
 async function containsCppFile(root: string): Promise<boolean> {
   return (
-    (await containsFileWithExtension(root, ".cpp", 5)) ||
-    (await containsFileWithExtension(root, ".cc", 5)) ||
-    (await containsFileWithExtension(root, ".cxx", 5)) ||
-    (await containsFileWithExtension(root, ".hpp", 5)) ||
-    (await containsFileWithExtension(root, ".hh", 5)) ||
-    (await containsFileWithExtension(root, ".hxx", 5))
+    (await containsFileWithExtension(root, ".C", 5)) ||
+    (await containsFileWithExtension(root, ".H", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cpp", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cc", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cxx", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hpp", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hh", 5)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hxx", 5))
   );
 }
 
@@ -924,6 +926,17 @@ async function containsFileWithExtension(
   maxDepth: number,
 ): Promise<boolean> {
   return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension));
+}
+
+async function containsFileWithExtensionIgnoringCase(
+  root: string,
+  extension: string,
+  maxDepth: number,
+): Promise<boolean> {
+  const lowercaseExtension = extension.toLowerCase();
+  return containsFileMatching(root, maxDepth, (entry) =>
+    entry.toLowerCase().endsWith(lowercaseExtension),
+  );
 }
 
 async function containsFileMatching(

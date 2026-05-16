@@ -33,11 +33,11 @@ export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
 }
 
 function isCOrCppSource(path: string): boolean {
-  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/u.test(path);
+  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/iu.test(path);
 }
 
 function isCOrCppCompilable(path: string): boolean {
-  return /\.(?:c|cc|cpp|cxx)$/u.test(path);
+  return /\.(?:c|cc|cpp|cxx)$/iu.test(path);
 }
 
 function isMakefile(path: string): boolean {
@@ -49,7 +49,7 @@ function isCMake(path: string): boolean {
 }
 
 function languageTag(path: string): "c" | "cpp" {
-  return /\.(?:cc|cpp|cxx|hh|hpp|hxx)$/u.test(path) ? "cpp" : "c";
+  return /\.(?:C|H)$/u.test(path) || /\.(?:cc|cpp|cxx|hh|hpp|hxx)$/iu.test(path) ? "cpp" : "c";
 }
 
 async function autotoolsTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
@@ -416,7 +416,7 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
   for (const source of sources.filter(isCOrCppSource)) {
     const full = isAbsolute(source) ? source : join(root, prefixDir(dir, source));
     const rel = normalize(relative(root, full));
-    if (!shouldSkip(rel) && (await isSafeFile(root, full))) {
+    if (!shouldSkip(rel) && !isSampleProjectPath(rel) && (await isSafeFile(root, full))) {
       paths.push(rel);
     }
   }

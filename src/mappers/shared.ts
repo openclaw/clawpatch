@@ -249,16 +249,16 @@ function isJsTestPath(path: string): boolean {
 }
 
 export function isCOrCppPath(path: string): boolean {
-  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/u.test(path);
+  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/iu.test(path);
 }
 
 export function isCOrCppTestPath(path: string): boolean {
   const base = path.split("/").at(-1) ?? path;
   return (
     /(^|\/)(test|tests|__tests__)\//u.test(path) ||
-    /^test[_-]/u.test(base) ||
-    /[_-]tests?\./u.test(base) ||
-    /Tests?\./u.test(base)
+    /^test[_-]/iu.test(base) ||
+    /[_-]tests?\./iu.test(base) ||
+    /Tests?\./iu.test(base)
   );
 }
 

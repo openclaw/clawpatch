@@ -1324,6 +1324,33 @@ add_executable(headerapp include/headers.hpp)
     expect(result.features.map((feature) => feature.title)).toContain("CMake library headers");
   });
 
+  it("maps uppercase C++ source extensions", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-uppercase-cpp-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(uppercpp src/MAIN.CPP src/HELPER.HPP)\n",
+    );
+    await writeFixture(root, "src/MAIN.CPP", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/HELPER.HPP", "int helper(void);\n");
+    await writeFixture(root, "src/tool.C", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const uppercpp = result.features.find((feature) => feature.title === "CMake binary uppercpp");
+    const tool = result.features.find((feature) => feature.title === "C++ binary tool");
+
+    expect(project.detected.languages).toContain("cpp");
+    expect(uppercpp?.entrypoints[0]).toMatchObject({ path: "src/MAIN.CPP", symbol: "main" });
+    expect(uppercpp?.tags).toContain("cpp");
+    expect(uppercpp?.ownedFiles).toEqual([
+      { path: "src/MAIN.CPP", reason: "target source" },
+      { path: "src/HELPER.HPP", reason: "target source" },
+    ]);
+    expect(tool?.entrypoints[0]).toMatchObject({ path: "src/tool.C", symbol: "main" });
+    expect(tool?.tags).toContain("cpp");
+  });
+
   it("preserves CMake targets that share the same source list", async () => {
     const root = await fixtureRoot("clawpatch-cmake-shared-sources-");
     await writeFixture(
@@ -1597,6 +1624,7 @@ add_executable(headerapp include/headers.hpp)
 
   it("skips C and C++ sample project paths", async () => {
     const root = await fixtureRoot("clawpatch-cpp-sample-paths-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(sample fixtures/example/main.c)\n");
     await writeFixture(root, "fixtures/example/main.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "testdata/CMakeLists.txt", "add_executable(sample main.c)\n");
     await writeFixture(root, "testdata/main.c", "int main(void) { return 0; }\n");
