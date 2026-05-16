@@ -366,11 +366,14 @@ function routePrefixes(sources: Map<string, string>): FastApiPrefixInfo {
       const localRouterPrefixes = routerPrefixesByFile.get(file) ?? new Map<string, string>();
       const mounts = routerMountPrefixesByFile.get(file);
       const appReceivers = fastApiAppReceiversByFile.get(file) ?? new Set<string>();
+      const receiverCount = fastApiReceiversByFile.get(file)?.size ?? 0;
       for (const include of includes) {
         const receiverRouterPrefix = localRouterPrefixes.get(include.receiver) ?? "";
+        const mountedPrefixes = mounts?.get(include.receiver);
+        const fallbackPrefixes = receiverCount <= 1 ? prefixes.get(file) : undefined;
         const parentPrefixes = appReceivers.has(include.receiver)
           ? [""]
-          : (mounts?.get(include.receiver) ?? prefixes.get(file))?.map((prefix) =>
+          : (mountedPrefixes ?? fallbackPrefixes)?.map((prefix) =>
               joinRoutePaths(prefix, receiverRouterPrefix),
             );
         if (parentPrefixes === undefined) {

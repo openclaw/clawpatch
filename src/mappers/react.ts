@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import {
   detectNodePackageManager,
+  isSafeDirectory,
   isSampleProjectPath,
   nodeScriptCommand,
   normalize,
@@ -41,7 +42,6 @@ type RouteDeclaration = {
   component: string | null;
 };
 
-const routePathPropRe = /\bpath=(["'])(.*?)\1/su;
 const lazyImportRe =
   /const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:React\.)?lazy\(\s*\(\)\s*=>\s*import\(\s*["']([^"']+)["']\s*\)\s*\)/gu;
 const defaultImportRe =
@@ -326,10 +326,9 @@ async function expandWorkspacePattern(root: string, pattern: string): Promise<st
     if (hasWorkspaceGlob(parent)) {
       return expandWorkspaceGlob(root, normalized);
     }
-    const entries = await readdir(join(root, parent), { withFileTypes: true }).catch(() => []);
-    const packageRoots = entries
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => `${parent}/${entry.name}`);
+    const packageRoots = (await safeDirectoryEntries(root, parent)).map(
+      (entry) => `${parent}/${entry}`,
+    );
     const existing: string[] = [];
     for (const packageRoot of packageRoots) {
       if (await pathExists(join(root, packageRoot, "package.json"))) {
@@ -420,7 +419,11 @@ async function expandWorkspaceGlob(root: string, pattern: string): Promise<strin
 }
 
 async function safeDirectoryEntries(root: string, prefix: string): Promise<string[]> {
-  const entries = await readdir(join(root, prefix), { withFileTypes: true }).catch(() => []);
+  const dir = join(root, prefix);
+  if (!(await isSafeDirectory(root, dir))) {
+    return [];
+  }
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   return entries
     .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
     .map((entry) => entry.name)
@@ -519,8 +522,9 @@ function routeDeclarations(source: string): RouteDeclaration[] {
     if (tag === null) {
       continue;
     }
-    const declaredPath = routePathPropRe.exec(tag.props)?.[2];
-    const isIndexRoute = hasIndexRouteProp(tag.props);
+    const declaredPath = topLevelPropValue(tag.props, "path") ?? undefined;
+    const indexProp = topLevelPropValue(tag.props, "index");
+    const isIndexRoute = indexProp === null || indexProp === "true";
     const parentPath = pathStack.at(-1) ?? "";
     const path =
       declaredPath === undefined
@@ -538,10 +542,6 @@ function routeDeclarations(source: string): RouteDeclaration[] {
   return routes;
 }
 
-function hasIndexRouteProp(props: string): boolean {
-  return /(?:^|\s)index(?:\s*=\s*\{?\s*true\s*\}?|(?=\s|$))/su.test(props);
-}
-
 function routeElementComponent(props: string): string | null {
   const element = readJsxExpressionProp(props, "element");
   if (element === undefined) {
@@ -555,6 +555,73 @@ function routeElementComponent(props: string): string | null {
     return root.name;
   }
   return readJsxOpeningTag(element, root.end)?.name ?? root.name;
+}
+
+function topLevelPropValue(props: string, name: string): string | null | undefined {
+  let braceDepth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = 0; index < props.length; index += 1) {
+    const char = props[index];
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") {
+      braceDepth += 1;
+      continue;
+    }
+    if (char === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+      continue;
+    }
+    if (braceDepth === 0 && propNameMatchesAt(props, name, index)) {
+      return readTopLevelPropValue(props, index + name.length);
+    }
+  }
+  return undefined;
+}
+
+function propNameMatchesAt(source: string, name: string, index: number): boolean {
+  return (
+    source.slice(index, index + name.length) === name &&
+    !/[A-Za-z0-9_-]/u.test(source[index - 1] ?? "") &&
+    !/[A-Za-z0-9_-]/u.test(source[index + name.length] ?? "")
+  );
+}
+
+function readTopLevelPropValue(props: string, index: number): string | null {
+  let cursor = index;
+  while (/\s/u.test(props[cursor] ?? "")) {
+    cursor += 1;
+  }
+  if (props[cursor] !== "=") {
+    return null;
+  }
+  cursor += 1;
+  while (/\s/u.test(props[cursor] ?? "")) {
+    cursor += 1;
+  }
+  const quote = props[cursor];
+  if (quote === '"' || quote === "'") {
+    const end = props.indexOf(quote, cursor + 1);
+    return end === -1 ? "" : props.slice(cursor + 1, end);
+  }
+  if (props[cursor] === "{") {
+    const end = props.indexOf("}", cursor + 1);
+    return end === -1 ? "" : props.slice(cursor + 1, end).trim();
+  }
+  return null;
 }
 
 function readJsxExpressionProp(props: string, propName: string): string | undefined {

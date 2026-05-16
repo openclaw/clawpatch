@@ -411,6 +411,7 @@ describe("mapFeatures", () => {
         "import ErrorPage from './pages/ErrorPage';",
         "import DashboardPage from './pages/DashboardPage';",
         "import Icon from './pages/Icon';",
+        "import Widget from './pages/Widget';",
         "import EscapePage from '../../../outside';",
         "export default function App() {",
         "  return <Routes>",
@@ -427,6 +428,7 @@ describe("mapFeatures", () => {
         '    <Route path="/suspense" element={<Suspense><SuspensePage /></Suspense>} />',
         '    <Route path="/with-error" element={<ReportsPage />} errorElement={<ErrorPage />} />',
         '    <Route path="/dashboard" element={<DashboardPage icon={<Icon />} />} />',
+        '    <Route element={<Widget path="/inner" />} />',
         '    <Route element={<ReportsPage />} path="/reports" />',
         '    <Route path="/settings" element={<SettingsPage />} />',
         '    <Route path="/linked" element={<LinkedPage />} />',
@@ -496,6 +498,11 @@ describe("mapFeatures", () => {
       root,
       "frontend/src/pages/Icon.tsx",
       "export default function Icon() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/Widget.tsx",
+      "export default function Widget() { return null; }\n",
     );
     await writeFixture(
       root,
@@ -569,6 +576,7 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("React route /line-old");
     expect(titles).not.toContain("React route /trailing-old");
     expect(titles).not.toContain("React route /test-only");
+    expect(titles).not.toContain("React route /inner");
     expect(titles.filter((title) => title === "React route /")).toHaveLength(1);
     expect(dialog?.source).toBe("react-component");
     expect(dialog?.ownedFiles).toEqual([
@@ -602,6 +610,8 @@ describe("mapFeatures", () => {
   it("does not discover React packages through symlinked package roots", async () => {
     const root = await fixtureRoot("clawpatch-react-symlink-package-");
     const outside = join(root, "../outside-react-package");
+    const outsidePackages = join(root, "../outside-react-packages");
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
     await writeFixture(
       root,
       "../outside-react-package/package.json",
@@ -616,12 +626,30 @@ describe("mapFeatures", () => {
         'export function App() { return <Routes><Route path="/outside" element={<OutsidePage />} /></Routes>; }',
       ].join("\n"),
     );
+    await writeFixture(
+      root,
+      "../outside-react-packages/app/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "../outside-react-packages/app/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "function WorkspacePage() { return null; }",
+        'export function App() { return <Routes><Route path="/workspace-outside" element={<WorkspacePage />} /></Routes>; }',
+      ].join("\n"),
+    );
     await symlink(outside, join(root, "frontend"), "dir");
+    await symlink(outsidePackages, join(root, "packages"), "dir");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
 
     expect(result.features.map((feature) => feature.title)).not.toContain("React route /outside");
+    expect(result.features.map((feature) => feature.title)).not.toContain(
+      "React route /workspace-outside",
+    );
   });
 
   it("discovers React packages from workspace globs and honors excludes", async () => {
@@ -1858,11 +1886,16 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
         "from fastapi import APIRouter",
         "public_router = APIRouter()",
         "admin_router = APIRouter()",
+        "child_router = APIRouter()",
+        'admin_router.include_router(child_router, prefix="/child")',
         '@public_router.get("/users")',
         "def users():",
         "    return []",
         '@admin_router.get("/stats")',
         "def stats():",
+        "    return []",
+        '@child_router.get("/logs")',
+        "def logs():",
         "    return []",
       ].join("\n"),
     );
@@ -1919,6 +1952,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(titles).toContain("FastAPI route GET /public/users");
     expect(titles).toContain("FastAPI route GET /stats");
     expect(titles).not.toContain("FastAPI route GET /public/stats");
+    expect(titles).not.toContain("FastAPI route GET /public/child/logs");
   });
 
   it("applies FastAPI prefixes to dotted router includes in multi-router modules", async () => {
