@@ -959,6 +959,466 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
   });
 
+  it("detects and maps Laravel application slices", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-map-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/wault",
+          type: "project",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "laravel/pint": "^1.0",
+            "phpunit/phpunit": "^12.0",
+          },
+          scripts: {
+            test: ["@php artisan config:clear --ansi", "@php artisan test"],
+            "deploy:production:manual": "bash deploy/bin/deploy.sh",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "artisan", "#!/usr/bin/env php\n");
+    await writeFixture(root, "phpunit.xml", "<phpunit />\n");
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\LandingPageController;\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/', LandingPageController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n" +
+        "Route::resource('catalog', TrackController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/TrackController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\n" +
+        "use App\\Http\\Requests\\StoreTrackRequest;\n" +
+        "use App\\Services\\TrackUploadService;\n" +
+        "final class TrackController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/LandingPageController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class LandingPageController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Requests/StoreTrackRequest.php",
+      "<?php\nnamespace App\\Http\\Requests;\nfinal class StoreTrackRequest {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Services/TrackUploadService.php",
+      "<?php\nnamespace App\\Services;\nfinal class TrackUploadService {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Jobs/RunSubmissionAnalysis.php",
+      "<?php\nnamespace App\\Jobs;\nfinal class RunSubmissionAnalysis {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Console/Commands/ReleaseCut.php",
+      "<?php\nnamespace App\\Console\\Commands;\nfinal class ReleaseCut { protected $signature = 'app:release-cut {version}'; }\n",
+    );
+    await writeFixture(
+      root,
+      "app/Models/Track.php",
+      "<?php\nnamespace App\\Models;\nfinal class Track {}\n",
+    );
+    await writeFixture(
+      root,
+      "database/migrations/2026_01_01_000000_create_tracks_table.php",
+      "<?php\nreturn new class {};\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Feature/TrackControllerTest.php",
+      "<?php\nit('stores tracks', function () {});\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Unit/TrackUploadServiceTest.php",
+      "<?php\nit('uploads tracks', function () {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const trackController = result.features.find(
+      (feature) => feature.title === "Laravel controller TrackController",
+    );
+    const service = result.features.find(
+      (feature) => feature.title === "Laravel service TrackUploadService",
+    );
+
+    expect(project.detected.languages).toContain("php");
+    expect(project.detected.frameworks).toContain("laravel");
+    expect(project.detected.packageManagers).toContain("composer");
+    expect(project.detected.commands.test).toBe("composer test");
+    expect(project.detected.commands.lint).toBe("vendor/bin/pint --test");
+    expect(titles).toContain("Laravel project wault");
+    expect(titles).toContain("Composer script test");
+    expect(titles).toContain("Composer script deploy:production:manual");
+    expect(titles).toContain("Laravel controller TrackController");
+    expect(titles).toContain("Laravel controller LandingPageController");
+    expect(titles).toContain("Laravel request StoreTrackRequest");
+    expect(titles).toContain("Laravel command app:release-cut");
+    expect(titles).toContain("Laravel job RunSubmissionAnalysis");
+    expect(titles).toContain("Laravel service TrackUploadService");
+    expect(titles).toContain("Laravel model Track");
+    expect(titles).toContain("Laravel migrations database/migrations");
+    expect(titles).toContain("Laravel test suite tests/Feature");
+    expect(titles).toContain("Project config composer.json");
+    expect(trackController?.entrypoints[0]?.route).toBe("/tracks");
+    expect(trackController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+    expect(trackController?.contextFiles).toContainEqual({
+      path: "app/Http/Requests/StoreTrackRequest.php",
+      reason: "imported application class",
+    });
+    expect(trackController?.tests).toEqual([
+      { path: "tests/Feature/TrackControllerTest.php", command: "composer test" },
+    ]);
+    expect(service?.tests).toEqual([
+      { path: "tests/Unit/TrackUploadServiceTest.php", command: "composer test" },
+    ]);
+  });
+
+  it("keeps Laravel routes scoped to same-basename controller namespaces", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-controller-namespaces-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/namespaced-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/admin.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Admin\\UserController;\n" +
+        "Route::get('/admin/users', UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "routes/api.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Api\\UserController;\n" +
+        "Route::get('/api/users', UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Admin/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Admin;\nfinal class UserController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const adminController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Admin/UserController.php",
+    );
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(adminController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(adminController?.contextFiles).toContainEqual({
+      path: "routes/admin.php",
+      reason: "route definition",
+    });
+    expect(adminController?.contextFiles).not.toContainEqual({
+      path: "routes/api.php",
+      reason: "route definition",
+    });
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+    expect(apiController?.contextFiles).toContainEqual({
+      path: "routes/api.php",
+      reason: "route definition",
+    });
+    expect(apiController?.contextFiles).not.toContainEqual({
+      path: "routes/admin.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps fully qualified Laravel controller route references", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-qualified-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/qualified-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
+        "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/QualifiedController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class QualifiedController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/ArrayQualifiedController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class ArrayQualifiedController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const qualifiedController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/QualifiedController.php",
+    );
+    const arrayQualifiedController = result.features.find(
+      (feature) =>
+        feature.entrypoints[0]?.path === "app/Http/Controllers/ArrayQualifiedController.php",
+    );
+
+    expect(qualifiedController?.entrypoints[0]?.route).toBe("/qualified");
+    expect(qualifiedController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+    expect(arrayQualifiedController?.entrypoints[0]?.route).toBe("/qualified-array");
+    expect(arrayQualifiedController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps aliased Laravel controller route imports", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-aliased-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/aliased-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
+        "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
+        "Route::get('/admin/users', AdminUserController::class);\n" +
+        "Route::get('/api/users', ApiUserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Admin/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Admin;\nfinal class UserController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const adminController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Admin/UserController.php",
+    );
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(adminController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+  });
+
+  it("ignores commented-out Laravel routes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-commented-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/commented-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\ArchiveController;\n" +
+        "// Route::get('/old', ArchiveController::class);\n" +
+        "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
+        "Route::get('/current', ArchiveController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/ArchiveController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class ArchiveController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const archiveController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/ArchiveController.php",
+    );
+
+    expect(archiveController?.entrypoints[0]?.route).toBe("/current");
+    expect(archiveController?.summary).toContain("GET /current");
+    expect(archiveController?.summary).not.toContain("/old");
+    expect(archiveController?.summary).not.toContain("/blocked");
+  });
+
+  it("uses Composer validation scripts for PHP projects", async () => {
+    const root = await fixtureRoot("clawpatch-php-composer-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/php-tool",
+          require: {
+            php: "^8.3",
+          },
+          scripts: {
+            analyse: "vendor/bin/phpstan analyse",
+            lint: "vendor/bin/phpcs",
+            format: "vendor/bin/php-cs-fixer fix --dry-run",
+            test: "vendor/bin/phpunit",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "app/Service.php", "<?php\nfinal class Service {}\n");
+
+    expect((await detectProject(root)).detected.commands).toEqual({
+      typecheck: "composer analyse",
+      lint: "composer lint",
+      format: "composer format",
+      test: "composer test",
+    });
+  });
+
+  it("uses PHPUnit for Laravel package projects without artisan", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-package-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/laravel-package",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "phpunit/phpunit": "^12.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "phpunit.xml", "<phpunit />\n");
+    await writeFixture(root, "src/PackageServiceProvider.php", "<?php\nfinal class Provider {}\n");
+
+    expect((await detectProject(root)).detected.commands.test).toBe("vendor/bin/phpunit");
+  });
+
+  it("uses PHPUnit dependency test commands for Laravel package features", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-package-feature-tests-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/laravel-package-features",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "phpunit/phpunit": "^12.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/PackageController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class PackageController {}\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Feature/PackageControllerTest.php",
+      "<?php\nit('handles package routes', function () {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const controller = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/PackageController.php",
+    );
+
+    expect(project.detected.commands.test).toBe("vendor/bin/phpunit");
+    expect(controller?.tests).toEqual([
+      { path: "tests/Feature/PackageControllerTest.php", command: "vendor/bin/phpunit" },
+    ]);
+  });
+
   it("resolves Python console scripts and tests from non-src package roots", async () => {
     const root = await fixtureRoot("clawpatch-python-roots-");
     await writeFixture(

@@ -53,6 +53,10 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
 - SwiftPM `Sources/*` targets and `Tests/*` suites
+- Python project metadata, console scripts, bounded source groups, and pytest suites
+- Laravel/PHP projects from `composer.json` and `artisan`, including routes,
+  controllers, form requests, Artisan commands, jobs, services, models,
+  migrations, seeders, Composer scripts, and PHP test suites
 - common project config files
 
 Deeper framework mappers and agent-assisted enrichment are next steps.

@@ -48,6 +48,7 @@ This discovers reviewable features:
 - Python packages, console scripts, and pytest suites
 - Rust crates and binaries
 - SwiftPM targets and tests
+- Laravel controllers, requests, jobs, commands, services, models, migrations, and tests
 - Config files
 
 Preview mapping without writing:
