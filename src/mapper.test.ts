@@ -2424,7 +2424,7 @@ describe("mapFeatures", () => {
     await writeFixture(
       root,
       "build.gradle.kts",
-      'plugins { id("com.android.application") version "1.0" apply false }\n',
+      'plugins { id("com.android.application").version("1.0").apply(false) }\n',
     );
     await writeFixture(
       root,
@@ -2484,6 +2484,18 @@ describe("mapFeatures", () => {
         "",
         "@Database(entities = [], version = 1)",
         "abstract class AppDatabase : RoomDatabase()",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "app/src/main/kotlin/com/example/data/UserRepository.kt",
+      [
+        "package com.example.data",
+        "",
+        "import javax.inject.Inject",
+        "",
+        "class UserRepository @Inject constructor()",
         "",
       ].join("\n"),
     );
@@ -2583,6 +2595,9 @@ describe("mapFeatures", () => {
       "app/src/main/kotlin/com/example/ui/MainActivity.kt",
     );
     expect(data?.trustBoundaries).toEqual(expect.arrayContaining(["database", "serialization"]));
+    expect(data?.ownedFiles.map((file) => file.path)).toContain(
+      "app/src/main/kotlin/com/example/data/UserRepository.kt",
+    );
     expect(client?.trustBoundaries).toEqual(
       expect.arrayContaining(["network", "external-api", "serialization"]),
     );
@@ -2946,6 +2961,7 @@ describe("mapFeatures", () => {
       [
         "package com.example.jobs",
         "",
+        "import java.util.*",
         "import org.scheduler.*",
         "",
         "open class LocalBase",

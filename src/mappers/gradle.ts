@@ -402,6 +402,14 @@ function kotlinEvidenceWithPathFallback(
   if (frameworkEvidence.every((item) => item.role === "server-extension-boundary")) {
     return dedupeKotlinEvidence([...frameworkEvidence, ...pathEvidence]);
   }
+  if (frameworkEvidence.every((item) => item.role === "android-dependency-injection")) {
+    return dedupeKotlinEvidence([
+      ...frameworkEvidence,
+      ...pathEvidence.filter((item) =>
+        ["android-data-boundary", "android-external-client"].includes(item.role),
+      ),
+    ]);
+  }
   return frameworkEvidence;
 }
 
@@ -728,7 +736,7 @@ function kotlinDeclarationRoleEvidence(
       });
     }
     for (const type of declaration.supertypes) {
-      const full = kotlinImportForType(info, type, projectTypes);
+      const full = kotlinImportForType(info, type, projectTypes, projectPackages);
       if (full !== undefined && isExternalProjectImport(full, projectPackages)) {
         evidence.push({
           role: "server-framework-component",
@@ -748,7 +756,7 @@ function kotlinFunctionReturnRoleEvidence(
 ): KotlinRoleEvidence[] {
   const evidence: KotlinRoleEvidence[] = [];
   for (const type of info.functionReturnTypes) {
-    const full = kotlinImportForType(info, type, projectTypes);
+    const full = kotlinImportForType(info, type, projectTypes, projectPackages);
     if (full !== undefined && isExternalProjectImport(full, projectPackages)) {
       evidence.push({
         role: "server-framework-component",
@@ -764,6 +772,7 @@ function kotlinImportForType(
   info: KotlinFileInfo,
   type: string,
   projectTypes: Set<string>,
+  projectPackages: Set<string>,
 ): string | undefined {
   const direct = info.imports.get(type);
   if (direct !== undefined) {
@@ -777,7 +786,10 @@ function kotlinImportForType(
       if (full.startsWith("kotlin.")) {
         return undefined;
       }
-      return `${full.slice(0, -1)}${type}`;
+      const candidate = `${full.slice(0, -1)}${type}`;
+      if (isExternalProjectImport(candidate, projectPackages)) {
+        return candidate;
+      }
     }
   }
   return undefined;
@@ -1428,7 +1440,7 @@ function appliesAndroidGradlePlugin(source: string): boolean {
       /\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']/u.test(
         line,
       ) &&
-      !/\bapply\s+false\b/u.test(line)
+      !/(?:\bapply\s+false\b|\.apply\s*\(\s*false\s*\))/u.test(line)
     ) {
       return true;
     }
