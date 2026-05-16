@@ -1,8 +1,14 @@
+import { join } from "node:path";
+import { readPackageJson } from "../detect.js";
+import { pathExists } from "../fs.js";
 import { walk } from "./shared.js";
 import { FeatureSeed } from "./types.js";
 
 export async function nextSeeds(root: string): Promise<FeatureSeed[]> {
-  const files = await walk(root, ["app", "pages", "src/app", "src/pages"]);
+  const prefixes = (await isNextProject(root))
+    ? ["app", "pages", "src/app", "src/pages"]
+    : ["app", "pages"];
+  const files = await walk(root, prefixes);
   const routeFiles = files.filter(
     (file) =>
       /(^|\/)(page|route)\.(tsx|ts|jsx|js)$/u.test(file) ||
@@ -25,6 +31,26 @@ export async function nextSeeds(root: string): Promise<FeatureSeed[]> {
 
 function isAppRoute(file: string): boolean {
   return file.startsWith("app/") || file.startsWith("src/app/");
+}
+
+async function isNextProject(root: string): Promise<boolean> {
+  const pkg = await readPackageJson(root);
+  if (
+    dependencyFieldHas(pkg?.dependencies, "next") ||
+    dependencyFieldHas(pkg?.devDependencies, "next")
+  ) {
+    return true;
+  }
+  for (const file of ["next.config.js", "next.config.mjs", "next.config.ts"]) {
+    if (await pathExists(join(root, file))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function dependencyFieldHas(field: unknown, name: string): boolean {
+  return typeof field === "object" && field !== null && Object.hasOwn(field, name);
 }
 
 function routeFromFile(file: string): string {

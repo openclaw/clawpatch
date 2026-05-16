@@ -108,6 +108,28 @@ describe("mapFeatures", () => {
     expect(bySource("/about")).toBe("next-pages-route");
   });
 
+  it("does not map src app-shaped routes without a Next project signal", async () => {
+    const root = await fixtureRoot("clawpatch-map-src-non-next-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
+    await writeFixture(
+      root,
+      "src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/about.tsx",
+      "export default function About() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("Route /dashboard");
+    expect(titles).not.toContain("Route /about");
+  });
+
   it("maps generated package bins back to source entries", async () => {
     const root = await fixtureRoot("clawpatch-map-bin-source-");
     await writeFixture(
