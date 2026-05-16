@@ -95,6 +95,16 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/pages/docs/page.tsx",
+      "export default function DocsPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/docs/route.tsx",
+      "export default function DocsRoute() { return null; }\n",
+    );
+    await writeFixture(
+      root,
       "src/pages/_app.tsx",
       "export default function App() { return null; }\n",
     );
@@ -118,6 +128,8 @@ describe("mapFeatures", () => {
     expect(titles).toContain("Route /dashboard");
     expect(titles).toContain("Route /api/health");
     expect(titles).toContain("Route /about");
+    expect(titles).toContain("Route /docs/page");
+    expect(titles).toContain("Route /docs/route");
     expect(bySource("/dashboard")).toBe("next-app-route");
     expect(bySource("/api/health")).toBe("next-app-route");
     expect(bySource("/about")).toBe("next-pages-route");

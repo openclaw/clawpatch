@@ -58,16 +58,26 @@ function dependencyFieldHas(field: unknown, name: string): boolean {
 }
 
 function routeFromFile(file: string): string {
-  let route = file
-    .replace(/^src\//u, "")
-    .replace(/^app\//u, "/")
-    .replace(/^pages\//u, "/")
-    .replace(/\/(page|route)\.[^.]+$/u, "")
-    .replace(/\.[^.]+$/u, "")
-    .replace(/\/index$/u, "")
-    .replace(/\[(.+?)\]/gu, ":$1");
+  let route = isAppRoute(file) ? appRouteFromFile(file) : pagesRouteFromFile(file);
   if (route === "") {
     route = "/";
   }
   return route;
+}
+
+function appRouteFromFile(file: string): string {
+  return file
+    .replace(/^src\//u, "")
+    .replace(/^app\//u, "/")
+    .replace(/\/(page|route)\.[^.]+$/u, "")
+    .replace(/\[(.+?)\]/gu, ":$1");
+}
+
+function pagesRouteFromFile(file: string): string {
+  return file
+    .replace(/^src\//u, "")
+    .replace(/^pages\//u, "/")
+    .replace(/\.[^.]+$/u, "")
+    .replace(/\/index$/u, "")
+    .replace(/\[(.+?)\]/gu, ":$1");
 }
