@@ -1002,6 +1002,27 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(cli?.tests).toEqual([{ path: "test_cli.py", command: "pytest" }]);
   });
 
+  it("does not resolve Python console scripts through symlinked package dirs", async () => {
+    const root = await fixtureRoot("clawpatch-python-script-symlink-root-");
+    const external = await fixtureRoot("clawpatch-python-script-symlink-external-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "linked-script"\n\n[project.scripts]\nlinked = "pkg.cli:main"\n',
+    );
+    await writeFixture(external, "pkg/cli.py", "def main():\n    pass\n");
+    await symlink(join(external, "pkg"), join(root, "pkg"), "dir");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command linked");
+
+    expect(cli?.entrypoints[0]?.path).toBe("pyproject.toml");
+    expect(cli?.ownedFiles).toEqual([
+      { path: "pyproject.toml", reason: "console script metadata" },
+    ]);
+  });
+
   it("detects Python projects and conservative command defaults", async () => {
     const uvRoot = await fixtureRoot("clawpatch-python-uv-");
     await writeFixture(

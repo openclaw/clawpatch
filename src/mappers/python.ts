@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import {
   isSafeDirectory,
+  isSafeFile,
   packageKind,
   packageTrustBoundaries,
   pathMatchesPrefix,
@@ -289,7 +290,7 @@ async function resolvePythonScript(
     candidates.add(`${sourceRoot}/${packageInitPath}`);
   }
   for (const candidate of candidates) {
-    if (await pathExists(join(root, candidate))) {
+    if (await isSafeFile(root, join(root, candidate))) {
       return { entryPath: candidate, symbol };
     }
   }
