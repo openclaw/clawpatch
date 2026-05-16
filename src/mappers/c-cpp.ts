@@ -139,7 +139,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       }
       const sourcePaths = uniqueStrings([
         ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
-        ...(extraSources.get(target) ?? []),
+        ...(extraSources.get(cmakeTargetKey(dir, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
         continue;
@@ -172,7 +172,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       }
       const sourcePaths = uniqueStrings([
         ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
-        ...(extraSources.get(target) ?? []),
+        ...(extraSources.get(cmakeTargetKey(dir, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
         continue;
@@ -248,9 +248,10 @@ async function cmakeTargetSources(
       if (!isValidTargetName(target)) {
         continue;
       }
-      const existing = sources.get(target) ?? [];
+      const key = cmakeTargetKey(dir, target);
+      const existing = sources.get(key) ?? [];
       sources.set(
-        target,
+        key,
         uniqueStrings([
           ...existing,
           ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
@@ -259,6 +260,10 @@ async function cmakeTargetSources(
     }
   }
   return sources;
+}
+
+function cmakeTargetKey(dir: string, target: string): string {
+  return `${dir}\0${target}`;
 }
 
 function cmakeIncludes(body: string): string[] {
