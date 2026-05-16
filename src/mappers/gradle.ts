@@ -794,6 +794,9 @@ function kotlinImportForType(
   ) {
     return undefined;
   }
+  if (isKotlinBuiltinType(type)) {
+    return undefined;
+  }
   for (const full of info.imports.values()) {
     if (full.endsWith(".*")) {
       return `${full.slice(0, -1)}${type}`;
@@ -842,6 +845,40 @@ function kotlinPathRoleEvidence(filePath: string, tags: string[]): KotlinRoleEvi
     });
   }
   return evidence;
+}
+
+function isKotlinBuiltinType(type: string): boolean {
+  return [
+    "Any",
+    "Array",
+    "Boolean",
+    "Byte",
+    "Char",
+    "CharSequence",
+    "Collection",
+    "Comparable",
+    "Double",
+    "Float",
+    "Int",
+    "Iterable",
+    "List",
+    "Long",
+    "Map",
+    "MutableCollection",
+    "MutableList",
+    "MutableMap",
+    "MutableSet",
+    "Nothing",
+    "Number",
+    "Pair",
+    "Result",
+    "Sequence",
+    "Set",
+    "Short",
+    "String",
+    "Triple",
+    "Unit",
+  ].includes(type);
 }
 
 function parseJavaFile(source: string): JavaFileInfo {

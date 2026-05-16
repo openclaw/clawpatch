@@ -3034,6 +3034,50 @@ describe("mapFeatures", () => {
     expect(di?.ownedFiles[0]?.reason).toContain("org.koin.dsl.*");
   });
 
+  it("does not resolve Kotlin built-in return types through wildcard imports", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-builtin-wildcard-type-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/OrderController.kt",
+      [
+        "package com.example.api",
+        "",
+        "import org.springframework.web.bind.annotation.*",
+        "",
+        "@RestController",
+        "class OrderController {",
+        '  @GetMapping("/orders")',
+        '  fun list(): String = "ok"',
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/api/OrderController.kt",
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-web-entrypoint" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/api/OrderController.kt",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("does not resolve local Kotlin declarations through wildcard imports", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-local-wildcard-type-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
