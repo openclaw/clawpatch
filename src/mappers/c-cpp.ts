@@ -440,13 +440,13 @@ function stripCOrCppSyntax(source: string): string {
       const start = index;
       index = quote.start + 1;
       while (index < source.length) {
-        const char = source[index];
-        if (char === "\\") {
+        const literalChar = source[index];
+        if (literalChar === "\\") {
           index += 2;
           continue;
         }
         index += 1;
-        if (char === quote.char) {
+        if (literalChar === quote.char) {
           break;
         }
       }
