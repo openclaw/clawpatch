@@ -376,7 +376,7 @@ function pythonTomlTable(source: string, name: string): string {
     return "";
   }
   const rest = source.slice(match.index + match[0].length);
-  const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
+  const next = pythonTomlHeaderPattern.exec(rest);
   return next?.index === undefined ? rest : rest.slice(0, next.index);
 }
 
@@ -410,7 +410,7 @@ function pythonTomlTables(source: string, names: string[]): string[] {
     for (const match of source.matchAll(pattern)) {
       const start = match.index + match[0].length;
       const rest = source.slice(start);
-      const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
+      const next = pythonTomlHeaderPattern.exec(rest);
       tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
     }
   }
@@ -426,11 +426,13 @@ function pythonTomlTablesMatching(source: string, pattern: RegExp): string[] {
     }
     const start = match.index + match[0].length;
     const rest = source.slice(start);
-    const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
+    const next = pythonTomlHeaderPattern.exec(rest);
     tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
   }
   return tables;
 }
+
+const pythonTomlHeaderPattern = /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/mu;
 
 function pythonTomlAssignedValues(source: string): string[] {
   const values: string[] = [];

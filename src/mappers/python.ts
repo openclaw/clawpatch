@@ -297,7 +297,11 @@ function standaloneTestSuites(testFiles: string[], command: string | null): Feat
   if (testFiles.length === 0) {
     return [];
   }
-  return partitionSourceFiles("tests", testFiles, sourceGroupMaxOwnedFiles).map((group) => ({
+  const groups: SourceGroup[] = [];
+  for (const [root, files] of groupedTestFiles(testFiles)) {
+    groups.push(...partitionSourceFiles(root, files, sourceGroupMaxOwnedFiles));
+  }
+  return groups.map((group) => ({
     title: `Python test suite ${group.label}`,
     summary: `Python pytest files in ${group.label}.`,
     kind: "test-suite",
@@ -315,6 +319,28 @@ function standaloneTestSuites(testFiles: string[], command: string | null): Feat
     testCommand: command,
     skipNearbyTests: true,
   }));
+}
+
+function groupedTestFiles(testFiles: string[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const path of testFiles) {
+    const root = testSuiteRoot(path);
+    const files = groups.get(root) ?? [];
+    files.push(path);
+    groups.set(root, files);
+  }
+  return new Map([...groups.entries()].toSorted(([left], [right]) => left.localeCompare(right)));
+}
+
+function testSuiteRoot(path: string): string {
+  if (/^test_[^/]+\.py$/u.test(path) || path.endsWith("_test.py")) {
+    return "tests";
+  }
+  const first = path.split("/")[0];
+  if (first === "test" || first === "tests") {
+    return first;
+  }
+  return dirname(path);
 }
 
 function partitionSourceFiles(
@@ -525,7 +551,7 @@ function table(source: string, name: string): string {
     return "";
   }
   const rest = source.slice(match.index + match[0].length);
-  const nextSection = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
+  const nextSection = tomlHeaderPattern.exec(rest);
   return nextSection?.index === undefined ? rest : rest.slice(0, nextSection.index);
 }
 
@@ -538,11 +564,13 @@ function tablesMatching(source: string, pattern: RegExp): string[] {
     }
     const start = match.index + match[0].length;
     const rest = source.slice(start);
-    const next = /^\s*\[[^\]]+\]\s*(?:#.*)?$/mu.exec(rest);
+    const next = tomlHeaderPattern.exec(rest);
     tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
   }
   return tables;
 }
+
+const tomlHeaderPattern = /^\s*\[\[?[^\]]+\]\]?\s*(?:#.*)?$/mu;
 
 function tomlStringValue(source: string, key: string): string | null {
   const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");

@@ -1223,6 +1223,47 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(second.stale).toBe(0);
   });
 
+  it("stops Python script parsing at TOML array-table headers", async () => {
+    const root = await fixtureRoot("clawpatch-python-array-table-script-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "array-table"\n\n[project.scripts]\nreal = "pkg.cli:main"\n\n[[tool.uv.index]]\nname = "private"\nurl = "https://example.invalid/simple"\n',
+    );
+    await writeFixture(root, "pkg/__init__.py", "");
+    await writeFixture(root, "pkg/cli.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const commands = result.features
+      .filter((feature) => feature.source === "python-console-script")
+      .map((feature) => feature.entrypoints[0]?.command);
+
+    expect(commands).toEqual(["real"]);
+  });
+
+  it("groups colocated Python pytest suites by their actual directory", async () => {
+    const root = await fixtureRoot("clawpatch-python-colocated-test-groups-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "colocated-tests"\n');
+    for (let index = 0; index < 13; index += 1) {
+      await writeFixture(root, `src/pkg/test_${index}.py`, `def test_${index}():\n    pass\n`);
+    }
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const suites = result.features.filter((feature) => feature.source === "python-test-suite");
+
+    expect(suites.map((feature) => feature.title)).toEqual([
+      "Python test suite src/pkg#1",
+      "Python test suite src/pkg#2",
+    ]);
+    expect(
+      suites
+        .flatMap((feature) => feature.ownedFiles)
+        .every((file) => file.path.startsWith("src/pkg/")),
+    ).toBe(true);
+  });
+
   it("maps Python source-only projects without a full source-group pre-scan", async () => {
     const root = await fixtureRoot("clawpatch-python-source-only-");
     await writeFixture(root, "src/source_only/app.py", "def app():\n    pass\n");
