@@ -1737,6 +1737,30 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("maps autotools targets from Makefile.in", async () => {
+    const root = await fixtureRoot("clawpatch-autotools-makefile-in-");
+    await writeFixture(
+      root,
+      "Makefile.in",
+      "bin_PROGRAMS = app\napp_SOURCES = main.c util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = core.c\n",
+    );
+    await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
+    await writeFixture(root, "core.c", "int core(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "Autotools binary app");
+    const core = result.features.find((feature) => feature.title === "Autotools library libcore");
+
+    expect(project.detected.packageManagers).toContain("autotools");
+    expect(app?.ownedFiles).toEqual([
+      { path: "main.c", reason: "target source" },
+      { path: "util.c", reason: "target source" },
+    ]);
+    expect(core?.ownedFiles).toEqual([{ path: "core.c", reason: "target source" }]);
+  });
+
   it("maps standalone C main files without php-src extension semantics", async () => {
     const root = await fixtureRoot("clawpatch-c-main-map-");
     await writeFixture(root, "src/tool.c", "int main(void) { return 0; }\n");
@@ -1839,6 +1863,20 @@ add_executable(headerapp include/headers.hpp)
       root,
       "src/app.cpp",
       'const char *json = "{\\"ok\\": true}";\nconst char *raw = R"tag({raw})tag";\nint main(void) { return 0; }\n',
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
+  });
+
+  it("detects C and C++ main functions after literals containing comment markers", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-literal-comments-");
+    await writeFixture(
+      root,
+      "src/app.cpp",
+      'const char *url = R"json({"url":"http://example.com"})json";\nconst char *open = "/*";\nint main(void) { return 0; }\nconst char *close = "*/";\n',
     );
 
     const project = await detectProject(root);

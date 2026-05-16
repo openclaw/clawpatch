@@ -225,7 +225,11 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   if (!found.includes("cmake") && (await containsFileNamed(root, "CMakeLists.txt", 5))) {
     found.push("cmake");
   }
-  if (!found.includes("autotools") && (await containsFileNamed(root, "Makefile.am", 5))) {
+  if (
+    !found.includes("autotools") &&
+    ((await containsFileNamed(root, "Makefile.am", 5)) ||
+      (await containsFileNamed(root, "Makefile.in", 5)))
+  ) {
     found.push("autotools");
   }
   const pythonManagers: Array<[string, string]> = [

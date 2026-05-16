@@ -54,7 +54,7 @@ function languageTag(path: string): "c" | "cpp" {
 
 async function autotoolsTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
-  const makefiles = files.filter((file) => file.endsWith("Makefile.am"));
+  const makefiles = files.filter(isMakefile);
   for (const makefile of makefiles) {
     const body = collapseBackslashContinuations(
       stripLineComments(await readFile(join(root, makefile), "utf8").catch(() => ""), "#"),
@@ -315,7 +315,7 @@ async function mainFunctionTargets(
 }
 
 function definesMain(source: string): boolean {
-  const stripped = stripCOrCppLiterals(stripBlockComments(stripLineComments(source, "//")));
+  const stripped = stripLineComments(stripBlockComments(stripCOrCppLiterals(source)), "//");
   const pattern =
     /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/gmu;
   for (const match of stripped.matchAll(pattern)) {
