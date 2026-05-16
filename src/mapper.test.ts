@@ -984,6 +984,24 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(libbed?.tests).toEqual([{ path: "lib/libbed/test_cli.py", command: "pytest" }]);
   });
 
+  it("associates root-level pytest files with flat Python console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-flat-tests-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "flat"\ndependencies = ["pytest"]\n\n[project.scripts]\nflat = "cli:main"\n',
+    );
+    await writeFixture(root, "cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "test_cli.py", "def test_main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command flat");
+
+    expect(cli?.entrypoints[0]?.path).toBe("cli.py");
+    expect(cli?.tests).toEqual([{ path: "test_cli.py", command: "pytest" }]);
+  });
+
   it("detects Python projects and conservative command defaults", async () => {
     const uvRoot = await fixtureRoot("clawpatch-python-uv-");
     await writeFixture(

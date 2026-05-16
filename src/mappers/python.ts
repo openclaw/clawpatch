@@ -463,7 +463,7 @@ function associatedTests(files: string[], tests: string[], command: string | nul
         .replace(/\.py$/u, "");
       return (
         [...dirs].some((dir) => pathMatchesPrefix(test, dir)) ||
-        (fileStems.has(testStem) && /^(tests?|__tests__)\//u.test(test))
+        (fileStems.has(testStem) && (/^(tests?|__tests__)\//u.test(test) || !test.includes("/")))
       );
     })
     .slice(0, sourceGroupMaxTests)
