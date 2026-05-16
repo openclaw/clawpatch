@@ -361,6 +361,9 @@ async function expandWorkspaceGlob(root: string, pattern: string): Promise<strin
   const packages: string[] = [];
 
   async function visit(base: string, remaining: string[]): Promise<void> {
+    if (shouldSkip(base)) {
+      return;
+    }
     const [segment, ...rest] = remaining;
     if (segment === undefined) {
       if (base.length > 0 && (await pathExists(join(root, base, "package.json")))) {
@@ -375,14 +378,18 @@ async function expandWorkspaceGlob(root: string, pattern: string): Promise<strin
     if (segment === "**") {
       await visit(base, rest);
       for (const entry of await safeDirectoryEntries(root, base)) {
-        await visit(base.length === 0 ? entry : `${base}/${entry}`, remaining);
+        const child = base.length === 0 ? entry : `${base}/${entry}`;
+        if (!shouldSkip(child)) {
+          await visit(child, remaining);
+        }
       }
       return;
     }
     const matcher = globSegmentRegExp(segment);
     for (const entry of await safeDirectoryEntries(root, base)) {
-      if (matcher.test(entry)) {
-        await visit(base.length === 0 ? entry : `${base}/${entry}`, rest);
+      const child = base.length === 0 ? entry : `${base}/${entry}`;
+      if (matcher.test(entry) && !shouldSkip(child)) {
+        await visit(child, rest);
       }
     }
   }

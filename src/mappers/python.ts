@@ -395,7 +395,7 @@ function includeRouterCalls(
     const receiver = match[1];
     const openParenIndex = match.index + match[0].length - 1;
     const args = readPythonCallArgs(source, openParenIndex);
-    const target = /^\s*([A-Za-z_][A-Za-z0-9_]*(?:\.router)?)/u.exec(args)?.[1];
+    const target = /^\s*([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)/u.exec(args)?.[1];
     const prefixMatch = /\bprefix\s*=\s*(["'])([^"']*)\1/u.exec(args);
     if (receiver !== undefined && target !== undefined) {
       calls.push({ receiver, target, prefix: prefixMatch?.[2] ?? "" });

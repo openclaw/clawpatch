@@ -576,7 +576,7 @@ describe("mapFeatures", () => {
     await writeFixture(
       root,
       "pnpm-workspace.yaml",
-      "packages:\n  - libs/*\n  - libs/*/plugins/*\n  - packages/*\n  - '!packages/legacy'\n",
+      "packages:\n  - libs/*\n  - libs/**/plugins/*\n  - packages/*\n  - '!packages/legacy'\n",
     );
     await writeFixture(
       root,
@@ -639,6 +639,25 @@ describe("mapFeatures", () => {
       "packages/legacy/src/LegacyPage.tsx",
       "export default function LegacyPage() { return null; }\n",
     );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import IgnoredPage from './IgnoredPage';",
+        'export function App() { return <Routes><Route path="/ignored" element={<IgnoredPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/src/IgnoredPage.tsx",
+      "export default function IgnoredPage() { return null; }\n",
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -647,6 +666,7 @@ describe("mapFeatures", () => {
     expect(titles).toContain("React route /home");
     expect(titles).toContain("React route /plugin");
     expect(titles).not.toContain("React route /legacy");
+    expect(titles).not.toContain("React route /ignored");
   });
 
   it("maps nested SwiftPM, Apple, and Android Gradle app surfaces", async () => {
@@ -1690,6 +1710,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
         "from backend import routes",
         "app = FastAPI()",
         'app.include_router(routes.router, prefix="/v1")',
+        'app.include_router(routes.admin_router, prefix="/admin")',
       ].join("\n"),
     );
     await writeFixture(
@@ -1713,7 +1734,8 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const titles = result.features.map((feature) => feature.title);
 
     expect(titles).toContain("FastAPI route GET /v1/status");
-    expect(titles).toContain("FastAPI route GET /stats");
+    expect(titles).toContain("FastAPI route GET /admin/stats");
+    expect(titles).not.toContain("FastAPI route GET /stats");
     expect(titles).not.toContain("FastAPI route GET /v1/stats");
   });
 
