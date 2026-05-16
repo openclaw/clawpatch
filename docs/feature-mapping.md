@@ -33,6 +33,7 @@ Supported deterministic mappers today:
 - Next.js `app/` and `pages/` routes
 - Go `cmd/*/main.go`
 - Go `internal/*` packages
+- Python project metadata, console scripts, bounded source groups, and pytest suites
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
@@ -52,8 +53,14 @@ Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
 
+Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
+`[tool.poetry.scripts]` console scripts, source groups under common Python
+source roots, and pytest files. Framework-specific route mapping for FastAPI,
+Flask, and Django is not implemented yet.
+
 Known gaps:
 
 - no Express/Fastify/Hono route mapper yet
+- no FastAPI/Flask/Django route mapper yet
 - no import graph expansion beyond nearby tests yet
 - no agent enrichment yet

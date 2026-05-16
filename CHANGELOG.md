@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults.
 - Improved Node/TypeScript mapping for large workspaces by splitting package source trees into bounded review groups with package-local tests.
 - Added generic nested SwiftPM, Apple/Xcode, and Gradle/Android app mapping.
 

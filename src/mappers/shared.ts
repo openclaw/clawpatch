@@ -72,11 +72,14 @@ export async function walk(root: string, prefixes: string[]): Promise<string[]> 
     if (!(await pathExists(start))) {
       continue;
     }
-    const info = await lstat(start);
-    if (info.isSymbolicLink()) {
+    let info = await lstat(start);
+    const canonicalStart = await realpath(start).catch(() => start);
+    if (info.isSymbolicLink() && prefix !== "") {
       continue;
     }
-    const canonicalStart = await realpath(start).catch(() => start);
+    if (info.isSymbolicLink()) {
+      info = await lstat(canonicalStart).catch(() => info);
+    }
     if (!pathInsideRoot(realRoot, canonicalStart)) {
       continue;
     }

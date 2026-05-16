@@ -1,0 +1,583 @@
+import { readFile, readdir } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
+import { pathExists } from "../fs.js";
+import {
+  isSafeDirectory,
+  packageKind,
+  packageTrustBoundaries,
+  pathMatchesPrefix,
+  shouldSkip,
+  walk,
+} from "./shared.js";
+import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
+
+type PythonScript = {
+  name: string;
+  target: string;
+};
+
+type SourceGroup = {
+  label: string;
+  files: string[];
+};
+
+type PyprojectInfo = {
+  name: string | null;
+  scripts: PythonScript[];
+  hasPytest: boolean;
+};
+
+const sourceRoots = ["src", "app", "apps", "lib", "scripts"] as const;
+const sourceGroupMaxOwnedFiles = 12;
+const sourceGroupMaxTests = 8;
+
+export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
+  if (!(await isPythonProject(root))) {
+    return [];
+  }
+  const pyproject = await readPyproject(root);
+  const testCommand = await pythonTestCommand(root, pyproject);
+  const testFiles = await pythonTestFiles(root);
+  const seeds: FeatureSeed[] = [];
+
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    seeds.push({
+      title: `Python project ${pyproject.name ?? basename(root)}`,
+      summary: "Python project metadata in pyproject.toml.",
+      kind: packageKind(pyproject.name ?? basename(root)),
+      source: "python-project",
+      confidence: "medium",
+      entryPath: "pyproject.toml",
+      symbol: pyproject.name,
+      route: null,
+      command: null,
+      ownedFiles: [{ path: "pyproject.toml", reason: "python project metadata" }],
+      contextFiles: await pythonProjectContextFiles(root),
+      tags: ["python", "package"],
+      trustBoundaries: packageTrustBoundaries(pyproject.name ?? basename(root)),
+      skipNearbyTests: true,
+    });
+  }
+
+  for (const script of pyproject.scripts) {
+    const resolved = await resolvePythonScript(root, script.target);
+    const tests =
+      resolved.entryPath === "pyproject.toml"
+        ? []
+        : associatedTests([resolved.entryPath], testFiles, testCommand);
+    seeds.push({
+      title: `Python CLI command ${script.name}`,
+      summary:
+        resolved.entryPath === "pyproject.toml"
+          ? `Python console script '${script.name}' targets ${script.target}.`
+          : `Python console script '${script.name}' targets ${script.target}, source ${resolved.entryPath}.`,
+      kind: "cli-command",
+      source: "python-console-script",
+      confidence: resolved.entryPath === "pyproject.toml" ? "medium" : "high",
+      entryPath: resolved.entryPath,
+      symbol: resolved.symbol,
+      route: null,
+      command: script.name,
+      ownedFiles:
+        resolved.entryPath === "pyproject.toml"
+          ? [{ path: "pyproject.toml", reason: "console script metadata" }]
+          : [{ path: resolved.entryPath, reason: "console script source" }],
+      contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      tests,
+      tags: ["python", "cli"],
+      trustBoundaries: ["user-input", "filesystem", "process-exec"],
+      testCommand,
+      skipNearbyTests: true,
+    });
+  }
+
+  for (const group of await pythonSourceGroups(root)) {
+    const tests = associatedTests(group.files, testFiles, testCommand);
+    seeds.push({
+      title: `Python source ${group.label}`,
+      summary:
+        group.files.length === 1
+          ? `Python source file ${group.files[0]}.`
+          : `Python source group ${group.label} with ${group.files.length} files.`,
+      kind: packageKind(group.label),
+      source: "python-source-group",
+      confidence: "medium",
+      entryPath: group.files[0] ?? group.label,
+      symbol: group.label,
+      route: null,
+      command: null,
+      ownedFiles: group.files.map((path) => ({ path, reason: `source group ${group.label}` })),
+      contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      tests,
+      tags: ["python", "source-group"],
+      trustBoundaries: packageTrustBoundaries(group.label),
+      testCommand,
+      skipNearbyTests: true,
+    });
+  }
+
+  for (const test of standaloneTestSuites(testFiles, testCommand)) {
+    seeds.push(test);
+  }
+
+  return seeds;
+}
+
+async function isPythonProject(root: string): Promise<boolean> {
+  return (
+    (await pathExists(join(root, "pyproject.toml"))) ||
+    (await pathExists(join(root, "setup.py"))) ||
+    (await pathExists(join(root, "setup.cfg"))) ||
+    (await pathExists(join(root, "requirements.txt"))) ||
+    (await pythonSourceGroups(root)).length > 0
+  );
+}
+
+async function readPyproject(root: string): Promise<PyprojectInfo> {
+  if (!(await pathExists(join(root, "pyproject.toml")))) {
+    return { name: null, scripts: [], hasPytest: false };
+  }
+  const source = await readFile(join(root, "pyproject.toml"), "utf8");
+  return {
+    name:
+      tomlStringValue(table(source, "project"), "name") ??
+      tomlStringValue(table(source, "tool.poetry"), "name"),
+    scripts: [
+      ...scriptsFromTable(table(source, "project.scripts")),
+      ...scriptsFromTable(table(source, "tool.poetry.scripts")),
+    ],
+    hasPytest:
+      table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest"),
+  };
+}
+
+async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promise<string | null> {
+  if (
+    !pyproject.hasPytest &&
+    !(await dependencyFileHas(root, "pytest")) &&
+    (await pythonTestFiles(root)).length === 0
+  ) {
+    return null;
+  }
+  if (await pathExists(join(root, "uv.lock"))) {
+    return "uv run pytest";
+  }
+  if (await pathExists(join(root, "poetry.lock"))) {
+    return "poetry run pytest";
+  }
+  if (await pathExists(join(root, "pdm.lock"))) {
+    return "pdm run pytest";
+  }
+  return "pytest";
+}
+
+async function dependencyFileHas(root: string, dependency: string): Promise<boolean> {
+  for (const file of ["requirements.txt", "setup.cfg"]) {
+    if (!(await pathExists(join(root, file)))) {
+      continue;
+    }
+    const source = await readFile(join(root, file), "utf8");
+    if (requirementNames(source).has(dependency)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function pythonSourceGroups(root: string): Promise<SourceGroup[]> {
+  const groups: SourceGroup[] = [];
+  const seenRoots = new Set<string>();
+  for (const sourceRoot of await pythonSourceRoots(root)) {
+    if (seenRoots.has(sourceRoot)) {
+      continue;
+    }
+    seenRoots.add(sourceRoot);
+    const files = (await walk(root, [sourceRoot])).filter(isReviewablePythonSourceFile);
+    for (const group of partitionSourceFiles(sourceRoot, files, sourceGroupMaxOwnedFiles)) {
+      groups.push(group);
+    }
+  }
+  return groups;
+}
+
+async function pythonSourceRoots(root: string): Promise<string[]> {
+  const roots: string[] = [];
+  for (const sourceRoot of sourceRoots) {
+    if (await isSafeDirectory(root, join(root, sourceRoot))) {
+      roots.push(sourceRoot);
+    }
+  }
+  for (const entry of await readdir(root).catch(() => [])) {
+    const packageRoot = join(root, entry);
+    if (
+      !pythonShouldSkip(entry) &&
+      (await isSafeDirectory(root, packageRoot)) &&
+      (await pathExists(join(packageRoot, "__init__.py")))
+    ) {
+      roots.push(entry);
+    }
+  }
+  return roots.toSorted();
+}
+
+async function pythonTestFiles(root: string): Promise<string[]> {
+  return (await walk(root, ["tests", "test", ...(await pythonSourceRoots(root))]))
+    .filter(isPythonTestPath)
+    .filter((path) => !pythonShouldSkip(path))
+    .slice(0, 200);
+}
+
+async function pythonProjectContextFiles(root: string): Promise<SeedFileRef[]> {
+  const refs: SeedFileRef[] = [];
+  for (const path of ["requirements.txt", "setup.cfg", "setup.py", "README.md"]) {
+    if (await pathExists(join(root, path))) {
+      refs.push({ path, reason: "python project context" });
+    }
+  }
+  return refs;
+}
+
+async function resolvePythonScript(
+  root: string,
+  target: string,
+): Promise<{ entryPath: string; symbol: string | null }> {
+  const [moduleName, symbol = null] = target.split(":");
+  if (moduleName === undefined || moduleName.length === 0) {
+    return { entryPath: "pyproject.toml", symbol };
+  }
+  const modulePath = `${moduleName.replace(/\./gu, "/")}.py`;
+  const packageInitPath = `${moduleName.replace(/\./gu, "/")}/__init__.py`;
+  const candidates = new Set<string>([modulePath, packageInitPath]);
+  for (const sourceRoot of await pythonSourceRoots(root)) {
+    candidates.add(`${sourceRoot}/${modulePath}`);
+    candidates.add(`${sourceRoot}/${packageInitPath}`);
+  }
+  for (const candidate of candidates) {
+    if (await pathExists(join(root, candidate))) {
+      return { entryPath: candidate, symbol };
+    }
+  }
+  return { entryPath: "pyproject.toml", symbol };
+}
+
+function standaloneTestSuites(testFiles: string[], command: string | null): FeatureSeed[] {
+  if (testFiles.length === 0) {
+    return [];
+  }
+  return partitionSourceFiles("tests", testFiles, sourceGroupMaxOwnedFiles).map((group) => ({
+    title: `Python test suite ${group.label}`,
+    summary: `Python pytest files in ${group.label}.`,
+    kind: "test-suite",
+    source: "python-test-suite",
+    confidence: "medium",
+    entryPath: group.files[0] ?? group.label,
+    symbol: group.label,
+    route: null,
+    command: null,
+    ownedFiles: group.files.map((path) => ({ path, reason: "pytest file" })),
+    contextFiles: [],
+    tests: group.files.map((path) => ({ path, command })),
+    tags: ["python", "test"],
+    trustBoundaries: [],
+    testCommand: command,
+    skipNearbyTests: true,
+  }));
+}
+
+function partitionSourceFiles(
+  sourceRoot: string,
+  files: string[],
+  maxFiles: number,
+): SourceGroup[] {
+  return partitionAt(sourceRoot, files.toSorted(), maxFiles, 0);
+}
+
+function partitionAt(
+  sourceRoot: string,
+  files: string[],
+  maxFiles: number,
+  depth: number,
+): SourceGroup[] {
+  if (files.length === 0) {
+    return [];
+  }
+  if (files.length <= maxFiles) {
+    return [{ label: commonLabel(sourceRoot, files, depth), files }];
+  }
+  const directFiles: string[] = [];
+  const buckets = new Map<string, string[]>();
+  for (const file of files) {
+    const relativePath = file.slice(sourceRoot.length + 1);
+    const parts = relativePath.split("/");
+    if (parts.length <= depth + 1) {
+      directFiles.push(file);
+      continue;
+    }
+    const segment = parts[depth];
+    if (segment === undefined) {
+      directFiles.push(file);
+      continue;
+    }
+    const bucket = buckets.get(segment) ?? [];
+    bucket.push(file);
+    buckets.set(segment, bucket);
+  }
+  const groups = chunkFiles(currentLabel(sourceRoot, files, depth), directFiles, maxFiles);
+  for (const [segment, bucketFiles] of [...buckets.entries()].toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    if (bucketFiles.length <= maxFiles) {
+      groups.push({
+        label: `${sourceRoot}/${bucketPrefix(bucketFiles, sourceRoot, depth, segment)}`,
+        files: bucketFiles,
+      });
+    } else {
+      groups.push(...partitionAt(sourceRoot, bucketFiles, maxFiles, depth + 1));
+    }
+  }
+  return groups;
+}
+
+function chunkFiles(label: string, files: string[], maxFiles: number): SourceGroup[] {
+  const groups: SourceGroup[] = [];
+  for (let index = 0; index < files.length; index += maxFiles) {
+    const part = Math.floor(index / maxFiles) + 1;
+    groups.push({
+      label: files.length <= maxFiles ? label : `${label}#${part}`,
+      files: files.slice(index, index + maxFiles),
+    });
+  }
+  return groups;
+}
+
+function currentLabel(sourceRoot: string, files: string[], depth: number): string {
+  if (depth === 0) {
+    return sourceRoot;
+  }
+  const first = files[0];
+  if (first === undefined) {
+    return sourceRoot;
+  }
+  const parts = first
+    .slice(sourceRoot.length + 1)
+    .split("/")
+    .slice(0, depth);
+  return parts.length === 0 ? sourceRoot : `${sourceRoot}/${parts.join("/")}`;
+}
+
+function commonLabel(sourceRoot: string, files: string[], depth: number): string {
+  if (depth === 0 || files.length === 1) {
+    return files.length === 1 ? (files[0] ?? sourceRoot) : sourceRoot;
+  }
+  return currentLabel(sourceRoot, files, depth);
+}
+
+function bucketPrefix(files: string[], sourceRoot: string, depth: number, segment: string): string {
+  const first = files[0];
+  if (first === undefined || depth === 0) {
+    return segment;
+  }
+  const parts = first
+    .slice(sourceRoot.length + 1)
+    .split("/")
+    .slice(0, depth);
+  return [...parts, segment].join("/");
+}
+
+function associatedTests(files: string[], tests: string[], command: string | null): SeedTestRef[] {
+  const fileStems = new Set(files.map((file) => basename(file).replace(/\.py$/u, "")));
+  const dirs = new Set(files.map((file) => dirname(file)));
+  return tests
+    .filter((test) => {
+      const testStem = basename(test)
+        .replace(/^test_/u, "")
+        .replace(/_test\.py$/u, "")
+        .replace(/\.py$/u, "");
+      return (
+        [...dirs].some((dir) => pathMatchesPrefix(test, dir)) ||
+        (fileStems.has(testStem) && /^(tests?|__tests__)\//u.test(test))
+      );
+    })
+    .slice(0, sourceGroupMaxTests)
+    .map((path) => ({ path, command }));
+}
+
+function isReviewablePythonSourceFile(path: string): boolean {
+  return (
+    path.endsWith(".py") &&
+    !isPythonTestPath(path) &&
+    !pythonShouldSkip(path) &&
+    !/(^|\/)(__fixtures__|fixtures|testdata)(\/|$)/u.test(path) &&
+    !/(^|\/)[^/]*(?:generated|_pb2|_pb2_grpc|\.gen)\.py$/iu.test(path)
+  );
+}
+
+function isPythonTestPath(path: string): boolean {
+  return (
+    path.endsWith(".py") &&
+    (/(^|\/)tests?\//u.test(path) ||
+      /(^|\/)test_[^/]+\.py$/u.test(path) ||
+      path.endsWith("_test.py"))
+  );
+}
+
+function pythonShouldSkip(path: string): boolean {
+  return (
+    shouldSkip(path) ||
+    /(^|\/)(\.venv|venv|__pycache__|\.mypy_cache|\.ruff_cache|\.pytest_cache)(\/|$)/u.test(path)
+  );
+}
+
+function table(source: string, name: string): string {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = new RegExp(`^\\s*\\[${escapedName}\\]\\s*$`, "mu").exec(source);
+  if (match?.index === undefined) {
+    return "";
+  }
+  const rest = source.slice(match.index + match[0].length);
+  const nextSection = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+  return nextSection?.index === undefined ? rest : rest.slice(0, nextSection.index);
+}
+
+function tomlStringValue(source: string, key: string): string | null {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`^\\s*${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "mu").exec(source)?.[2] ?? null;
+}
+
+function scriptsFromTable(source: string): PythonScript[] {
+  const scripts: PythonScript[] = [];
+  for (const line of source.split("\n")) {
+    const match = /^\s*["']?([^"'=\s]+)["']?\s*=\s*(["'])([^"']+)\2/u.exec(line);
+    if (match?.[1] !== undefined && match[3] !== undefined) {
+      scripts.push({ name: match[1], target: match[3] });
+    }
+  }
+  return scripts;
+}
+
+function dependencyNames(source: string): Set<string> {
+  const names = new Set<string>();
+  for (const array of tomlArrayAssignments(source, ["dependencies", "dev-dependencies"])) {
+    for (const value of arrayValues(array)) {
+      const name = requirementName(value);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  for (const dependencyTable of [
+    table(source, "tool.poetry.dependencies"),
+    table(source, "tool.poetry.dev-dependencies"),
+    table(source, "tool.poetry.group.dev.dependencies"),
+  ]) {
+    for (const value of assignedKeysAndValues(dependencyTable)) {
+      const name = requirementName(value);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  for (const dependencyTable of [
+    table(source, "project.optional-dependencies"),
+    table(source, "dependency-groups"),
+  ]) {
+    for (const value of assignedValues(dependencyTable)) {
+      const name = requirementName(value);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+function tomlArrayAssignments(source: string, keys: string[]): string[] {
+  const arrays: string[] = [];
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    for (const match of source.matchAll(new RegExp(`^\\s*${escaped}\\s*=\\s*\\[`, "gmu"))) {
+      arrays.push(readBracketValue(source, match.index + match[0].lastIndexOf("[")));
+    }
+  }
+  return arrays;
+}
+
+function assignedValues(source: string): string[] {
+  const values: string[] = [];
+  for (const line of source.split("\n")) {
+    const match = /^\s*["']?[^"'=\s]+["']?\s*=\s*(.+?)\s*(?:#.*)?$/u.exec(line);
+    if (match?.[1] !== undefined) {
+      values.push(...arrayValues(match[1]));
+      const stringValue = /^["']([^"']+)["']/u.exec(match[1])?.[1];
+      if (stringValue !== undefined) {
+        values.push(stringValue);
+      }
+    }
+  }
+  return values;
+}
+
+function assignedKeysAndValues(source: string): string[] {
+  const values = assignedValues(source);
+  for (const line of source.split("\n")) {
+    const key = /^\s*["']?([^"'=\s]+)["']?\s*=/u.exec(line)?.[1];
+    if (key !== undefined) {
+      values.push(key);
+    }
+  }
+  return values;
+}
+
+function arrayValues(source: string): string[] {
+  return [...source.matchAll(/(["'])([^"']+)\1/gu)].flatMap((match) =>
+    match[2] === undefined ? [] : [match[2]],
+  );
+}
+
+function readBracketValue(source: string, bracketIndex: number): string {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = bracketIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(bracketIndex, index + 1);
+      }
+    }
+  }
+  return source.slice(bracketIndex);
+}
+
+function requirementNames(source: string): Set<string> {
+  return new Set(
+    source
+      .split("\n")
+      .map((line) => requirementName(line))
+      .filter((name): name is string => name !== null),
+  );
+}
+
+function requirementName(value: string): string | null {
+  const trimmed = value.trim().replace(/^["']|["']$/gu, "");
+  if (trimmed.length === 0 || trimmed.startsWith("#") || trimmed.startsWith("-")) {
+    return null;
+  }
+  const match = /^([A-Za-z0-9_.-]+)/u.exec(trimmed);
+  return match?.[1]?.toLowerCase().replace(/_/gu, "-") ?? null;
+}

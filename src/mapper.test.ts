@@ -815,6 +815,142 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     ]);
   });
 
+  it("maps Python project metadata, console scripts, source groups, and tests", async () => {
+    const root = await fixtureRoot("clawpatch-python-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "py-tool"\ndependencies = ["pytest", "ruff"]\n\n[project.scripts]\npytool = "py_tool.cli:main"\n',
+    );
+    await writeFixture(root, "uv.lock", "");
+    await writeFixture(root, "src/py_tool/__init__.py", "");
+    await writeFixture(root, "src/py_tool/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "src/py_tool/store.py", "def get():\n    pass\n");
+    await writeFixture(root, "src/py_tool/store_test.py", "def test_get():\n    pass\n");
+    await writeFixture(root, "src/py_tool/generated_pb2.py", "generated = True\n");
+    await writeFixture(root, ".venv/lib/site-packages/dep.py", "ignored = True\n");
+    await writeFixture(root, "tests/test_cli.py", "def test_cli():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command pytool");
+    const source = result.features.find((feature) => feature.title === "Python source src");
+
+    expect(project.detected.languages).toContain("python");
+    expect(project.detected.packageManagers).toContain("uv");
+    expect(project.detected.commands.test).toBe("uv run pytest");
+    expect(project.detected.commands.lint).toBe("uv run ruff check .");
+    expect(project.detected.commands.format).toBe("uv run ruff format --check .");
+    expect(titles).toContain("Python project py-tool");
+    expect(titles).toContain("Python CLI command pytool");
+    expect(titles).toContain("Python test suite tests");
+    expect(cli?.entrypoints[0]?.path).toBe("src/py_tool/cli.py");
+    expect(cli?.entrypoints[0]?.symbol).toBe("main");
+    expect(cli?.tests).toEqual([
+      { path: "src/py_tool/store_test.py", command: "uv run pytest" },
+      { path: "tests/test_cli.py", command: "uv run pytest" },
+    ]);
+    expect(source?.ownedFiles.map((file) => file.path).toSorted()).toEqual([
+      "src/py_tool/__init__.py",
+      "src/py_tool/cli.py",
+      "src/py_tool/store.py",
+    ]);
+    expect(source?.ownedFiles.map((file) => file.path)).not.toContain(
+      "src/py_tool/generated_pb2.py",
+    );
+  });
+
+  it("resolves Python console scripts and tests from non-src package roots", async () => {
+    const root = await fixtureRoot("clawpatch-python-roots-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "rooted"\ndependencies = ["pytest"]\n\n[project.scripts]\nrooted = "rooted.cli:main"\nlibbed = "libbed.cli:main"\n',
+    );
+    await writeFixture(root, "rooted/__init__.py", "");
+    await writeFixture(root, "rooted/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "rooted/test_cli.py", "def test_cli():\n    pass\n");
+    await writeFixture(root, "lib/libbed/__init__.py", "");
+    await writeFixture(root, "lib/libbed/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "lib/libbed/test_cli.py", "def test_cli():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rooted = result.features.find((feature) => feature.title === "Python CLI command rooted");
+    const libbed = result.features.find((feature) => feature.title === "Python CLI command libbed");
+
+    expect(rooted?.entrypoints[0]?.path).toBe("rooted/cli.py");
+    expect(rooted?.tests).toEqual([{ path: "rooted/test_cli.py", command: "pytest" }]);
+    expect(libbed?.entrypoints[0]?.path).toBe("lib/libbed/cli.py");
+    expect(libbed?.tests).toEqual([{ path: "lib/libbed/test_cli.py", command: "pytest" }]);
+  });
+
+  it("detects Python projects and conservative command defaults", async () => {
+    const uvRoot = await fixtureRoot("clawpatch-python-uv-");
+    await writeFixture(
+      uvRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-app"\ndependencies = ["pytest", "pyright"]\n',
+    );
+    await writeFixture(uvRoot, "uv.lock", "");
+    expect((await detectProject(uvRoot)).detected.commands).toMatchObject({
+      typecheck: "uv run pyright",
+      test: "uv run pytest",
+    });
+
+    const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
+    await writeFixture(
+      poetryRoot,
+      "pyproject.toml",
+      '[tool.poetry]\nname = "poetry-app"\n\n[tool.poetry.dependencies]\npython = "^3.12"\npytest = "^8"\nmypy = "^1"\n',
+    );
+    await writeFixture(poetryRoot, "poetry.lock", "");
+    expect((await detectProject(poetryRoot)).detected.commands).toMatchObject({
+      typecheck: "poetry run mypy .",
+      test: "poetry run pytest",
+    });
+
+    const pdmRoot = await fixtureRoot("clawpatch-python-pdm-");
+    await writeFixture(pdmRoot, "requirements.txt", "pytest\nruff\n");
+    await writeFixture(pdmRoot, "pdm.lock", "");
+    expect((await detectProject(pdmRoot)).detected.commands).toMatchObject({
+      typecheck: "pdm run ruff check .",
+      lint: "pdm run ruff check .",
+      test: "pdm run pytest",
+    });
+
+    const directRoot = await fixtureRoot("clawpatch-python-direct-");
+    await writeFixture(directRoot, "setup.py", "from setuptools import setup\n");
+    await writeFixture(directRoot, "tests/test_app.py", "def test_app():\n    pass\n");
+    expect((await detectProject(directRoot)).detected.commands.test).toBe("pytest");
+
+    const nullRoot = await fixtureRoot("clawpatch-python-null-");
+    await writeFixture(nullRoot, "src/app/main.py", "def main():\n    pass\n");
+    const nullProject = await detectProject(nullRoot);
+    expect(nullProject.detected.languages).toContain("python");
+    expect(nullProject.detected.packageManagers).toContain("python");
+    expect(nullProject.detected.commands).toEqual({
+      typecheck: null,
+      lint: null,
+      format: null,
+      test: null,
+    });
+
+    const groupNameRoot = await fixtureRoot("clawpatch-python-group-names-");
+    await writeFixture(
+      groupNameRoot,
+      "pyproject.toml",
+      '[project]\nname = "groups"\n\n[project.optional-dependencies]\npytest = ["httpx"]\nruff = ["typing-extensions"]\n',
+    );
+    expect((await detectProject(groupNameRoot)).detected.commands).toEqual({
+      typecheck: null,
+      lint: null,
+      format: null,
+      test: null,
+    });
+  });
+
   it("keeps Node scripts and native defaults in mixed package repos", async () => {
     const root = await fixtureRoot("clawpatch-mixed-map-");
     await writeFixture(
@@ -827,15 +963,23 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(root, "Cargo.toml", '[package]\nname = "mixed"\n');
     await writeFixture(root, "src/lib.rs", "pub fn run() {}\n");
     await writeFixture(root, "tests/integration.rs", "#[test]\nfn works() {}\n");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "mixed-py"\ndependencies = ["pytest"]\n',
+    );
+    await writeFixture(root, "scripts/tool.py", "def main():\n    pass\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
 
-    expect(project.detected.packageManagers).toEqual(["node", "cargo"]);
+    expect(project.detected.packageManagers).toEqual(["node", "cargo", "python"]);
+    expect(project.detected.languages).toContain("python");
     expect(project.detected.commands.typecheck).toBe("go test ./...");
     expect(project.detected.commands.lint).toBe("npm run lint");
     expect(project.detected.commands.format).toBeNull();
     expect(project.detected.commands.test).toBe("go test ./...");
+    expect(result.features.map((feature) => feature.title)).toContain("Python project mixed-py");
     expect(
       result.features.find((feature) => feature.title === "Rust library mixed")?.tests,
     ).toEqual([{ path: "tests/integration.rs", command: "cargo test --workspace" }]);

@@ -13,6 +13,12 @@ type PackageJson = {
   bin?: unknown;
 };
 
+type PythonProjectInfo = {
+  dependencies: Set<string>;
+  tools: Set<string>;
+  hasPytestConfig: boolean;
+};
+
 export async function detectProject(root: string): Promise<ProjectRecord> {
   const git = await discoverGit(root);
   const pkg = await readPackageJson(root);
@@ -135,6 +141,9 @@ async function languageDefaultCommands(
       test: (await hasSwiftTests(root)) ? "swift test" : null,
     };
   }
+  if (languages.includes("python")) {
+    return pythonDefaultCommands(root);
+  }
 
   return {
     typecheck: null,
@@ -207,7 +216,283 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("gradle");
   }
+  const pythonManagers: Array<[string, string]> = [
+    ["uv", "uv.lock"],
+    ["poetry", "poetry.lock"],
+    ["pdm", "pdm.lock"],
+    ["hatch", "hatch.toml"],
+  ];
+  for (const [name, file] of pythonManagers) {
+    if (await pathExists(join(root, file))) {
+      found.push(name);
+    }
+  }
+  if (!found.some((name) => pythonPackageManagers.has(name)) && (await isPythonProject(root))) {
+    found.push((await pathExists(join(root, "requirements.txt"))) ? "pip" : "python");
+  }
   return found;
+}
+
+const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
+
+async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
+  const info = await pythonProjectInfo(root);
+  const runner = await pythonRunner(root);
+  const hasPytest =
+    info.hasPytestConfig ||
+    info.dependencies.has("pytest") ||
+    (await containsPythonTestFile(root, 5));
+  const hasRuff = info.tools.has("ruff") || info.dependencies.has("ruff");
+  const hasPyright = info.tools.has("pyright") || info.dependencies.has("pyright");
+  const hasMypy = info.tools.has("mypy") || info.dependencies.has("mypy");
+  return {
+    typecheck: hasPyright
+      ? pythonRunCommand(runner, "pyright")
+      : hasMypy
+        ? pythonRunCommand(runner, "mypy .")
+        : hasRuff
+          ? pythonRunCommand(runner, "ruff check .")
+          : null,
+    lint: hasRuff ? pythonRunCommand(runner, "ruff check .") : null,
+    format: hasRuff ? pythonRunCommand(runner, "ruff format --check .") : null,
+    test: hasPytest ? pythonRunCommand(runner, "pytest") : null,
+  };
+}
+
+async function pythonRunner(root: string): Promise<string | null> {
+  if (await pathExists(join(root, "uv.lock"))) {
+    return "uv";
+  }
+  if (await pathExists(join(root, "poetry.lock"))) {
+    return "poetry";
+  }
+  if (await pathExists(join(root, "pdm.lock"))) {
+    return "pdm";
+  }
+  return null;
+}
+
+function pythonRunCommand(runner: string | null, command: string): string {
+  if (runner === "uv") {
+    return `uv run ${command}`;
+  }
+  if (runner === "poetry") {
+    return `poetry run ${command}`;
+  }
+  if (runner === "pdm") {
+    return `pdm run ${command}`;
+  }
+  return command;
+}
+
+async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
+  const info: PythonProjectInfo = {
+    dependencies: new Set(),
+    tools: new Set(),
+    hasPytestConfig: false,
+  };
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    const pyproject = await readFile(join(root, "pyproject.toml"), "utf8");
+    for (const dependency of pythonDependencyNames(pyproject)) {
+      info.dependencies.add(dependency);
+    }
+    for (const tool of pythonToolSections(pyproject)) {
+      info.tools.add(tool);
+    }
+    info.hasPytestConfig = info.tools.has("pytest") || info.tools.has("pytest.ini_options");
+  }
+  for (const file of ["requirements.txt", "setup.cfg"]) {
+    if (await pathExists(join(root, file))) {
+      const source = await readFile(join(root, file), "utf8");
+      for (const dependency of pythonRequirementNames(source)) {
+        info.dependencies.add(dependency);
+      }
+      if (/^\s*\[tool:pytest\]|\[pytest\]/mu.test(source)) {
+        info.hasPytestConfig = true;
+      }
+      const toolMatch = /^\s*\[(mypy|pyright|ruff)\]/mu.exec(source);
+      if (toolMatch?.[1] !== undefined) {
+        info.tools.add(toolMatch[1]);
+      }
+    }
+  }
+  return info;
+}
+
+function pythonDependencyNames(source: string): string[] {
+  const names = new Set<string>();
+  for (const table of [
+    pythonTomlTable(source, "project"),
+    pythonTomlTable(source, "tool.poetry"),
+    pythonTomlTable(source, "tool.poetry.group.dev"),
+  ]) {
+    for (const section of pythonTomlArraySections(table, ["dependencies", "dev-dependencies"])) {
+      for (const value of pythonTomlArrayValues(section)) {
+        const name = pythonRequirementName(value);
+        if (name !== null) {
+          names.add(name);
+        }
+      }
+    }
+  }
+  for (const table of pythonTomlTables(source, [
+    "tool.poetry.dependencies",
+    "tool.poetry.dev-dependencies",
+    "tool.poetry.group.dev.dependencies",
+  ])) {
+    for (const value of pythonTomlAssignedKeysAndValues(table)) {
+      const name = pythonRequirementName(value);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  for (const table of pythonTomlTables(source, [
+    "project.optional-dependencies",
+    "dependency-groups",
+  ])) {
+    for (const value of pythonTomlAssignedValues(table)) {
+      const name = pythonRequirementName(value);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  return [...names];
+}
+
+function pythonTomlTable(source: string, name: string): string {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = new RegExp(`^\\s*\\[${escaped}\\]\\s*$`, "mu").exec(source);
+  if (match?.index === undefined) {
+    return "";
+  }
+  const rest = source.slice(match.index + match[0].length);
+  const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+  return next?.index === undefined ? rest : rest.slice(0, next.index);
+}
+
+function pythonToolSections(source: string): string[] {
+  const tools = new Set<string>();
+  for (const match of source.matchAll(/^\s*\[tool\.([A-Za-z0-9_.-]+)[^\]]*\]\s*$/gmu)) {
+    const name = match[1]?.split(".")[0];
+    if (name !== undefined) {
+      tools.add(name);
+    }
+  }
+  return [...tools];
+}
+
+function pythonTomlArraySections(source: string, keys: string[]): string[] {
+  const sections: string[] = [];
+  for (const key of keys) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    for (const match of source.matchAll(new RegExp(`^\\s*${escaped}\\s*=\\s*\\[`, "gmu"))) {
+      sections.push(readTomlBracketValue(source, match.index + match[0].lastIndexOf("[")));
+    }
+  }
+  return sections;
+}
+
+function pythonTomlTables(source: string, names: string[]): string[] {
+  const tables: string[] = [];
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const pattern = new RegExp(`^\\s*\\[${escaped}\\]\\s*$`, "gmu");
+    for (const match of source.matchAll(pattern)) {
+      const start = match.index + match[0].length;
+      const rest = source.slice(start);
+      const next = /^\s*\[[^\]]+\]\s*$/mu.exec(rest);
+      tables.push(next?.index === undefined ? rest : rest.slice(0, next.index));
+    }
+  }
+  return tables;
+}
+
+function pythonTomlAssignedValues(source: string): string[] {
+  const values: string[] = [];
+  for (const line of source.split("\n")) {
+    const match = /^\s*["']?[^"'=\s]+["']?\s*=\s*(.+?)\s*(?:#.*)?$/u.exec(line);
+    if (match?.[1] !== undefined) {
+      values.push(...pythonTomlArrayValues(match[1]));
+      const stringValue = /^["']([^"']+)["']/u.exec(match[1])?.[1];
+      if (stringValue !== undefined) {
+        values.push(stringValue);
+      }
+    }
+  }
+  return values;
+}
+
+function pythonTomlAssignedKeysAndValues(source: string): string[] {
+  const values = pythonTomlAssignedValues(source);
+  for (const line of source.split("\n")) {
+    const key = /^\s*["']?([^"'=\s]+)["']?\s*=/u.exec(line)?.[1];
+    if (key !== undefined) {
+      values.push(key);
+    }
+  }
+  return values;
+}
+
+function pythonTomlArrayValues(source: string): string[] {
+  return [...source.matchAll(/(["'])([^"']+)\1/gu)].flatMap((match) =>
+    match[2] === undefined ? [] : [match[2]],
+  );
+}
+
+function readTomlBracketValue(source: string, bracketIndex: number): string {
+  let depth = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = bracketIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "[") {
+      depth += 1;
+    } else if (char === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(bracketIndex, index + 1);
+      }
+    }
+  }
+  return source.slice(bracketIndex);
+}
+
+function pythonRequirementNames(source: string): string[] {
+  return source
+    .split("\n")
+    .map((line) => pythonRequirementName(line))
+    .filter((name): name is string => name !== null);
+}
+
+function pythonRequirementName(value: string): string | null {
+  const trimmed = value.trim().replace(/^["']|["']$/gu, "");
+  if (trimmed.length === 0 || trimmed.startsWith("#") || trimmed.startsWith("-")) {
+    return null;
+  }
+  const match = /^([A-Za-z0-9_.-]+)/u.exec(trimmed);
+  return match?.[1]?.toLowerCase().replace(/_/gu, "-") ?? null;
+}
+
+async function containsPythonTestFile(root: string, maxDepth: number): Promise<boolean> {
+  return containsFileMatching(
+    root,
+    maxDepth,
+    (entry) => /^test_.+\.py$/u.test(entry) || entry.endsWith("_test.py"),
+  );
 }
 
 async function hasSwiftTests(root: string): Promise<boolean> {
@@ -278,12 +563,18 @@ async function detectLanguages(root: string): Promise<string[]> {
     ["rust", "Cargo.toml"],
     ["swift", "Package.swift"],
     ["python", "pyproject.toml"],
+    ["python", "setup.py"],
+    ["python", "setup.cfg"],
+    ["python", "requirements.txt"],
   ];
   const languages: string[] = [];
   for (const [language, file] of checks) {
-    if (await pathExists(join(root, file))) {
+    if ((await pathExists(join(root, file))) && !languages.includes(language)) {
       languages.push(language);
     }
+  }
+  if (!languages.includes("python") && (await containsReviewablePythonFile(root))) {
+    languages.push("python");
   }
   if (
     !languages.includes("swift") &&
@@ -300,6 +591,25 @@ async function detectLanguages(root: string): Promise<string[]> {
     languages.push("kotlin");
   }
   return languages;
+}
+
+async function isPythonProject(root: string): Promise<boolean> {
+  return (
+    (await pathExists(join(root, "pyproject.toml"))) ||
+    (await pathExists(join(root, "setup.py"))) ||
+    (await pathExists(join(root, "setup.cfg"))) ||
+    (await pathExists(join(root, "requirements.txt"))) ||
+    (await containsReviewablePythonFile(root))
+  );
+}
+
+async function containsReviewablePythonFile(root: string): Promise<boolean> {
+  for (const prefix of ["src", "app", "apps", "lib", "scripts"]) {
+    if (await containsFileWithExtension(join(root, prefix), ".py", 4)) {
+      return true;
+    }
+  }
+  return containsFileNamed(root, "__init__.py", 3);
 }
 
 async function containsFileNamed(root: string, name: string, maxDepth: number): Promise<boolean> {
@@ -338,6 +648,12 @@ async function containsFileMatching(
         ".git",
         ".clawpatch",
         ".worktrees",
+        ".venv",
+        "venv",
+        "__pycache__",
+        ".mypy_cache",
+        ".ruff_cache",
+        ".pytest_cache",
         "fixtures",
         "__fixtures__",
         "testdata",
