@@ -27,7 +27,7 @@ A feature is a reviewable slice with:
 Supported deterministic mappers today:
 
 - npm package bins
-- selected package scripts
+- selected root and workspace package scripts
 - Node/TypeScript workspace packages from `package.json` workspaces, `pnpm-workspace.yaml`, and common package folders
 - bounded Node/TypeScript source groups under `src/`, `lib/`, `app/`, `pages/`, and `scripts/`
 - Next.js `app/` and `pages/` routes
@@ -50,6 +50,8 @@ For large Node/TypeScript repositories, source groups are recursively split by
 directory and then chunked so one feature owns at most a small bounded set of
 files. Package-local tests and package context files are attached when they can
 be found cheaply.
+Selected `package.json` scripts are mapped for the root package and discovered
+workspace packages, with workspace script titles including the package name.
 
 Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,

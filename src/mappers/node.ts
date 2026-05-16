@@ -45,7 +45,7 @@ export async function nodeSeeds(root: string): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
 
   for (const info of packages) {
-    seeds.push(...(await packageSeeds(root, info, packageManager, info.root === ".")));
+    seeds.push(...(await packageSeeds(root, info, packageManager)));
     seeds.push(...(await sourceGroupSeeds(root, info, packageManager)));
   }
 
@@ -56,7 +56,6 @@ async function packageSeeds(
   root: string,
   info: PackageInfo,
   packageManager: string,
-  includeCommonScripts: boolean,
 ): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const packageName = packageDisplayName(info);
@@ -105,18 +104,19 @@ async function packageSeeds(
     });
   }
 
-  if (!includeCommonScripts) {
-    seeds.unshift(manifestSeed);
-    return seeds;
-  }
-
   for (const [script, command] of Object.entries(packageScripts(info.packageJson))) {
     if (!["start", "build", "test", "lint", "typecheck", "format"].includes(script)) {
       continue;
     }
     seeds.push({
-      title: `Package script ${script}`,
-      summary: `Package script '${script}': ${command}`,
+      title:
+        info.root === "."
+          ? `Package script ${script}`
+          : `Package script ${script} (${packageName})`,
+      summary:
+        info.root === "."
+          ? `Package script '${script}': ${command}`
+          : `Package script '${script}' in ${info.packageJsonPath}: ${command}`,
       kind: script === "test" ? "test-suite" : "release",
       source: "package-json-script",
       confidence: "medium",

@@ -42,7 +42,7 @@ clawpatch map
 
 This discovers reviewable features:
 
-- npm package bins and scripts
+- npm package bins and root/workspace scripts
 - Next.js routes
 - Go packages and commands
 - Java/Kotlin Gradle modules

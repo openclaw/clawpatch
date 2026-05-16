@@ -214,7 +214,15 @@ describe("mapFeatures", () => {
       root,
       "packages/core/package.json",
       JSON.stringify(
-        { name: "@scope/core", bin: { corecli: "src/cli.ts" }, scripts: { test: "vitest run" } },
+        {
+          name: "@scope/core",
+          bin: { corecli: "src/cli.ts" },
+          scripts: {
+            build: "tsc -p tsconfig.json",
+            lint: "oxlint .",
+            test: "vitest run",
+          },
+        },
         null,
         2,
       ),
@@ -314,6 +322,15 @@ describe("mapFeatures", () => {
       (feature) => feature.entrypoints[0]?.symbol === "packages/core/src/gateway",
     );
     const cli = result.features.find((feature) => feature.title === "CLI command corecli");
+    const workspaceBuild = result.features.find(
+      (feature) => feature.title === "Package script build (@scope/core)",
+    );
+    const workspaceLint = result.features.find(
+      (feature) => feature.title === "Package script lint (@scope/core)",
+    );
+    const workspaceTest = result.features.find(
+      (feature) => feature.title === "Package script test (@scope/core)",
+    );
 
     expect(titles).toContain("Node package @scope/core");
     expect(titles).toContain("Node package chat-plugin");
@@ -325,6 +342,11 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Node package outside-workspace");
     expect(titles).not.toContain("Node package evil-package");
     expect(titles).toContain("Node source plugins/chat/src");
+    expect(titles).toContain("Package script test");
+    expect(workspaceBuild?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceBuild?.summary).toContain("packages/core/package.json");
+    expect(workspaceLint?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceTest?.entrypoints[0]?.path).toBe("packages/core/package.json");
     expect(agentGroups.length).toBeGreaterThan(1);
     expect(agentGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
     expect(gateway?.ownedFiles).toEqual([

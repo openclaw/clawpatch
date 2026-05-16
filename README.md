@@ -45,8 +45,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 ## What It Maps Today
 
 - npm package bins
-- selected package scripts: `start`, `build`, `test`, `lint`, `typecheck`,
-  `format`
+- selected root and workspace package scripts: `start`, `build`, `test`,
+  `lint`, `typecheck`, `format`
 - Next.js `app/` and `pages/` routes
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
