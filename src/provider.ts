@@ -225,7 +225,7 @@ async function runAcpxJson(
   const command =
     `acpx --cwd ${shellQuote(root)} ${permFlag} --format json --json-strict` +
     `${modelArg} ${shellQuote(agent)} exec --file -`;
-  const result = await runCommandRaw(command, root, buildAcpxPrompt(prompt, schema));
+  const result = await runCommandRaw(command, root, buildAcpxPrompt(prompt, schema, permission));
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
       `acpx provider failed: ${result.stderr || result.stdout}`,
@@ -236,9 +236,18 @@ async function runAcpxJson(
   return extractAcpxJson(result.stdout);
 }
 
-function buildAcpxPrompt(prompt: string, schema: object): string {
+function buildAcpxPrompt(prompt: string, schema: object, permission: "deny" | "approve"): string {
+  const promptBody =
+    permission === "deny"
+      ? "READ-ONLY REVIEW MODE.\n" +
+        "Do not modify, create, or delete any files.\n" +
+        "Do not make any tool calls that write to the workspace.\n" +
+        "Only read files and report findings in the JSON output below.\n\n" +
+        prompt
+      : prompt;
+
   return (
-    `${prompt}\n\n` +
+    `${promptBody}\n\n` +
     "Return ONLY a JSON object matching this schema. No prose preamble, no markdown fences, " +
     "no thinking-out-loud text before the JSON. " +
     `Schema:\n${JSON.stringify(schema)}\n`

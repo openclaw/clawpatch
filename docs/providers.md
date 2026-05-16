@@ -35,7 +35,7 @@ Routes through `acpx <agent> exec`, where `<agent>` is any ACP-compatible coding
 - review / revalidate: `--deny-all` (auto-deny all permission prompts; effectively read-only)
 - fix: `--approve-all` (auto-approve all permission prompts)
 
-**Permission model caveat.** `acpx --approve-all` is not the same as `codex --sandbox workspace-write`. Codex's workspace-write is an enforced sandbox: the runtime confines filesystem writes to the workspace and blocks network. acpx's `--approve-all` is a permission-prompt auto-approver. The underlying agent still has whatever filesystem and network access its own runtime grants. When running `clawpatch fix --provider acpx` on code you do not control, run inside a dedicated git worktree so the agent's blast radius is bounded by the filesystem you exposed.
+**Permission model caveat.** `acpx --approve-all` is not the same as `codex --sandbox workspace-write`. Codex's workspace-write is an enforced sandbox: the runtime confines filesystem writes to the workspace and blocks network. acpx's `--approve-all` is a permission-prompt auto-approver. The underlying agent still has whatever filesystem and network access its own runtime grants. When running `clawpatch fix --provider acpx` on code you do not control, run inside a dedicated git worktree so the agent's blast radius is bounded by the filesystem you exposed. For `review` and `revalidate`, the provider also embeds an explicit read-only directive in the prompt. This still relies on the underlying agent's cooperation; an agent running in its own full-access mode that bypasses ACP permissions is NOT strictly read-only.
 
 ### Agent selection
 
