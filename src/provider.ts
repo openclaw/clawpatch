@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawn } from "node:child_process";
 import { runCommand } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
 import {
@@ -23,6 +24,9 @@ export type Provider = {
 export function providerByName(name: string): Provider {
   if (name === "codex") {
     return codexProvider;
+  }
+  if (name === "opencode") {
+    return opencodeProvider;
   }
   if (name === "mock") {
     return mockProvider;
@@ -52,6 +56,29 @@ const codexProvider: Provider = {
   },
   async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
     const output = await runCodexJson(root, prompt, model, revalidateJsonSchema);
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+const opencodeProvider: Provider = {
+  name: "opencode",
+  async check(root: string): Promise<string> {
+    const result = await runCommand("opencode --version", root);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError("opencode CLI not available", 4, "provider-auth");
+    }
+    return result.stdout.trim();
+  },
+  async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
+    const output = await runOpencodeJson(root, prompt, model);
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
+    const output = await runOpencodeJson(root, prompt, model, true);
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
+    const output = await runOpencodeJson(root, prompt, model);
     return revalidateOutputSchema.parse(output);
   },
 };
@@ -163,6 +190,76 @@ async function runCodexJson(
     throw new ClawpatchError("codex provider produced no JSON output", 8, "malformed-output");
   }
   return JSON.parse(raw) as unknown;
+}
+
+async function runOpencodeJson(
+  root: string,
+  prompt: string,
+  model: string | null,
+  allowEdits = false,
+): Promise<unknown> {
+  const modelArg = model === null ? "" : ` -m ${shellQuote(model)}`;
+  const editFlag = allowEdits ? " --dangerously-skip-permissions" : "";
+  const command = `opencode run --format json${modelArg}${editFlag} -`;
+  const child = spawn(command, { cwd: root, shell: true, stdio: ["pipe", "pipe", "pipe"] });
+  if (prompt !== undefined) {
+    child.stdin.end(prompt);
+  } else {
+    child.stdin.end();
+  }
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk: string) => { stdout += chunk; });
+  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
+  const exitCode = await new Promise<number | null>((resolve) => {
+    child.on("close", resolve);
+  });
+  if (exitCode !== 0) {
+    throw new ClawpatchError(
+      `opencode provider failed: ${stderr || stdout}`,
+      providerExitCode(stderr),
+      "provider-failure",
+    );
+  }
+  const lines = stdout.trim().split("\n");
+  const textParts: string[] = [];
+  for (const line of lines) {
+    try {
+      const event = JSON.parse(line) as any;
+      if (event.type === "text" && event.part?.text) {
+        textParts.push(event.part.text);
+      }
+      if (event.type === "error") {
+        throw new ClawpatchError(
+          `opencode provider error: ${event.error?.data?.message || event.error?.name || "unknown"}`,
+          1,
+          "provider-failure",
+        );
+      }
+    } catch (e) {
+      if (e instanceof ClawpatchError) throw e;
+    }
+  }
+  const combined = textParts.join("");
+  if (!combined) {
+    throw new ClawpatchError("opencode provider produced no output", 8, "malformed-output");
+  }
+  return JSON.parse(extractJson(combined)) as unknown;
+}
+
+function extractJson(text: string): string {
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fence?.[1]) return fence[1].trim();
+  try {
+    JSON.parse(text);
+    return text;
+  } catch {
+    const topLevel = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (topLevel) return topLevel[0];
+  }
+  throw new ClawpatchError("opencode provider produced no JSON output", 8, "malformed-output");
 }
 
 function shellQuote(value: string): string {

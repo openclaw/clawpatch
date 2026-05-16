@@ -14,6 +14,7 @@ clawpatch doctor
 Provider names today:
 
 - `codex`: shells out to `codex exec`
+- `opencode`: shells out to `opencode run --format json`
 - `mock`: deterministic provider for tests and fixtures
 - `mock-fail`: failure provider for tests
 
@@ -24,6 +25,13 @@ Codex invocation:
 - fix: workspace-write sandbox
 - output: strict JSON schema via `--output-schema`
 - final message capture: `--output-last-message`
+
+Opencode invocation:
+
+- review: `opencode run --format json`
+- revalidate: `opencode run --format json`
+- fix: `opencode run --format json --dangerously-skip-permissions`
+- output: parsed from NDJSON text events, extracted with `extractJson`
 
 Model selection:
 
@@ -37,6 +45,13 @@ Provider selection:
 ```bash
 clawpatch review --provider codex
 CLAWPATCH_PROVIDER=codex clawpatch review
+```
+
+Opencode model selection requires the `provider/model` format:
+
+```bash
+clawpatch review --provider opencode --model opencode/big-pickle
+CLAWPATCH_PROVIDER=opencode CLAWPATCH_MODEL=opencode/big-pickle clawpatch review
 ```
 
 Direct OpenAI, Claude, Gemini, local-model, and multi-model panel providers are
