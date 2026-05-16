@@ -1264,6 +1264,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     ).toBe(true);
   });
 
+  it("groups nested Python star-test files by their actual directory", async () => {
+    const root = await fixtureRoot("clawpatch-python-nested-star-test-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "nested-star-tests"\n');
+    await writeFixture(root, "src/pkg/store_test.py", "def test_store():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const suite = result.features.find((feature) => feature.source === "python-test-suite");
+
+    expect(suite?.title).toBe("Python test suite src/pkg");
+    expect(suite?.entrypoints[0]?.path).toBe("src/pkg");
+    expect(suite?.ownedFiles).toEqual([{ path: "src/pkg/store_test.py", reason: "pytest file" }]);
+  });
+
   it("maps Python source-only projects without a full source-group pre-scan", async () => {
     const root = await fixtureRoot("clawpatch-python-source-only-");
     await writeFixture(root, "src/source_only/app.py", "def app():\n    pass\n");

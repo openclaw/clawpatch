@@ -333,7 +333,7 @@ function groupedTestFiles(testFiles: string[]): Map<string, string[]> {
 }
 
 function testSuiteRoot(path: string): string {
-  if (/^test_[^/]+\.py$/u.test(path) || path.endsWith("_test.py")) {
+  if (!path.includes("/") && (/^test_[^/]+\.py$/u.test(path) || path.endsWith("_test.py"))) {
     return "tests";
   }
   const first = path.split("/")[0];
