@@ -3017,6 +3017,72 @@ describe("mapFeatures", () => {
     ).toBe(false);
   });
 
+  it("filters mixed Java/Kotlin module types from Kotlin framework roles", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-java-local-type-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/java/com/example/framework/BaseHandler.java",
+      "package com.example.framework; public class BaseHandler {}\n",
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/Handler.kt",
+      [
+        "package com.example.api",
+        "",
+        "import com.example.framework.BaseHandler",
+        "",
+        "class Handler : BaseHandler()",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/api/Handler.kt",
+          ),
+      ),
+    ).toBe(false);
+  });
+
+  it("maps Kotlin supertypes with constructor arguments", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-supertype-args-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/jobs/Handler.kt",
+      [
+        "package com.example.jobs",
+        "",
+        "import org.framework.FrameworkBase",
+        "",
+        "class Handler : FrameworkBase(dep, config)",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const framework = result.features.find(
+      (feature) =>
+        feature.source === "kotlin-server-role-framework-component" &&
+        feature.ownedFiles.some(
+          (file) => file.path === "src/main/kotlin/com/example/jobs/Handler.kt",
+        ),
+    );
+
+    expect(framework?.ownedFiles[0]?.reason).toContain("external type org.framework.FrameworkBase");
+  });
+
   it("normalizes root Gradle source groups", async () => {
     const root = await fixtureRoot("clawpatch-root-gradle-map-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");

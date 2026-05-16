@@ -293,12 +293,20 @@ async function kotlinRoleSeeds(
     const source = await readFile(join(root, filePath), "utf8");
     kotlinFiles.push({ filePath, info: parseKotlinFile(source) });
   }
+  const javaFiles: Array<{ filePath: string; info: JavaFileInfo }> = [];
+  for (const filePath of sourceFiles.filter((file) => file.endsWith(".java"))) {
+    const source = await readFile(join(root, filePath), "utf8");
+    javaFiles.push({ filePath, info: parseJavaFile(source) });
+  }
   const projectPackages = new Set(
-    kotlinFiles.flatMap(({ info }) => (info.packageName === null ? [] : [info.packageName])),
+    [...kotlinFiles, ...javaFiles].flatMap(({ info }) =>
+      info.packageName === null ? [] : [info.packageName],
+    ),
   );
-  const projectTypes = new Set(
-    kotlinFiles.flatMap(({ info }) => info.declarations.map((declaration) => declaration.name)),
-  );
+  const projectTypes = new Set([
+    ...kotlinFiles.flatMap(({ info }) => info.declarations.map((declaration) => declaration.name)),
+    ...javaFiles.flatMap(({ info }) => info.declarations.map((declaration) => declaration.name)),
+  ]);
 
   for (const { filePath, info } of kotlinFiles) {
     const frameworkEvidence = kotlinFrameworkRoleEvidence(
@@ -1164,7 +1172,6 @@ function kotlinTypeNames(raw: string): string[] {
   }
   parts.push(current);
   return parts
-    .flatMap((type) => splitJavaTypeList(type))
     .map((type) => baseKotlinTypeName(stripGenericParameters(type)))
     .filter((type) => type.length > 0);
 }
