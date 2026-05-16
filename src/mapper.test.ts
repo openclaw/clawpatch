@@ -1347,6 +1347,33 @@ add_executable(headerapp include/headers.hpp)
     expect(tool?.tests).toEqual([{ path: "tests/tool_test.cpp", command: null }]);
   });
 
+  it("maps CMake test executables as test suites", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-test-executable-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app src/app.cpp)\nadd_executable(unit_tests tests/unit_tests.cpp)\n",
+    );
+    await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "tests/unit_tests.cpp", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const suite = result.features.find(
+      (feature) => feature.title === "CMake test suite unit_tests",
+    );
+
+    expect(titles).toContain("CMake binary app");
+    expect(titles).not.toContain("CMake binary unit_tests");
+    expect(suite).toMatchObject({
+      kind: "test-suite",
+      source: "cmake-test",
+      entrypoints: [{ path: "tests/unit_tests.cpp", symbol: null, route: null, command: null }],
+      tests: [{ path: "tests/unit_tests.cpp", command: null }],
+    });
+  });
+
   it("maps semicolon-separated CMake source lists", async () => {
     const root = await fixtureRoot("clawpatch-cmake-semicolon-sources-");
     await writeFixture(

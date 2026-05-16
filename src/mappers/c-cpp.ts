@@ -143,6 +143,30 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       if (sourcePaths.length === 0) {
         continue;
       }
+      if (isCMakeTestExecutableTarget(target, sourcePaths)) {
+        const entryPath = pickEntry(sourcePaths, target) ?? sourcePaths[0];
+        if (entryPath === undefined) {
+          continue;
+        }
+        seeds.push({
+          title: `CMake test suite ${target}`,
+          summary: `CMake test executable ${target} declared in ${cmakeFile}.`,
+          kind: "test-suite",
+          source: "cmake-test",
+          confidence: "high",
+          entryPath,
+          symbol: null,
+          route: null,
+          command: null,
+          tags: [languageTag(entryPath), "test"],
+          trustBoundaries: [],
+          ownedFiles: targetSourceRefs(sourcePaths),
+          contextFiles: [{ path: cmakeFile, reason: "CMake test target declaration" }],
+          tests: sourcePaths.filter(isCOrCppTestPath).map((path) => ({ path, command: null })),
+          skipNearbyTests: true,
+        });
+        continue;
+      }
       const entryPath = await pickExecutableEntry(root, sourcePaths, target);
       if (entryPath === null) {
         continue;
@@ -297,6 +321,10 @@ async function cmakeTargetSources(
 
 function cmakeTargetKey(dir: string, target: string): string {
   return `${dir}\0${target}`;
+}
+
+function isCMakeTestExecutableTarget(target: string, sourcePaths: string[]): boolean {
+  return /(?:^|[_-])tests?$/iu.test(target) || sourcePaths.some(isCOrCppTestPath);
 }
 
 function cmakeIncludes(body: string): string[] {
