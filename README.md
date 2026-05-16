@@ -52,6 +52,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Go package tests and same-repo imports as review context
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
+- Python project metadata, console scripts, bounded source groups, pytest suites,
+  and Flask routes
 - SwiftPM `Sources/*` targets and `Tests/*` suites
 - common project config files
 

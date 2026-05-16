@@ -23,7 +23,7 @@ export async function detectProject(root: string): Promise<ProjectRecord> {
   const git = await discoverGit(root);
   const pkg = await readPackageJson(root);
   const packageManagers = await detectPackageManagers(root);
-  const frameworks = detectFrameworks(pkg);
+  const frameworks = await detectFrameworks(root, pkg);
   const languages = await detectLanguages(root);
   const commands = await detectCommands(root, pkg, languages, packageManagers);
   const name = typeof pkg?.name === "string" ? pkg.name : projectNameFromRoot(root, git.remoteUrl);
@@ -667,12 +667,20 @@ async function containsSwiftFile(dir: string): Promise<boolean> {
   return false;
 }
 
-function detectFrameworks(pkg: PackageJson | null): string[] {
+async function detectFrameworks(root: string, pkg: PackageJson | null): Promise<string[]> {
   const deps = dependencyNames(pkg);
   const frameworks: string[] = [];
   for (const name of ["next", "express", "fastify", "hono", "vitest"]) {
     if (deps.has(name)) {
       frameworks.push(name);
+    }
+  }
+  if (await isPythonProject(root)) {
+    const info = await pythonProjectInfo(root);
+    for (const name of ["flask", "fastapi", "django", "pytest"]) {
+      if (info.dependencies.has(name)) {
+        frameworks.push(name);
+      }
     }
   }
   return frameworks;

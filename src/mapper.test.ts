@@ -1276,6 +1276,99 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
   });
 
+  it("maps Flask routes under web source roots", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/api/items', methods=['GET', 'POST'])",
+        "def items():",
+        "    return 'items'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/blueprints/admin.py",
+      [
+        "from flask import Blueprint",
+        "",
+        "admin_bp = Blueprint('admin', __name__)",
+        "",
+        "@admin_bp.route(",
+        "    '/admin/run-once',",
+        "    methods=['POST'],",
+        ")",
+        "def run_once():",
+        "    return 'queued'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "web/test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const index = result.features.find((feature) => feature.title === "Flask route GET /");
+    const items = result.features.find(
+      (feature) => feature.title === "Flask route GET,POST /api/items",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "Flask route POST /admin/run-once",
+    );
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(titles).toContain("Python source web");
+    expect(index?.source).toBe("python-flask-route");
+    expect(index?.entrypoints[0]).toMatchObject({
+      path: "web/app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(index?.tests).toEqual([{ path: "web/test_app.py", command: "pytest" }]);
+    expect(items?.entrypoints[0]?.route).toBe("GET,POST /api/items");
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("does not map generic Python route decorators as Flask routes", async () => {
+    const root = await fixtureRoot("clawpatch-python-generic-routes-");
+    await writeFixture(root, "requirements.txt", "pytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "class Router:",
+        "    def route(self, path):",
+        "        def wrapper(fn):",
+        "            return fn",
+        "        return wrapper",
+        "",
+        "router = Router()",
+        "",
+        "@router.route('/not-flask')",
+        "def handler():",
+        "    return 'ok'",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.frameworks).not.toContain("flask");
+    expect(result.features.some((feature) => feature.source === "python-flask-route")).toBe(false);
+  });
+
   it("uses Hatch pytest commands in mapped Python features", async () => {
     const root = await fixtureRoot("clawpatch-python-hatch-map-");
     await writeFixture(

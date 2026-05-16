@@ -17,6 +17,13 @@ type PythonScript = {
   target: string;
 };
 
+type FlaskRoute = {
+  filePath: string;
+  functionName: string;
+  routePath: string;
+  methods: string[];
+};
+
 type SourceGroup = {
   label: string;
   files: string[];
@@ -28,7 +35,7 @@ type PyprojectInfo = {
   hasPytest: boolean;
 };
 
-const sourceRoots = ["src", "app", "apps", "lib", "scripts"] as const;
+const sourceRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;
 const projectMetadataFiles = [
   "pyproject.toml",
   "setup.py",
@@ -97,6 +104,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
       testCommand,
       skipNearbyTests: true,
     });
+  }
+
+  for (const route of await flaskRouteSeeds(root, testFiles, testCommand)) {
+    seeds.push(route);
   }
 
   for (const group of await pythonSourceGroups(root)) {
@@ -310,6 +321,183 @@ async function resolvePythonScript(
     }
   }
   return { entryPath: "pyproject.toml", symbol };
+}
+
+async function flaskRouteSeeds(
+  root: string,
+  testFiles: string[],
+  testCommand: string | null,
+): Promise<FeatureSeed[]> {
+  const hasFlaskDependency = await pythonDependencyHas(root, "flask");
+  const routeFiles = (await walk(root, await pythonSourceRoots(root))).filter(
+    isReviewablePythonSourceFile,
+  );
+  const seeds: FeatureSeed[] = [];
+  for (const filePath of routeFiles) {
+    const source = await readFile(join(root, filePath), "utf8");
+    if (!hasFlaskDependency && !sourceLooksFlask(source)) {
+      continue;
+    }
+    const routes = parseFlaskRoutes(filePath, source);
+    for (const route of routes) {
+      const methodLabel = route.methods.join(",");
+      const tests = associatedTests([route.filePath], testFiles, testCommand);
+      seeds.push({
+        title: `Flask route ${methodLabel} ${route.routePath}`,
+        summary: `Flask route ${methodLabel} ${route.routePath} handled by ${route.functionName} in ${route.filePath}.`,
+        kind: "route",
+        source: "python-flask-route",
+        confidence: "high",
+        entryPath: route.filePath,
+        symbol: route.functionName,
+        route: `${methodLabel} ${route.routePath}`,
+        command: null,
+        ownedFiles: [{ path: route.filePath, reason: `Flask route handler ${route.functionName}` }],
+        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        tests,
+        tags: ["python", "flask", "route"],
+        trustBoundaries: flaskRouteTrustBoundaries(route),
+        testCommand,
+        skipNearbyTests: true,
+      });
+    }
+  }
+  return seeds;
+}
+
+async function pythonDependencyHas(root: string, dependency: string): Promise<boolean> {
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    const source = await readFile(join(root, "pyproject.toml"), "utf8");
+    if (dependencyNames(source).has(dependency)) {
+      return true;
+    }
+  }
+  return dependencyFileHas(root, dependency);
+}
+
+function sourceLooksFlask(source: string): boolean {
+  return /^\s*(?:from\s+flask\s+import\s+|import\s+flask\b)/mu.test(source);
+}
+
+function parseFlaskRoutes(filePath: string, source: string): FlaskRoute[] {
+  const routes: FlaskRoute[] = [];
+  let pending: Array<{ routePath: string; methods: string[] }> = [];
+  let decoratorSource: string | null = null;
+  let decoratorDepth = 0;
+  for (const line of source.split("\n")) {
+    const trimmed = line.trim();
+    if (decoratorSource !== null) {
+      decoratorSource = `${decoratorSource} ${trimmed}`;
+      decoratorDepth += parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFlaskRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    if (startsFlaskRouteDecorator(trimmed)) {
+      decoratorSource = trimmed;
+      decoratorDepth = parenDelta(trimmed);
+      if (decoratorDepth <= 0) {
+        const route = parseFlaskRouteDecorator(decoratorSource);
+        if (route !== null) {
+          pending.push(route);
+        }
+        decoratorSource = null;
+        decoratorDepth = 0;
+      }
+      continue;
+    }
+
+    const functionName = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line)?.[1];
+    if (functionName !== undefined && pending.length > 0) {
+      for (const item of pending) {
+        routes.push({ filePath, functionName, ...item });
+      }
+      pending = [];
+      continue;
+    }
+
+    if (
+      pending.length > 0 &&
+      trimmed !== "" &&
+      !trimmed.startsWith("@") &&
+      !trimmed.startsWith("#")
+    ) {
+      pending = [];
+    }
+  }
+  return routes;
+}
+
+function startsFlaskRouteDecorator(line: string): boolean {
+  return /^@[A-Za-z_][A-Za-z0-9_.]*\.route\(/u.test(line);
+}
+
+function parseFlaskRouteDecorator(line: string): { routePath: string; methods: string[] } | null {
+  const match = /^\s*@[A-Za-z_][A-Za-z0-9_.]*\.route\(\s*(["'])(.*?)\1(.*)\)\s*(?:#.*)?$/u.exec(
+    line,
+  );
+  if (match?.[2] === undefined) {
+    return null;
+  }
+  return {
+    routePath: match[2],
+    methods: parseFlaskMethods(match[3] ?? ""),
+  };
+}
+
+function parseFlaskMethods(args: string): string[] {
+  const match = /methods\s*=\s*\[([^\]]*)\]/u.exec(args);
+  if (match?.[1] === undefined) {
+    return ["GET"];
+  }
+  const methods = [...match[1].matchAll(/["']([^"']+)["']/gu)]
+    .map((item) => item[1]?.toUpperCase())
+    .filter((item): item is string => item !== undefined && item.length > 0);
+  return methods.length > 0 ? [...new Set(methods)] : ["GET"];
+}
+
+function parenDelta(line: string): number {
+  let delta = 0;
+  let quote: string | null = null;
+  let escaped = false;
+  for (const char of line) {
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      delta += 1;
+    } else if (char === ")") {
+      delta -= 1;
+    }
+  }
+  return delta;
+}
+
+function flaskRouteTrustBoundaries(route: FlaskRoute): FeatureSeed["trustBoundaries"] {
+  const boundaries: FeatureSeed["trustBoundaries"] = ["network", "user-input", "serialization"];
+  if (
+    route.methods.some((method) => method !== "GET") ||
+    /(^|\/)(admin|auth|login|token)(\/|$)/iu.test(route.routePath)
+  ) {
+    boundaries.push("auth");
+  }
+  return boundaries;
 }
 
 function standaloneTestSuites(testFiles: string[], command: string | null): FeatureSeed[] {
