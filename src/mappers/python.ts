@@ -28,6 +28,12 @@ type PyprojectInfo = {
 };
 
 const sourceRoots = ["src", "app", "apps", "lib", "scripts"] as const;
+const projectMetadataFiles = [
+  "pyproject.toml",
+  "setup.py",
+  "setup.cfg",
+  "requirements.txt",
+] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
 
@@ -36,23 +42,24 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
     return [];
   }
   const pyproject = await readPyproject(root);
+  const metadataFiles = await pythonMetadataFiles(root);
   const testCommand = await pythonTestCommand(root, pyproject);
   const testFiles = await pythonTestFiles(root);
   const seeds: FeatureSeed[] = [];
 
-  if (await pathExists(join(root, "pyproject.toml"))) {
+  if (metadataFiles.length > 0) {
     seeds.push({
       title: `Python project ${pyproject.name ?? basename(root)}`,
-      summary: "Python project metadata in pyproject.toml.",
+      summary: `Python project metadata in ${metadataFiles.join(", ")}.`,
       kind: packageKind(pyproject.name ?? basename(root)),
       source: "python-project",
       confidence: "medium",
-      entryPath: "pyproject.toml",
+      entryPath: metadataFiles[0] ?? "pyproject.toml",
       symbol: pyproject.name,
       route: null,
       command: null,
-      ownedFiles: [{ path: "pyproject.toml", reason: "python project metadata" }],
-      contextFiles: await pythonProjectContextFiles(root),
+      ownedFiles: metadataFiles.map((path) => ({ path, reason: "python project metadata" })),
+      contextFiles: await pythonProjectContextFiles(root, metadataFiles),
       tags: ["python", "package"],
       trustBoundaries: packageTrustBoundaries(pyproject.name ?? basename(root)),
       skipNearbyTests: true,
@@ -102,7 +109,7 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
       kind: packageKind(group.label),
       source: "python-source-group",
       confidence: "medium",
-      entryPath: group.files[0] ?? group.label,
+      entryPath: group.label,
       symbol: group.label,
       route: null,
       command: null,
@@ -149,6 +156,16 @@ async function readPyproject(root: string): Promise<PyprojectInfo> {
     hasPytest:
       table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest"),
   };
+}
+
+async function pythonMetadataFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const path of projectMetadataFiles) {
+    if (await pathExists(join(root, path))) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promise<string | null> {
@@ -236,10 +253,14 @@ async function rootPythonTestFiles(root: string): Promise<string[]> {
     .toSorted();
 }
 
-async function pythonProjectContextFiles(root: string): Promise<SeedFileRef[]> {
+async function pythonProjectContextFiles(
+  root: string,
+  ownedMetadataFiles: readonly string[],
+): Promise<SeedFileRef[]> {
   const refs: SeedFileRef[] = [];
+  const owned = new Set(ownedMetadataFiles);
   for (const path of ["requirements.txt", "setup.cfg", "setup.py", "README.md"]) {
-    if (await pathExists(join(root, path))) {
+    if (!owned.has(path) && (await pathExists(join(root, path)))) {
       refs.push({ path, reason: "python project context" });
     }
   }
@@ -375,8 +396,14 @@ function currentLabel(sourceRoot: string, files: string[], depth: number): strin
 }
 
 function commonLabel(sourceRoot: string, files: string[], depth: number): string {
-  if (depth === 0 || files.length === 1) {
-    return files.length === 1 ? (files[0] ?? sourceRoot) : sourceRoot;
+  if (depth === 0) {
+    const first = files[0];
+    return files.length === 1 && first !== undefined && !first.startsWith(`${sourceRoot}/`)
+      ? first
+      : sourceRoot;
+  }
+  if (files.length === 1) {
+    return files[0] ?? sourceRoot;
   }
   return currentLabel(sourceRoot, files, depth);
 }

@@ -1077,6 +1077,42 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
   });
 
+  it("maps Python metadata-only projects without pyproject", async () => {
+    const root = await fixtureRoot("clawpatch-python-legacy-metadata-");
+    await writeFixture(root, "setup.cfg", "[metadata]\nname = legacy\n");
+    await writeFixture(root, "requirements.txt", "pytest\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const metadata = result.features.find((feature) => feature.source === "python-project");
+
+    expect(project.detected.languages).toContain("python");
+    expect(metadata?.entrypoints[0]?.path).toBe("setup.cfg");
+    expect(metadata?.ownedFiles).toEqual([
+      { path: "setup.cfg", reason: "python project metadata" },
+      { path: "requirements.txt", reason: "python project metadata" },
+    ]);
+  });
+
+  it("keeps Python source group ids stable when a root gains files", async () => {
+    const root = await fixtureRoot("clawpatch-python-stable-source-id-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "stable-source"\n');
+    await writeFixture(root, "scripts/tool.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstSource = first.features.find((feature) => feature.title === "Python source scripts");
+    await writeFixture(root, "scripts/other.py", "def other():\n    pass\n");
+    const second = await mapFeatures(root, project, first.features);
+    const secondSource = second.features.find(
+      (feature) => feature.title === "Python source scripts",
+    );
+
+    expect(firstSource?.featureId).toBeDefined();
+    expect(secondSource?.featureId).toBe(firstSource?.featureId);
+    expect(second.stale).toBe(0);
+  });
+
   it("keeps Node scripts and native defaults in mixed package repos", async () => {
     const root = await fixtureRoot("clawpatch-mixed-map-");
     await writeFixture(
