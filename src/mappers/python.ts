@@ -248,7 +248,7 @@ async function pythonTestFiles(root: string): Promise<string[]> {
   const rootTests = await rootPythonTestFiles(root);
   const nestedTests = (await walk(root, ["tests", "test", ...(await pythonSourceRoots(root))]))
     .filter(isPythonTestPath)
-    .filter((path) => !pythonShouldSkip(path));
+    .filter((path) => !pythonShouldSkip(path) && !isPythonFixturePath(path));
   return uniquePaths([...rootTests, ...nestedTests]).slice(0, 200);
 }
 
@@ -479,9 +479,13 @@ function isReviewablePythonSourceFile(path: string): boolean {
     path.endsWith(".py") &&
     !isPythonTestPath(path) &&
     !pythonShouldSkip(path) &&
-    !/(^|\/)(__fixtures__|fixtures|testdata)(\/|$)/u.test(path) &&
+    !isPythonFixturePath(path) &&
     !/(^|\/)[^/]*(?:generated|_pb2|_pb2_grpc|\.gen)\.py$/iu.test(path)
   );
+}
+
+function isPythonFixturePath(path: string): boolean {
+  return /(^|\/)(__fixtures__|fixtures|testdata)(\/|$)/u.test(path);
 }
 
 function isPythonTestPath(path: string): boolean {

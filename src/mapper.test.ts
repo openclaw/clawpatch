@@ -1355,6 +1355,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(result.features.some((feature) => feature.source === "python-test-suite")).toBe(false);
   });
 
+  it("does not map Python fixture sample tests as pytest suites", async () => {
+    const root = await fixtureRoot("clawpatch-python-fixture-tests-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "fixture-only"\n');
+    await writeFixture(root, "tests/fixtures/test_sample.py", "def test_sample():\n    pass\n");
+    await writeFixture(root, "tests/__fixtures__/test_sample.py", "def test_sample():\n    pass\n");
+    await writeFixture(root, "testdata/test_sample.py", "def test_sample():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.commands.test).toBeNull();
+    expect(result.features.some((feature) => feature.source === "python-test-suite")).toBe(false);
+  });
+
   it("maps Python source-only projects without a full source-group pre-scan", async () => {
     const root = await fixtureRoot("clawpatch-python-source-only-");
     await writeFixture(root, "src/source_only/app.py", "def app():\n    pass\n");
