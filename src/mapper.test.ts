@@ -3065,7 +3065,20 @@ describe("mapFeatures", () => {
         "",
         "import org.framework.FrameworkBase",
         "",
-        "class Handler : FrameworkBase(dep, config)",
+        "class Handler : FrameworkBase(dep = dep, config = config)",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/jobs/InjectedHandler.kt",
+      [
+        "package com.example.jobs",
+        "",
+        "import jakarta.inject.Inject",
+        "import org.framework.FrameworkBase",
+        "",
+        "class InjectedHandler @Inject constructor(dep: Any) : FrameworkBase(dep)",
         "",
       ].join("\n"),
     );
@@ -3081,6 +3094,40 @@ describe("mapFeatures", () => {
     );
 
     expect(framework?.ownedFiles[0]?.reason).toContain("external type org.framework.FrameworkBase");
+    expect(framework?.ownedFiles.map((file) => file.path)).toContain(
+      "src/main/kotlin/com/example/jobs/InjectedHandler.kt",
+    );
+  });
+
+  it("maps Kotlin Spring components as application services", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-spring-component-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/app/BillingComponent.kt",
+      [
+        "package com.example.app",
+        "",
+        "import org.springframework.stereotype.Component",
+        "",
+        "@Component",
+        "class BillingComponent",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const service = result.features.find(
+      (feature) =>
+        feature.source === "kotlin-server-role-application-service" &&
+        feature.ownedFiles.some(
+          (file) => file.path === "src/main/kotlin/com/example/app/BillingComponent.kt",
+        ),
+    );
+
+    expect(service?.ownedFiles[0]?.reason).toContain("service annotation @Component");
   });
 
   it("normalizes root Gradle source groups", async () => {
