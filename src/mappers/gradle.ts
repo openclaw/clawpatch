@@ -1112,6 +1112,9 @@ function isExternalProjectImport(full: string, projectPackages: Set<string>): bo
   if (/^(?:java|kotlin)\./u.test(full)) {
     return false;
   }
+  if (/^javax\./u.test(full) && !/^javax\.(?:servlet|ws\.rs)\./u.test(full)) {
+    return false;
+  }
   for (const packageName of projectPackages) {
     if (full.startsWith(`${packageName}.`)) {
       return false;

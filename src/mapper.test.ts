@@ -3473,6 +3473,20 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/main/java/com/acme/security/SslFactory.java",
+      [
+        "package com.acme.security;",
+        "",
+        "import javax.net.ssl.SSLContext;",
+        "",
+        "public class SslFactory {",
+        "  public SSLContext context() { return null; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
       "src/main/java/com/acme/local/LocalCommandAdapter.java",
       [
         "package com.acme.local;",
@@ -3530,6 +3544,9 @@ describe("mapFeatures", () => {
         "src/main/java/com/acme/jobs/JobFactory.java",
       ].toSorted(),
     );
+    expect(
+      bySource.get("jvm-role-framework-component")?.ownedFiles.map((file) => file.path),
+    ).not.toContain("src/main/java/com/acme/security/SslFactory.java");
     expect(
       bySource
         .get("jvm-role-extension-boundary")
