@@ -1828,6 +1828,68 @@ describe("mapFeatures", () => {
     });
   });
 
+  it("keeps React routes after quoted JSX text", async () => {
+    const root = await fixtureRoot("clawpatch-react-jsx-text-quote-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        "function Copy() { return <p>Don't miss this</p>; }",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("React route /home");
+  });
+
+  it("does not add binary React imports as context files", async () => {
+    const root = await fixtureRoot("clawpatch-react-binary-import-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/components/Logo.tsx",
+      [
+        "import logo from './logo.png';",
+        "import './Logo.css';",
+        "export default function Logo() { return <img src={logo} />; }",
+      ].join("\n"),
+    );
+    await writeFixture(root, "src/components/logo.png", "not real png\n");
+    await writeFixture(root, "src/components/Logo.css", ".logo { display: block; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const logo = result.features.find((feature) => feature.title === "React component Logo");
+
+    expect(logo?.contextFiles).not.toContainEqual({
+      path: "src/components/logo.png",
+      reason: "direct import",
+    });
+    expect(logo?.contextFiles).toContainEqual({
+      path: "src/components/Logo.css",
+      reason: "direct import",
+    });
+  });
+
   it("does not map React Storybook support files as route or component features", async () => {
     const root = await fixtureRoot("clawpatch-react-storybook-support-");
     await writeFixture(

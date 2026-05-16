@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { lstat, readFile, readdir } from "node:fs/promises";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import {
   detectNodePackageManager,
@@ -55,6 +55,21 @@ const packageRootCandidates = ["", "frontend", "client", "web", "ui", "app", "ap
 const sourceRoots = ["src", "app"];
 const componentRoots = ["src/pages", "src/components"];
 const testRoots = ["src", "app", "test", "tests", "__tests__", "e2e"];
+const contextImportExtensions = new Set([
+  ".css",
+  ".js",
+  ".jsx",
+  ".json",
+  ".less",
+  ".md",
+  ".mdx",
+  ".mjs",
+  ".sass",
+  ".scss",
+  ".svg",
+  ".ts",
+  ".tsx",
+]);
 
 export async function reactSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   syncFileCache.clear();
@@ -1161,11 +1176,19 @@ function isInsideJsString(source: string, offset: number): boolean {
       }
       continue;
     }
-    if (char === '"' || char === "'" || char === "`") {
+    if ((char === '"' || char === "'" || char === "`") && !isLikelyJsxTextQuote(source, index)) {
       quote = char;
     }
   }
   return quote !== null;
+}
+
+function isLikelyJsxTextQuote(source: string, index: number): boolean {
+  const lastTagEnd = source.lastIndexOf(">", index);
+  if (lastTagEnd === -1 || source.lastIndexOf("<", index) > lastTagEnd) {
+    return false;
+  }
+  return !source.slice(lastTagEnd + 1, index).includes("{");
 }
 
 const syncFileCache = new Map<string, string | null>();
@@ -1205,7 +1228,7 @@ function resolveImport(root: string, fromPath: string, importPath: string): stri
     join(base, "index.jsx"),
     join(base, "index.js"),
   ];
-  for (const candidate of candidates.map(normalize)) {
+  for (const candidate of candidates.map(normalize).filter(isTextContextImportCandidate)) {
     const fullPath = join(root, candidate);
     if (
       !shouldSkip(candidate) &&
@@ -1217,6 +1240,11 @@ function resolveImport(root: string, fromPath: string, importPath: string): stri
     }
   }
   return null;
+}
+
+function isTextContextImportCandidate(path: string): boolean {
+  const extension = extname(path);
+  return extension.length === 0 || contextImportExtensions.has(extension);
 }
 
 function realPathInsideRoot(root: string, path: string): boolean {
