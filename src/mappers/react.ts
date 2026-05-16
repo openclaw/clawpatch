@@ -47,7 +47,7 @@ const lazyImportRe =
 const defaultImportRe =
   /import\s+([A-Z][A-Za-z0-9_]*)(?:\s*,\s*\{[^}]*\})?\s+from\s+["']([^"']+)["']/gu;
 const namedImportRe = /import\s+\{([^}]+)\}\s+from\s+["']([^"']+)["']/gu;
-const anyImportRe = /from\s+["']([^"']+)["']/gu;
+const anyImportRe = /(?:import\s+["']([^"']+)["']|from\s+["']([^"']+)["'])/gu;
 const packageRootCandidates = ["", "frontend", "client", "web", "ui", "app", "apps", "packages"];
 const sourceRoots = ["src", "app"];
 const componentRoots = ["src/pages", "src/components"];
@@ -1117,7 +1117,7 @@ function directImportRefs(root: string, path: string): SeedFileRef[] {
   const source = stripJsxComments(rawSource);
   const refs: SeedFileRef[] = [];
   for (const match of source.matchAll(anyImportRe)) {
-    const importPath = match[1];
+    const importPath = match[1] ?? match[2];
     if (
       importPath === undefined ||
       !importPath.startsWith(".") ||

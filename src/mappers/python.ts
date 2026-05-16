@@ -599,9 +599,6 @@ function addPythonImportAliases(
 }
 
 function moduleToPath(moduleName: string): string | null {
-  if (!moduleName.includes(".")) {
-    return null;
-  }
   return `${moduleName.replace(/\./gu, "/")}.py`;
 }
 
