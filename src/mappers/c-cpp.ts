@@ -127,19 +127,15 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const seeds: FeatureSeed[] = [];
   const { contexts } = await referencedCMakeFiles(root, files);
   const extraSources = await cmakeTargetSources(root, contexts);
-  const exePattern =
-    /(?:^|[^A-Za-z0-9_])add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
-  const libPattern =
-    /(?:^|[^A-Za-z0-9_])add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    for (const match of body.matchAll(exePattern)) {
-      const target = match[1] ?? "";
+    for (const args of cmakeCommandArgs(body, "add_executable")) {
+      const [target = "", ...sources] = splitWords(args);
       if (!isValidTargetName(target)) {
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
+        ...(await targetSourcePaths(root, dir, sources)),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -190,13 +186,13 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         contextFiles: [{ path: cmakeFile, reason: "CMake target declaration" }],
       });
     }
-    for (const match of body.matchAll(libPattern)) {
-      const target = match[1] ?? "";
+    for (const args of cmakeCommandArgs(body, "add_library")) {
+      const [target = "", ...sources] = splitWords(args);
       if (!isValidTargetName(target)) {
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
+        ...(await targetSourcePaths(root, dir, sources)),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -299,11 +295,10 @@ async function cmakeTargetSources(
   contexts: CMakeContext[],
 ): Promise<Map<string, string[]>> {
   const sources = new Map<string, string[]>();
-  const pattern = /(?:^|[^A-Za-z0-9_])target_sources\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    for (const match of body.matchAll(pattern)) {
-      const target = match[1] ?? "";
+    for (const args of cmakeCommandArgs(body, "target_sources")) {
+      const [target = "", ...sourceTokens] = splitWords(args);
       if (!isValidTargetName(target)) {
         continue;
       }
@@ -311,10 +306,7 @@ async function cmakeTargetSources(
       const existing = sources.get(key) ?? [];
       sources.set(
         key,
-        uniqueStrings([
-          ...existing,
-          ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
-        ]),
+        uniqueStrings([...existing, ...(await targetSourcePaths(root, dir, sourceTokens))]),
       );
     }
   }
@@ -331,8 +323,8 @@ function isCMakeTestExecutableTarget(target: string, sourcePaths: string[]): boo
 
 function cmakeIncludes(body: string): string[] {
   const includes: string[] = [];
-  for (const match of body.matchAll(/(?:^|[^A-Za-z0-9_])include\s*\(([^)]*)\)/gimsu)) {
-    const path = splitWords(match[1] ?? "")[0];
+  for (const args of cmakeCommandArgs(body, "include")) {
+    const path = splitWords(args)[0];
     if (path !== undefined && !path.startsWith("$")) {
       includes.push(path);
     }
@@ -342,13 +334,99 @@ function cmakeIncludes(body: string): string[] {
 
 function cmakeSubdirectories(body: string): string[] {
   const directories: string[] = [];
-  for (const match of body.matchAll(/(?:^|[^A-Za-z0-9_])add_subdirectory\s*\(([^)]*)\)/gimsu)) {
-    const path = splitWords(match[1] ?? "")[0];
+  for (const args of cmakeCommandArgs(body, "add_subdirectory")) {
+    const path = splitWords(args)[0];
     if (path !== undefined && !path.startsWith("$")) {
       directories.push(path);
     }
   }
   return directories;
+}
+
+function cmakeCommandArgs(body: string, command: string): string[] {
+  const args: string[] = [];
+  const lower = body.toLowerCase();
+  const needle = command.toLowerCase();
+  for (let index = 0; index < body.length; ) {
+    const skipped = cmakeQuotedOrBracketEnd(body, index);
+    if (skipped !== null) {
+      index = skipped;
+      continue;
+    }
+    if (
+      lower.startsWith(needle, index) &&
+      !isIdentifierChar(body[index - 1] ?? "") &&
+      !isIdentifierChar(body[index + needle.length] ?? "")
+    ) {
+      let open = index + needle.length;
+      while (/\s/u.test(body[open] ?? "")) {
+        open += 1;
+      }
+      if (body[open] === "(") {
+        const close = cmakeCommandClose(body, open);
+        if (close !== null) {
+          args.push(body.slice(open + 1, close));
+          index = close + 1;
+          continue;
+        }
+      }
+    }
+    index += 1;
+  }
+  return args;
+}
+
+function cmakeCommandClose(body: string, open: number): number | null {
+  let depth = 1;
+  for (let index = open + 1; index < body.length; ) {
+    const skipped = cmakeQuotedOrBracketEnd(body, index);
+    if (skipped !== null) {
+      index = skipped;
+      continue;
+    }
+    if (body[index] === "(") {
+      depth += 1;
+    } else if (body[index] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+    index += 1;
+  }
+  return null;
+}
+
+function cmakeQuotedOrBracketEnd(body: string, index: number): number | null {
+  if (body[index] === '"') {
+    return cmakeQuotedEnd(body, index);
+  }
+  return cmakeBracketEnd(body, index);
+}
+
+function cmakeQuotedEnd(body: string, index: number): number {
+  for (let cursor = index + 1; cursor < body.length; cursor += 1) {
+    if (body[cursor] === "\\") {
+      cursor += 1;
+      continue;
+    }
+    if (body[cursor] === '"') {
+      return cursor + 1;
+    }
+  }
+  return body.length;
+}
+
+function cmakeBracketEnd(body: string, index: number): number | null {
+  const match = /^\[(=*)\[/u.exec(body.slice(index));
+  if (match === null) {
+    return null;
+  }
+  const delimiter = match[1] ?? "";
+  const terminator = `]${delimiter}]`;
+  const contentStart = index + match[0].length;
+  const end = body.indexOf(terminator, contentStart);
+  return end === -1 ? body.length : end + terminator.length;
 }
 
 async function mainFunctionTargets(
@@ -572,18 +650,54 @@ async function defaultAutomakeSources(
   return existing;
 }
 
+type CMakeWord = {
+  value: string;
+  quoted: boolean;
+};
+
 function splitWords(value: string): string[] {
-  return value
-    .split(/\s+/u)
-    .filter((word) => word.length > 0)
-    .map(unquoteWord)
-    .flatMap((word) => word.split(";"))
+  return cmakeWords(value)
+    .flatMap((word) => (word.quoted ? [word.value] : word.value.split(";")))
     .filter((word) => word.length > 0);
 }
 
-function unquoteWord(value: string): string {
-  const quote = value[0];
-  return (quote === '"' || quote === "'") && value.endsWith(quote) ? value.slice(1, -1) : value;
+function cmakeWords(value: string): CMakeWord[] {
+  const words: CMakeWord[] = [];
+  for (let index = 0; index < value.length; ) {
+    while (/\s/u.test(value[index] ?? "")) {
+      index += 1;
+    }
+    if (index >= value.length) {
+      break;
+    }
+    if (value[index] === '"') {
+      const end = cmakeQuotedEnd(value, index);
+      words.push({ value: unescapeCMakeQuoted(value.slice(index + 1, end - 1)), quoted: true });
+      index = end;
+      continue;
+    }
+    const bracketEnd = cmakeBracketEnd(value, index);
+    if (bracketEnd !== null) {
+      const opener = /^\[(=*)\[/u.exec(value.slice(index))?.[0] ?? "[[";
+      const terminatorLength = opener.length;
+      words.push({
+        value: value.slice(index + opener.length, bracketEnd - terminatorLength),
+        quoted: true,
+      });
+      index = bracketEnd;
+      continue;
+    }
+    const start = index;
+    while (index < value.length && !/\s/u.test(value[index] ?? "")) {
+      index += 1;
+    }
+    words.push({ value: value.slice(start, index), quoted: false });
+  }
+  return words;
+}
+
+function unescapeCMakeQuoted(value: string): string {
+  return value.replace(/\\(.)/gsu, "$1");
 }
 
 async function pickExecutableEntry(

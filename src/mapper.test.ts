@@ -1427,6 +1427,46 @@ add_executable(headerapp include/headers.hpp)
     expect(real?.ownedFiles).toEqual([{ path: "src/real.c", reason: "target source" }]);
   });
 
+  it("ignores CMake command text inside strings", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-command-string-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      'message("add_executable(fake src/main.c)")\nmessage([[add_library(fake_lib src/lib.c)]])\nadd_executable(real src/real.c)\n',
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/lib.c", "int lib(void) { return 0; }\n");
+    await writeFixture(root, "src/real.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("CMake binary fake");
+    expect(titles).not.toContain("CMake library fake_lib");
+    expect(titles).toContain("CMake binary real");
+  });
+
+  it("maps quoted CMake source paths containing spaces", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-quoted-space-source-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      'add_executable(app "src/main file.cpp" "src/helper file.cpp")\n',
+    );
+    await writeFixture(root, "src/main file.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/helper file.cpp", "int helper(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main file.cpp", reason: "target source" },
+      { path: "src/helper file.cpp", reason: "target source" },
+    ]);
+  });
+
   it("keeps target_sources scoped to standalone CMake projects", async () => {
     const root = await fixtureRoot("clawpatch-cmake-target-sources-scope-");
     await writeFixture(
