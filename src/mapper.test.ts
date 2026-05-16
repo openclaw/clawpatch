@@ -269,6 +269,41 @@ describe("mapFeatures", () => {
     );
   });
 
+  it("keeps Nx target commands on the workspace package manager", async () => {
+    const root = await fixtureRoot("clawpatch-map-nx-root-package-manager-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", sourceRoot: "apps/web/src", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", scripts: { test: "vitest run" } }, null, 2),
+    );
+    await writeFixture(root, "apps/web/package-lock.json", "{}\n");
+    await writeFixture(
+      root,
+      "apps/web/src/app/home/page.tsx",
+      "export default function Home() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/src/app/home/page.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "web route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/src/app/home/page.test.tsx", command: "pnpm nx test web" },
+    ]);
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -1566,6 +1601,35 @@ describe("mapFeatures", () => {
     expect(home?.tests).toEqual([
       { path: "frontend/src/pages/HomePage.test.tsx", command: "npm --prefix frontend run test" },
     ]);
+  });
+
+  it("keeps React routes after block comments with URL-looking text", async () => {
+    const root = await fixtureRoot("clawpatch-react-block-comment-url-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "/* see https://example.com */",
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("React route /home");
   });
 
   it("uses bun run for root React package scripts", async () => {

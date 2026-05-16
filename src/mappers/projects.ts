@@ -28,6 +28,7 @@ export type NodeProjectInfo = {
   projectType: string | null;
   targets: Record<string, NodeProjectTarget>;
   packageManager: string;
+  nxPackageManager: string;
 };
 
 type CandidateContextFile = {
@@ -56,6 +57,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
       projectType: null,
       targets: {},
       packageManager: await nodePackageManagerForPackage(root, packageRoot, rootPackageManager),
+      nxPackageManager: rootPackageManager,
     });
   }
 
@@ -85,6 +87,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
       projectType: nxProject.projectType,
       targets: nxProject.targets,
       packageManager: await nodePackageManagerForPackage(root, projectRoot, rootPackageManager),
+      nxPackageManager: rootPackageManager,
     });
   }
 
@@ -131,7 +134,7 @@ export function projectContextFiles(
 
 export function projectTargetCommand(project: NodeProjectInfo, target: string): string | null {
   if (project.targets[target] !== undefined) {
-    return nxCommand(project.packageManager, target, project.name);
+    return nxCommand(project.nxPackageManager, target, project.name);
   }
   if (project.packageJson !== null && packageScripts(project.packageJson)[target] !== undefined) {
     return scriptCommand(project.packageManager, project.root, target);

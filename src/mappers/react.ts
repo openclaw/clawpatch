@@ -921,7 +921,7 @@ function isRouteWrapperComponent(name: string): boolean {
 }
 
 function stripJsxComments(source: string): string {
-  return stripBlockComments(source.split("\n").map(stripLineComment).join("\n"));
+  return stripBlockComments(source).split("\n").map(stripLineComment).join("\n");
 }
 
 function stripLineComment(line: string): string {
