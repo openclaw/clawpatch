@@ -619,7 +619,44 @@ function readVariableWords(body: string, variable: string): string[] {
 }
 
 function stripCMakeComments(source: string): string {
-  return stripLineComments(source.replace(/#\[(=*)\[[\s\S]*?\]\1\]/gu, " "), "#");
+  let output = "";
+  for (let index = 0; index < source.length; ) {
+    if (source[index] === '"') {
+      const end = cmakeQuotedEnd(source, index);
+      output += source.slice(index, end);
+      index = end;
+      continue;
+    }
+    const bracketEnd = cmakeBracketEnd(source, index);
+    if (bracketEnd !== null) {
+      output += source.slice(index, bracketEnd);
+      index = bracketEnd;
+      continue;
+    }
+    const bracketComment = /^#\[(=*)\[/u.exec(source.slice(index));
+    if (bracketComment !== null) {
+      const terminator = `]${bracketComment[1] ?? ""}]`;
+      const start = index;
+      const end = source.indexOf(terminator, index + bracketComment[0].length);
+      index = end === -1 ? source.length : end + terminator.length;
+      output += blankComment(source.slice(start, index));
+      continue;
+    }
+    if (source[index] === "#") {
+      const end = source.indexOf("\n", index + 1);
+      const comment = source.slice(index, end === -1 ? source.length : end);
+      output += blankComment(comment);
+      index = end === -1 ? source.length : end;
+      continue;
+    }
+    output += source[index];
+    index += 1;
+  }
+  return output;
+}
+
+function blankComment(source: string): string {
+  return source.replace(/[^\n]/gu, " ");
 }
 
 async function automakeTargetSources(

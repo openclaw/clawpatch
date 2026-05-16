@@ -3364,6 +3364,25 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("CMake binary real");
   });
 
+  it("keeps CMake targets after bracket arguments containing hashes", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-bracket-hash-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "message([[# generated]])\nmessage([=[# also generated]=])\n#[[add_executable(fake src/fake.c)]]\nadd_executable(real src/real.c)\n",
+    );
+    await writeFixture(root, "src/fake.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/real.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("CMake binary fake");
+    expect(titles).toContain("CMake binary real");
+    expect(titles).not.toContain("C binary real");
+  });
+
   it("maps quoted CMake source paths containing spaces", async () => {
     const root = await fixtureRoot("clawpatch-cmake-quoted-space-source-");
     await writeFixture(
