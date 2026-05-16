@@ -64,6 +64,28 @@ export function projectNameFromRoot(root: string, remoteUrl: string | null): str
   return basename(root);
 }
 
+export async function changedFilesSince(root: string, ref: string): Promise<Set<string>> {
+  const result = await runCommand(
+    `git diff --name-only --relative ${shellQuoteRef(ref)}...HEAD`,
+    root,
+    undefined,
+    { trimOutput: false },
+  );
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      `git diff --since ${ref} failed: ${result.stderr || result.stdout}`,
+      2,
+      "git-failure",
+    );
+  }
+  return new Set(
+    result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  );
+}
+
 async function gitLine(cwd: string, command: string): Promise<string | null> {
   const result = await runCommand(command, cwd);
   if (result.exitCode !== 0) {
@@ -76,4 +98,11 @@ async function gitLine(cwd: string, command: string): Promise<string | null> {
 async function gitText(cwd: string, command: string): Promise<string> {
   const result = await runCommand(command, cwd);
   return result.exitCode === 0 ? result.stdout : "";
+}
+
+function shellQuoteRef(ref: string): string {
+  if (!/^[A-Za-z0-9_./~^@-]+$/u.test(ref)) {
+    throw new ClawpatchError(`invalid git ref: ${ref}`, 2, "invalid-input");
+  }
+  return ref;
 }
