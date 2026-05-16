@@ -2427,7 +2427,6 @@ describe("mapFeatures", () => {
       'plugins { id("com.android.application") version "1.0" apply false }\n',
     );
     await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.application") }\n');
-    await writeFixture(root, "app/src/main/AndroidManifest.xml", "<manifest />\n");
     await writeFixture(
       root,
       "app/src/main/kotlin/com/example/ui/MainActivity.kt",
@@ -2522,6 +2521,7 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
+    const gradleModule = result.features.find((feature) => feature.title === "Gradle module app");
     const ui = result.features.find((feature) =>
       feature.title.startsWith("Kotlin Android role UI entrypoint "),
     );
@@ -2541,6 +2541,7 @@ describe("mapFeatures", () => {
     expect(project.detected.languages).toContain("kotlin");
     expect(project.detected.packageManagers).toContain("gradle");
     expect(titles).toContain("Gradle module app");
+    expect(gradleModule?.tags).toEqual(expect.arrayContaining(["gradle", "kotlin", "android"]));
     expect(ui?.source).toBe("kotlin-android-role-ui-entrypoint");
     expect(ui?.kind).toBe("ui-flow");
     expect(ui?.confidence).toBe("high");
@@ -2658,8 +2659,17 @@ describe("mapFeatures", () => {
     ]);
     expect(service?.source).toBe("kotlin-server-role-application-service");
     expect(persistence?.source).toBe("kotlin-server-role-persistence-boundary");
-    expect(clientFeatures.some((feature) => feature.confidence === "high")).toBe(true);
-    expect(clientFeatures.some((feature) => feature.confidence === "medium")).toBe(true);
+    const clientFiles = clientFeatures.flatMap((feature) =>
+      feature.ownedFiles.map((file) => file.path),
+    );
+    expect(clientFeatures).toHaveLength(1);
+    expect(clientFeatures[0]?.confidence).toBe("high");
+    expect(clientFiles).toEqual(
+      expect.arrayContaining([
+        "src/main/kotlin/com/example/client/RemoteClient.kt",
+        "src/main/kotlin/com/example/network/FallbackClient.kt",
+      ]),
+    );
   });
 
   it("keeps Kotlin feature IDs stable when confidence changes", async () => {
@@ -2670,6 +2680,11 @@ describe("mapFeatures", () => {
       root,
       "src/main/kotlin/com/example/network/FallbackClient.kt",
       "package com.example.network\nclass FallbackClient\n",
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/network/BackupClient.kt",
+      "package com.example.network\nclass BackupClient\n",
     );
 
     const project = await detectProject(root);
@@ -2707,6 +2722,10 @@ describe("mapFeatures", () => {
     expect(fallbackBefore?.confidence).toBe("medium");
     expect(fallbackAfter?.confidence).toBe("high");
     expect(fallbackAfter?.featureId).toBe(fallbackBefore?.featureId);
+    expect(fallbackAfter?.ownedFiles.map((file) => file.path).toSorted()).toEqual([
+      "src/main/kotlin/com/example/network/BackupClient.kt",
+      "src/main/kotlin/com/example/network/FallbackClient.kt",
+    ]);
   });
 
   it("does not infer Android roles from non-Android Gradle module paths", async () => {

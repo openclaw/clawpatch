@@ -196,7 +196,7 @@ async function gradleProjectSeeds(root: string, gradleRoot: string): Promise<Fea
     const testFiles = (await walk(root, [sourceRoot]))
       .filter(isGradleSourceFile)
       .filter((file) => isGradleTestFile(moduleRoot, file));
-    const tags = gradleTags(buildFile, sourceFiles);
+    const tags = await gradleTags(root, buildFile, sourceFiles);
 
     seeds.push({
       title: `Gradle module ${moduleRoot}`,
@@ -360,45 +360,16 @@ function kotlinRoleGroups(
   label: string;
   symbol: string;
 }> {
-  const groups = kotlinFilesByConfidence(byFile).flatMap(([confidence, files]) =>
-    partitionFileGroups(sourceRoot, files, maxOwnedFiles).map((group) => ({
-      confidence,
-      group,
-      label: `${group.label} (${confidence})`,
-      symbol: group.label,
-    })),
-  );
-  const symbolCounts = new Map<string, number>();
-  for (const group of groups) {
-    symbolCounts.set(group.symbol, (symbolCounts.get(group.symbol) ?? 0) + 1);
-  }
-  return groups.map((group) => ({
-    ...group,
-    symbol:
-      (symbolCounts.get(group.symbol) ?? 0) > 1
-        ? `${group.symbol} (${group.confidence})`
-        : group.symbol,
+  return partitionFileGroups(sourceRoot, [...byFile.keys()], maxOwnedFiles).map((group) => ({
+    confidence: group.files.some((path) =>
+      (byFile.get(path) ?? []).some((item) => item.confidence === "high"),
+    )
+      ? "high"
+      : "medium",
+    group,
+    label: group.label,
+    symbol: group.label,
   }));
-}
-
-function kotlinFilesByConfidence(
-  byFile: Map<string, Array<{ reason: string; confidence: FeatureSeed["confidence"] }>>,
-): Array<[FeatureSeed["confidence"], string[]]> {
-  const buckets = new Map<FeatureSeed["confidence"], string[]>();
-  for (const [path, evidence] of byFile) {
-    const confidence = evidence.some((item) => item.confidence === "high") ? "high" : "medium";
-    const files = buckets.get(confidence) ?? [];
-    files.push(path);
-    buckets.set(confidence, files);
-  }
-  const order = new Map<FeatureSeed["confidence"], number>([
-    ["high", 0],
-    ["medium", 1],
-    ["low", 2],
-  ]);
-  return [...buckets.entries()].toSorted(
-    ([left], [right]) => (order.get(left) ?? 99) - (order.get(right) ?? 99),
-  );
 }
 
 function kotlinRoleSource(role: KotlinRoleKey): string {
@@ -1375,7 +1346,11 @@ function associatedGradleTests(files: string[], testFiles: string[]): SeedTestRe
     .map((path) => ({ path, command: null }));
 }
 
-function gradleTags(buildFile: string, sourceFiles: string[]): string[] {
+async function gradleTags(
+  root: string,
+  buildFile: string,
+  sourceFiles: string[],
+): Promise<string[]> {
   const tags = ["gradle"];
   if (
     buildFile.endsWith(".kts") ||
@@ -1383,7 +1358,12 @@ function gradleTags(buildFile: string, sourceFiles: string[]): string[] {
   ) {
     tags.push("kotlin");
   }
-  if (sourceFiles.some((file) => file.endsWith("AndroidManifest.xml"))) {
+  const buildSource = await readFile(join(root, buildFile), "utf8").catch(() => "");
+  if (
+    /\bcom\.android\.(?:application|library|test|dynamic-feature)\b/u.test(buildSource) ||
+    /\bandroid\s*\{/u.test(buildSource) ||
+    sourceFiles.some((file) => file.endsWith("AndroidManifest.xml"))
+  ) {
     tags.push("android");
   }
   return tags;
