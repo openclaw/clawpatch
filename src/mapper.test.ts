@@ -1047,6 +1047,34 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       format: null,
       test: null,
     });
+
+    const dependencyGroupRoot = await fixtureRoot("clawpatch-python-dependency-groups-");
+    await writeFixture(
+      dependencyGroupRoot,
+      "pyproject.toml",
+      '[project]\nname = "dependency-groups"\n\n[dependency-groups]\ndev = [\n  "pytest",\n  "ruff",\n]\n',
+    );
+    expect((await detectProject(dependencyGroupRoot)).detected.commands).toMatchObject({
+      lint: "ruff check .",
+      format: "ruff format --check .",
+      test: "pytest",
+    });
+  });
+
+  it("maps root-level Python pytest files", async () => {
+    const root = await fixtureRoot("clawpatch-python-root-tests-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "root-tests"\n');
+    await writeFixture(root, "test_app.py", "def test_app():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const suite = result.features.find(
+      (feature) => feature.title === "Python test suite test_app.py",
+    );
+
+    expect(project.detected.commands.test).toBe("pytest");
+    expect(suite?.ownedFiles).toEqual([{ path: "test_app.py", reason: "pytest file" }]);
+    expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
   });
 
   it("keeps Node scripts and native defaults in mixed package repos", async () => {

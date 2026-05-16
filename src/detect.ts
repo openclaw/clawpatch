@@ -411,14 +411,21 @@ function pythonTomlTables(source: string, names: string[]): string[] {
 
 function pythonTomlAssignedValues(source: string): string[] {
   const values: string[] = [];
-  for (const line of source.split("\n")) {
-    const match = /^\s*["']?[^"'=\s]+["']?\s*=\s*(.+?)\s*(?:#.*)?$/u.exec(line);
-    if (match?.[1] !== undefined) {
-      values.push(...pythonTomlArrayValues(match[1]));
-      const stringValue = /^["']([^"']+)["']/u.exec(match[1])?.[1];
-      if (stringValue !== undefined) {
-        values.push(stringValue);
-      }
+  for (const match of source.matchAll(/^\s*["']?[^"'=\s]+["']?\s*=\s*/gmu)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    const valueStart = match.index + match[0].length;
+    const lineEnd = source.indexOf("\n", valueStart);
+    const rawValue = source.slice(valueStart, lineEnd === -1 ? source.length : lineEnd).trim();
+    if (rawValue.startsWith("[")) {
+      values.push(...pythonTomlArrayValues(readTomlBracketValue(source, valueStart)));
+      continue;
+    }
+    values.push(...pythonTomlArrayValues(rawValue));
+    const stringValue = /^["']([^"']+)["']/u.exec(rawValue)?.[1];
+    if (stringValue !== undefined) {
+      values.push(stringValue);
     }
   }
   return values;

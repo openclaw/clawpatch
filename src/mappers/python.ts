@@ -221,10 +221,19 @@ async function pythonSourceRoots(root: string): Promise<string[]> {
 }
 
 async function pythonTestFiles(root: string): Promise<string[]> {
-  return (await walk(root, ["tests", "test", ...(await pythonSourceRoots(root))]))
+  const rootTests = await rootPythonTestFiles(root);
+  const nestedTests = (await walk(root, ["tests", "test", ...(await pythonSourceRoots(root))]))
     .filter(isPythonTestPath)
-    .filter((path) => !pythonShouldSkip(path))
-    .slice(0, 200);
+    .filter((path) => !pythonShouldSkip(path));
+  return uniquePaths([...rootTests, ...nestedTests]).slice(0, 200);
+}
+
+async function rootPythonTestFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true }).catch(() => []);
+  return entries
+    .filter((entry) => entry.isFile() && isPythonTestPath(entry.name))
+    .map((entry) => entry.name)
+    .toSorted();
 }
 
 async function pythonProjectContextFiles(root: string): Promise<SeedFileRef[]> {
@@ -504,14 +513,21 @@ function tomlArrayAssignments(source: string, keys: string[]): string[] {
 
 function assignedValues(source: string): string[] {
   const values: string[] = [];
-  for (const line of source.split("\n")) {
-    const match = /^\s*["']?[^"'=\s]+["']?\s*=\s*(.+?)\s*(?:#.*)?$/u.exec(line);
-    if (match?.[1] !== undefined) {
-      values.push(...arrayValues(match[1]));
-      const stringValue = /^["']([^"']+)["']/u.exec(match[1])?.[1];
-      if (stringValue !== undefined) {
-        values.push(stringValue);
-      }
+  for (const match of source.matchAll(/^\s*["']?[^"'=\s]+["']?\s*=\s*/gmu)) {
+    if (match.index === undefined) {
+      continue;
+    }
+    const valueStart = match.index + match[0].length;
+    const lineEnd = source.indexOf("\n", valueStart);
+    const rawValue = source.slice(valueStart, lineEnd === -1 ? source.length : lineEnd).trim();
+    if (rawValue.startsWith("[")) {
+      values.push(...arrayValues(readBracketValue(source, valueStart)));
+      continue;
+    }
+    values.push(...arrayValues(rawValue));
+    const stringValue = /^["']([^"']+)["']/u.exec(rawValue)?.[1];
+    if (stringValue !== undefined) {
+      values.push(stringValue);
     }
   }
   return values;
@@ -580,4 +596,8 @@ function requirementName(value: string): string | null {
   }
   const match = /^([A-Za-z0-9_.-]+)/u.exec(trimmed);
   return match?.[1]?.toLowerCase().replace(/_/gu, "-") ?? null;
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return [...new Set(paths)];
 }
