@@ -1663,6 +1663,8 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/app_tests.cpp", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/FooTests.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/Contest.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/latest.cpp", "int main(void) { return 0; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -1672,6 +1674,8 @@ add_executable(headerapp include/headers.hpp)
     expect(app?.tests).toEqual([{ path: "src/app_tests.cpp", command: null }]);
     expect(titles).not.toContain("C++ binary app_tests");
     expect(titles).not.toContain("C++ binary FooTests");
+    expect(titles).toContain("C++ binary Contest");
+    expect(titles).toContain("C++ binary latest");
   });
 
   it("skips dependency trees during C and C++ discovery", async () => {
