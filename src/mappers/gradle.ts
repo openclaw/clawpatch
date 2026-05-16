@@ -559,25 +559,7 @@ function kotlinFrameworkRoleEvidence(
         confidence: "high",
       });
     }
-    if (
-      !isAndroid &&
-      [
-        "Controller",
-        "RestController",
-        "RequestMapping",
-        "GetMapping",
-        "PostMapping",
-        "PutMapping",
-        "DeleteMapping",
-        "PatchMapping",
-        "Path",
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "PATCH",
-      ].includes(annotation)
-    ) {
+    if (!isAndroid && isKotlinServerWebAnnotation(info, annotation)) {
       evidence.push({
         role: "server-web-entrypoint",
         reason: `server web annotation @${annotation}`,
@@ -900,6 +882,28 @@ function isKotlinStdlibImport(full: string): boolean {
   return full.startsWith("kotlin.");
 }
 
+function isKotlinServerWebAnnotation(info: KotlinFileInfo, annotation: string): boolean {
+  if (
+    [
+      "Controller",
+      "RestController",
+      "RequestMapping",
+      "GetMapping",
+      "PostMapping",
+      "PutMapping",
+      "DeleteMapping",
+      "PatchMapping",
+    ].includes(annotation)
+  ) {
+    return true;
+  }
+  if (!["Path", "GET", "POST", "PUT", "DELETE", "PATCH"].includes(annotation)) {
+    return false;
+  }
+  const full = info.imports.get(annotation);
+  return full !== undefined && /^(?:javax|jakarta)\.ws\.rs\./u.test(full);
+}
+
 function parseJavaFile(source: string): JavaFileInfo {
   const stripped = stripJavaComments(source);
   const packageName = /^\s*package\s+([A-Za-z0-9_.]+)\s*;/mu.exec(stripped)?.[1] ?? null;
@@ -1008,7 +1012,7 @@ function parseJavaDeclarations(source: string): JavaDeclaration[] {
 function parseKotlinDeclarations(source: string): KotlinDeclaration[] {
   const declarations: KotlinDeclaration[] = [];
   const declarationPattern =
-    /\b(?:(?:data|sealed|open|abstract|final|inner|value|annotation)\s+)*(?:(enum)\s+)?(?:(fun)\s+)?(class|interface|object)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^{};]*>)?(?:\s*\([^{}]*?\))?(?:\s*:\s*([^={}\n]+))?/gsu;
+    /\b(?:(?:data|sealed|open|abstract|final|inner|value|annotation)\s+)*(?:(enum)\s+)?(?:(fun)\s+)?(class|interface|object)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^{};]*>)?(?:(?:\s+(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\([^(){}]*\))?\s*)*(?:(?:public|private|protected|internal)\s+)?constructor\s*\([^{}]*?\))|(?:\s*\([^{}]*?\)))?(?:\s*:\s*([^={}\n]+))?/gsu;
   for (const match of source.matchAll(declarationPattern)) {
     const rawKind = match[3];
     const name = match[4];
@@ -1450,24 +1454,21 @@ async function gradleTags(
 }
 
 function hasAppliedAndroidPlugin(buildSource: string): boolean {
-  return stripJavaComments(buildSource)
-    .split(/\r?\n/u)
-    .some((line) => {
-      if (/\bapply\s+false\b|\.\s*apply\s*\(\s*false\s*\)/u.test(line)) {
-        return false;
-      }
-      return (
-        /\bid\s*\(?\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\)?/u.test(
-          line,
-        ) ||
-        /\bapply\s+plugin:\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']/u.test(
-          line,
-        ) ||
-        /\bapply\s*\(\s*plugin\s*=\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\)/u.test(
-          line,
-        )
-      );
-    });
+  const source = stripJavaComments(buildSource).replace(
+    /\bid\s*\(?\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\)?(?:(?!\bid\s*\(?\s*["']).)*?(?:\bapply\s+false\b|\.\s*apply\s*\(\s*false\s*\))/gsu,
+    "",
+  );
+  return (
+    /\bid\s*\(?\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\)?/u.test(
+      source,
+    ) ||
+    /\bapply\s+plugin:\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']/u.test(
+      source,
+    ) ||
+    /\bapply\s*\(\s*plugin\s*=\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\)/u.test(
+      source,
+    )
+  );
 }
 
 function isGradleSourceFile(path: string): boolean {
