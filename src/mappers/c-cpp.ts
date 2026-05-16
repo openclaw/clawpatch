@@ -470,7 +470,7 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
 }
 
 function isCOrCppDependencyPath(path: string): boolean {
-  return /(^|\/)vendor(\/|$)/u.test(path);
+  return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
 function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {

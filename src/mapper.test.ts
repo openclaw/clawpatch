@@ -1747,6 +1747,16 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(root, "src/app.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "vendor/tool/main.c", "int main(void) { return 0; }\n");
     await writeFixture(root, ".venv/native/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(
+      root,
+      "CMakeFiles/CompilerIdCXX/CMakeCXXCompilerId.cpp",
+      "int main(void) { return 0; }\n",
+    );
+    await writeFixture(
+      root,
+      "cmake-build-debug/generated/tool.cpp",
+      "int main(void) { return 0; }\n",
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -1757,6 +1767,8 @@ add_executable(headerapp include/headers.hpp)
     expect(paths).toContain("src/app.c");
     expect(paths.some((path) => path.startsWith("vendor/"))).toBe(false);
     expect(paths.some((path) => path.startsWith(".venv/"))).toBe(false);
+    expect(paths.some((path) => path.startsWith("CMakeFiles/"))).toBe(false);
+    expect(paths.some((path) => path.startsWith("cmake-build-debug/"))).toBe(false);
   });
 
   it("ignores vendored C and C++ files during detection", async () => {
