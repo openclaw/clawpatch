@@ -128,9 +128,9 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const seeds: FeatureSeed[] = [];
   const cmakeFiles = files.filter(isCMake);
   const sourceDirs = await cmakeSourceDirs(root, cmakeFiles);
-  const exePattern = /add_executable\s*\(\s*([A-Za-z_][\w-]*)\s+([^)]*)\)/gimsu;
+  const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
   const libPattern =
-    /add_library\s*\(\s*([A-Za-z_][\w-]*)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gimsu;
+    /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gimsu;
   for (const cmakeFile of cmakeFiles) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);

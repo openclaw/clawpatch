@@ -791,7 +791,10 @@ async function containsCppFile(root: string): Promise<boolean> {
   return (
     (await containsFileWithExtension(root, ".cpp", 5)) ||
     (await containsFileWithExtension(root, ".cc", 5)) ||
-    (await containsFileWithExtension(root, ".cxx", 5))
+    (await containsFileWithExtension(root, ".cxx", 5)) ||
+    (await containsFileWithExtension(root, ".hpp", 5)) ||
+    (await containsFileWithExtension(root, ".hh", 5)) ||
+    (await containsFileWithExtension(root, ".hxx", 5))
   );
 }
 
