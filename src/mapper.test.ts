@@ -138,6 +138,137 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Route /_error");
   });
 
+  it("maps Next routes inside Nx workspace projects", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-workspace-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "yarn.lock", "");
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify(
+        {
+          name: "web",
+          sourceRoot: "apps/web/src",
+          projectType: "application",
+          targets: { test: {}, lint: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/api/things/route.ts",
+      "export function GET() { return new Response('ok'); }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/admin/package.json",
+      JSON.stringify({ name: "admin", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/project.json",
+      JSON.stringify({ name: "admin", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/src/pages/settings.tsx",
+      "export default function Settings() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const webRoute = result.features.find((feature) => feature.title === "web route /users/:id");
+    const adminRoute = result.features.find((feature) => feature.title === "admin route /settings");
+
+    expect(titles).toContain("web route /users/:id");
+    expect(titles).toContain("web route /api/things");
+    expect(titles).toContain("admin route /settings");
+    expect(webRoute?.entrypoints[0]?.path).toBe("apps/web/src/app/(dashboard)/users/[id]/page.tsx");
+    expect(webRoute?.entrypoints[0]?.route).toBe("/users/:id");
+    expect(webRoute?.tags).toEqual(
+      expect.arrayContaining(["project:web", "project-root:apps/web", "project-type:application"]),
+    );
+    expect(webRoute?.tests).toEqual([
+      {
+        path: "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+        command: "yarn nx test web",
+      },
+    ]);
+    expect(webRoute?.contextFiles).toContainEqual({
+      path: "apps/web/project.json",
+      reason: "project context",
+    });
+    expect(adminRoute?.tests.every((test) => test.command === "yarn nx test admin")).toBe(true);
+  });
+
+  it("maps Next routes inside Nx projects without package manifests", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-no-package-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "workspace-root" }, null, 2));
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(
+      root,
+      "apps/portal/project.json",
+      JSON.stringify(
+        {
+          name: "portal",
+          sourceRoot: "apps/portal/src",
+          projectType: "application",
+          targets: { test: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.tsx",
+      "export default function Account() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "portal route /account");
+
+    expect(route?.entrypoints[0]?.path).toBe("apps/portal/src/app/account/page.tsx");
+    expect(route?.tests).toEqual([
+      { path: "apps/portal/src/app/account/page.test.tsx", command: "pnpm nx test portal" },
+    ]);
+    expect(route?.tags).toEqual(
+      expect.arrayContaining([
+        "project:portal",
+        "project-root:apps/portal",
+        "project-type:application",
+      ]),
+    );
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -181,6 +312,235 @@ describe("mapFeatures", () => {
     expect(cli?.summary).toContain("source src/cli.ts");
   });
 
+  it("maps Ruby metadata, executables, source groups, and tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(
+      root,
+      "fixture.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'fixture-ruby'\n  spec.add_dependency 'redis'\nend\n",
+    );
+    await writeFixture(root, "Rakefile", "task :default\n");
+    await writeFixture(root, "exe/fixture", "#!/usr/bin/env ruby\nputs 'ok'\n");
+    await writeFixture(root, "script/helper.rb", "#!/usr/bin/env ruby\nputs 'helper'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(
+      root,
+      "lib/fixture/client.rb",
+      "module Fixture\n  class Client\n  end\nend\n",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await writeFixture(
+        root,
+        `lib/fixture/type/type${String(index).padStart(2, "0")}.rb`,
+        "module Fixture\nend\n",
+      );
+    }
+    await writeFixture(root, "spec/fixture/client_spec.rb", "RSpec.describe Fixture::Client\n");
+    await writeFixture(root, "vendor/bundle/ignored.rb", "module Ignored\nend\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === "Ruby project fixture-ruby",
+    );
+    const cli = result.features.find((feature) => feature.title === "Ruby CLI command fixture");
+    const source = result.features.find((feature) => feature.title === "Ruby source lib/fixture");
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+    expect(titles).toContain("Ruby project fixture-ruby");
+    expect(titles).toContain("Ruby CLI command fixture");
+    expect(titles).toContain("Ruby CLI command helper.rb");
+    expect(titles).toContain("Ruby Rake tasks");
+    expect(titles).toContain("Ruby source lib");
+    expect(titles).toContain("Ruby source lib/fixture");
+    expect(titles).toContain("Ruby source lib/fixture/type");
+    expect(titles).toContain("Ruby test suite spec");
+    expect(rubyProject?.ownedFiles).toContainEqual({
+      path: "fixture.gemspec",
+      reason: "ruby project metadata",
+    });
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(cli?.entrypoints[0]?.path).toBe("exe/fixture");
+    expect(source?.ownedFiles.map((ref) => ref.path)).toContain("lib/fixture/client.rb");
+    expect(source?.tests).toEqual([
+      { path: "spec/fixture/client_spec.rb", command: "bundle exec rspec" },
+    ]);
+    expect(
+      result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path)),
+    ).not.toContain("vendor/bundle/ignored.rb");
+  });
+
+  it("treats gems.rb projects as Bundler-backed", async () => {
+    const root = await fixtureRoot("clawpatch-map-gems-rb-");
+    await writeFixture(
+      root,
+      "gems.rb",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(root, "spec/fixture_spec.rb", "RSpec.describe Fixture\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+  });
+
+  it("maps Gemfile-only Jekyll sites without mistaking dependencies for project names", async () => {
+    const root = await fixtureRoot("clawpatch-map-jekyll-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'jekyll'\ngem 'jekyll-feed'\ngem 'hive-ruby'\n",
+    );
+    await writeFixture(root, "_config.yml", "title: Docs\n");
+    await writeFixture(root, "index.md", "---\nlayout: home\n---\n");
+    await writeFixture(root, "_layouts/default.html", "{{ content }}\n");
+    await writeFixture(root, "_includes/header.html", "<header></header>\n");
+    await writeFixture(root, "_sass/site.scss", "body { color: black; }\n");
+    await writeFixture(root, "assets/main.scss", "---\n---\n@import 'site';\n");
+    await writeFixture(root, "_posts/2021-01-01-one.md", "---\ntitle: One\n---\n");
+    await writeFixture(root, "_posts/2022-01-01-two.md", "---\ntitle: Two\n---\n");
+    await writeFixture(root, "_topics/ruby.md", "---\ntitle: Ruby\n---\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const siteConfig = result.features.find(
+      (feature) => feature.title === "Jekyll site configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("jekyll");
+    expect(titles).toContain(`Ruby project ${root.split("/").at(-1)}`);
+    expect(titles).not.toContain("Ruby project jekyll");
+    expect(titles).toContain("Jekyll site configuration");
+    expect(titles).toContain("Jekyll theme _layouts");
+    expect(titles).toContain("Jekyll theme _includes");
+    expect(titles).toContain("Jekyll theme _sass");
+    expect(titles).toContain("Jekyll content _posts/2021");
+    expect(titles).toContain("Jekyll content _posts/2022");
+    expect(titles).toContain("Jekyll content _topics");
+    expect(rubyProject?.entrypoints[0]?.symbol).toBeNull();
+    expect(siteConfig?.ownedFiles.map((ref) => ref.path)).toContain("index.md");
+  });
+
+  it("maps Rails app structure and skips common Rails binstubs", async () => {
+    const root = await fixtureRoot("clawpatch-map-rails-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "rails-webpacker-shell", dependencies: { "@rails/ujs": "1.0.0" } }),
+    );
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\ngem 'rails'\ngem 'pg'\n");
+    await writeFixture(root, "config/application.rb", "module FixtureRails\nend\n");
+    await writeFixture(root, "config/routes.rb", "Rails.application.routes.draw do\nend\n");
+    await writeFixture(root, "config/secrets.yml", "redacted: placeholder\n");
+    await writeFixture(
+      root,
+      "config/environments/test.rb",
+      "Rails.application.configure do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "config/initializers/filter.rb",
+      "Rails.application.config.filter_parameters += [:password]\n",
+    );
+    await writeFixture(root, "db/schema.rb", "ActiveRecord::Schema.define do\nend\n");
+    await writeFixture(
+      root,
+      "db/migrate/20200101000000_create_widgets.rb",
+      "class CreateWidgets < ActiveRecord::Migration[6.1]\nend\n",
+    );
+    await writeFixture(
+      root,
+      "bin/rails",
+      "#!/usr/bin/env ruby\nAPP_PATH = '../config/application'\n",
+    );
+    await writeFixture(
+      root,
+      "app/controllers/widgets_controller.rb",
+      "class WidgetsController < ApplicationController\nend\n",
+    );
+    await writeFixture(root, "app/models/widget.rb", "class Widget < ApplicationRecord\nend\n");
+    await writeFixture(root, "app/views/widgets/index.html.haml", "%h1 Widgets\n");
+    await writeFixture(root, "app/views/widgets/index.json.jbuilder", "json.widgets []\n");
+    await writeFixture(root, "app/assets/javascripts/widgets.coffee", "console.log 'widgets'\n");
+    await writeFixture(root, "app/assets/stylesheets/widgets.scss", ".widgets { color: black; }\n");
+    await writeFixture(
+      root,
+      "app/javascript/controllers/widgets_controller.js",
+      "export function connect() {}\n",
+    );
+    await writeFixture(root, "src/client.ts", "export function client() {}\n");
+    await writeFixture(root, "lib/client.ts", "export function libClient() {}\n");
+    await writeFixture(root, "pages/home.tsx", "export function Home() { return null; }\n");
+    await writeFixture(
+      root,
+      "test/controllers/widgets_controller_test.rb",
+      "class WidgetsControllerTest\nend\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const referencedFiles = result.features.flatMap((feature) => [
+      ...feature.ownedFiles.map((ref) => ref.path),
+      ...feature.contextFiles.map((ref) => ref.path),
+    ]);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const railsConfig = result.features.find(
+      (feature) => feature.title === "Rails application configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("rails");
+    expect(titles).not.toContain("Ruby CLI command rails");
+    expect(titles).not.toContain("Node source app");
+    expect(titles).not.toContain("Node source app/assets");
+    expect(titles).toContain("Node source app/javascript");
+    expect(titles).toContain("Node source src");
+    expect(titles).toContain("Node source lib");
+    expect(titles).toContain("Node source pages");
+    expect(titles).toContain("Rails application configuration");
+    expect(titles).toContain("Rails database schema and migrations");
+    expect(titles).toContain("Rails views app/views");
+    expect(titles).toContain("Rails assets app/assets");
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).toContain("config/routes.rb");
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain("config/secrets.yml");
+    expect(
+      result.features.filter((feature) =>
+        feature.ownedFiles.some(
+          (ref) => ref.path === "app/javascript/controllers/widgets_controller.js",
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(referencedFiles).not.toContain("config/secrets.yml");
+  });
+
   it("maps workspace packages and splits large Node source groups", async () => {
     const root = await fixtureRoot("clawpatch-node-workspace-map-");
     await writeFixture(
@@ -214,7 +574,15 @@ describe("mapFeatures", () => {
       root,
       "packages/core/package.json",
       JSON.stringify(
-        { name: "@scope/core", bin: { corecli: "src/cli.ts" }, scripts: { test: "vitest run" } },
+        {
+          name: "@scope/core",
+          bin: { corecli: "src/cli.ts" },
+          scripts: {
+            build: "tsc -p tsconfig.json",
+            lint: "oxlint .",
+            test: "vitest run",
+          },
+        },
         null,
         2,
       ),
@@ -314,6 +682,15 @@ describe("mapFeatures", () => {
       (feature) => feature.entrypoints[0]?.symbol === "packages/core/src/gateway",
     );
     const cli = result.features.find((feature) => feature.title === "CLI command corecli");
+    const workspaceBuild = result.features.find(
+      (feature) => feature.title === "Package script build (@scope/core)",
+    );
+    const workspaceLint = result.features.find(
+      (feature) => feature.title === "Package script lint (@scope/core)",
+    );
+    const workspaceTest = result.features.find(
+      (feature) => feature.title === "Package script test (@scope/core)",
+    );
 
     expect(titles).toContain("Node package @scope/core");
     expect(titles).toContain("Node package chat-plugin");
@@ -325,6 +702,11 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Node package outside-workspace");
     expect(titles).not.toContain("Node package evil-package");
     expect(titles).toContain("Node source plugins/chat/src");
+    expect(titles).toContain("Package script test");
+    expect(workspaceBuild?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceBuild?.summary).toContain("packages/core/package.json");
+    expect(workspaceLint?.entrypoints[0]?.path).toBe("packages/core/package.json");
+    expect(workspaceTest?.entrypoints[0]?.path).toBe("packages/core/package.json");
     expect(agentGroups.length).toBeGreaterThan(1);
     expect(agentGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
     expect(gateway?.ownedFiles).toEqual([
@@ -579,6 +961,55 @@ describe("mapFeatures", () => {
     expect(titles).toContain("Gradle source src");
     expect(titles).toContain("Gradle test suite src");
     expect(titles.some((title) => title.includes("./src"))).toBe(false);
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Kotlin and Gradle commands for Groovy Gradle root projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-kotlin-gradle-detect-");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'org.jetbrains.kotlin.jvm' }\n");
+    await writeFixture(root, "src/main/kotlin/com/example/app/App.kt", "class App\n");
+    await writeFixture(root, "src/test/kotlin/com/example/app/AppTest.kt", "class AppTest\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Java and wrapper Gradle commands for root Gradle projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-java-gradle-detect-");
+    await writeFixture(root, "gradlew", "#!/bin/sh\n");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'java' }\n");
+    await writeFixture(root, "src/main/java/com/example/App.java", "class App {}\n");
+    await writeFixture(root, "src/test/java/com/example/AppTest.java", "class AppTest {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("java");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "./gradlew build",
+      test: "./gradlew test",
+    });
+  });
+
+  it("does not detect Java from documentation-only Java files", async () => {
+    const root = await fixtureRoot("clawpatch-docs-java-detect-");
+    await writeFixture(root, "docs/Example.java", "class Example {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).not.toContain("java");
   });
 
   it("maps build.gradle-only roots without empty Gradle groups", async () => {
@@ -612,8 +1043,223 @@ describe("mapFeatures", () => {
     const titles = result.features.map((feature) => feature.title);
 
     expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands.typecheck).toBeNull();
+    expect(project.detected.commands.test).toBeNull();
     expect(titles).toContain("Gradle module apps/android");
     expect(titles).toContain("Gradle source apps/android/src");
+  });
+
+  it("maps JVM role features from Java code evidence", async () => {
+    const root = await fixtureRoot("clawpatch-jvm-role-map-");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("java") }\n');
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/api/OrderController.java",
+      [
+        "package com.acme.api;",
+        "",
+        "import org.springframework.web.bind.annotation.GetMapping;",
+        "import org.springframework.web.bind.annotation.RestController;",
+        "",
+        "@RestController",
+        "public class OrderController {",
+        '  @GetMapping("/orders")',
+        '  public String list() { return "ok"; }',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/app/BillingService.java",
+      [
+        "package com.acme.app;",
+        "",
+        "import org.springframework.stereotype.Service;",
+        "",
+        "@Service",
+        "public class BillingService {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/db/OrderEntity.java",
+      [
+        "package com.acme.db;",
+        "",
+        "import jakarta.persistence.Entity;",
+        "",
+        "@Entity",
+        "public class OrderEntity {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/client/RemoteClient.java",
+      [
+        "package com.acme.client;",
+        "",
+        "import java.net.http.HttpClient;",
+        "",
+        "public class RemoteClient {",
+        "  private final HttpClient client = HttpClient.newHttpClient();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/client/UriHolder.java",
+      [
+        "package com.acme.client;",
+        "",
+        "import java.net.URI;",
+        "",
+        "public class UriHolder {",
+        "  private final URI endpoint;",
+        "  public UriHolder(URI endpoint) { this.endpoint = endpoint; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/jobs/JobFactory.java",
+      [
+        "package com.acme.jobs;",
+        "",
+        "import org.scheduler.Job;",
+        "",
+        "public class JobFactory {",
+        "  public Job buildJob() { return null; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/jobs/GenericJobFactory.java",
+      [
+        "package com.acme.jobs;",
+        "",
+        "import org.scheduler.Job;",
+        "import org.scheduler.JobFactoryBase;",
+        "",
+        "public class GenericJobFactory<T> extends JobFactoryBase<T> {",
+        "  public Job<T> buildJob() { return null; }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/PluginAdapter.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "public class PluginAdapter implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/RecordPlugin.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "public record RecordPlugin(String name) implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+      [
+        "package com.acme.ext;",
+        "",
+        "import org.plugins.Plugin;",
+        "",
+        "final class Helper {}",
+        "public class HelperFirstAdapter implements Plugin {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/local/LocalCommandAdapter.java",
+      [
+        "package com.acme.local;",
+        "",
+        "import com.acme.local.Command;",
+        "",
+        "interface Command {}",
+        "public class LocalCommandAdapter implements Command {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/google/myapp/GuavaAdapter.java",
+      [
+        "package com.google.myapp;",
+        "",
+        "import com.google.common.util.concurrent.Service;",
+        "",
+        "public class GuavaAdapter implements Service {}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const bySource = new Map(result.features.map((feature) => [feature.source, feature]));
+
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(bySource.get("jvm-role-web-entrypoint")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/api/OrderController.java",
+    );
+    expect(bySource.get("jvm-role-application-service")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/app/BillingService.java",
+    );
+    expect(bySource.get("jvm-role-persistence-boundary")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/db/OrderEntity.java",
+    );
+    expect(bySource.get("jvm-role-external-client")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/client/RemoteClient.java",
+    );
+    expect(
+      bySource
+        .get("jvm-role-framework-component")
+        ?.ownedFiles.map((file) => file.path)
+        .toSorted(),
+    ).toEqual(
+      [
+        "src/main/java/com/google/myapp/GuavaAdapter.java",
+        "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+        "src/main/java/com/acme/ext/PluginAdapter.java",
+        "src/main/java/com/acme/ext/RecordPlugin.java",
+        "src/main/java/com/acme/jobs/GenericJobFactory.java",
+        "src/main/java/com/acme/jobs/JobFactory.java",
+      ].toSorted(),
+    );
+    expect(
+      bySource
+        .get("jvm-role-extension-boundary")
+        ?.ownedFiles.map((file) => file.path)
+        .toSorted(),
+    ).toEqual([
+      "src/main/java/com/acme/ext/HelperFirstAdapter.java",
+      "src/main/java/com/acme/ext/PluginAdapter.java",
+      "src/main/java/com/acme/ext/RecordPlugin.java",
+      "src/main/java/com/acme/local/LocalCommandAdapter.java",
+      "src/main/java/com/google/myapp/GuavaAdapter.java",
+    ]);
   });
 
   it("ignores vendored SwiftPM manifests during detection", async () => {
@@ -1113,7 +1759,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     expect(titles).toContain("FastAPI route GET /health");
     expect(titles).toContain("FastAPI route POST /api/v1/auth/login");
-    expect(caseRoute?.source).toBe("fastapi-route");
+    expect(caseRoute?.source).toBe("python-fastapi-route");
     expect(caseRoute?.entrypoints[0]).toMatchObject({
       path: "backend/routes/case_routes.py",
       symbol: "get_case",
@@ -1224,6 +1870,21 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
         test: "uv run pytest",
       },
     });
+
+    const blackRoot = await fixtureRoot("clawpatch-python-black-");
+    await writeFixture(blackRoot, "requirements.txt", "black\n");
+    expect((await detectProject(blackRoot)).detected.commands.format).toBe("black --check .");
+
+    const uvBlackRoot = await fixtureRoot("clawpatch-python-uv-black-");
+    await writeFixture(
+      uvBlackRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-black"\ndependencies = ["black"]\n',
+    );
+    await writeFixture(uvBlackRoot, "uv.lock", "");
+    expect((await detectProject(uvBlackRoot)).detected.commands.format).toBe(
+      "uv run black --check .",
+    );
 
     const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
     await writeFixture(
@@ -1439,6 +2100,259 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
   });
 
+  it("maps Flask routes under web source roots", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/api/items', methods=['GET', 'POST'])",
+        "def items():",
+        "    return 'items'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/blueprints/admin.py",
+      [
+        "from flask import Blueprint",
+        "",
+        "admin_bp = Blueprint('admin', __name__)",
+        "",
+        "@admin_bp.route(",
+        "    '/admin/run-once',",
+        "    methods=['POST'],",
+        ")",
+        "def run_once():",
+        "    return 'queued'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "web/test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const index = result.features.find((feature) => feature.title === "Flask route GET /");
+    const items = result.features.find(
+      (feature) => feature.title === "Flask route GET,POST /api/items",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "Flask route POST /admin/run-once",
+    );
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(titles).toContain("Python source web");
+    expect(index?.source).toBe("python-flask-route");
+    expect(index?.entrypoints[0]).toMatchObject({
+      path: "web/app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(index?.tests).toEqual([{ path: "web/test_app.py", command: "pytest" }]);
+    expect(items?.entrypoints[0]?.route).toBe("GET,POST /api/items");
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("maps root-level Flask entry files and non-list methods", async () => {
+    const root = await fixtureRoot("clawpatch-python-flask-root-routes-");
+    await writeFixture(root, "requirements.txt", "Flask\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from flask import Flask",
+        "",
+        "app = Flask(__name__)",
+        "DYNAMIC_METHODS = ['POST']",
+        "",
+        "@app.route('/')",
+        "def index():",
+        "    return 'ok'",
+        "",
+        "@app.route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return 'submitted'",
+        "",
+        "@app.route('/token', methods={'POST', 'DELETE'})",
+        "def token():",
+        "    return 'token'",
+        "",
+        "@app.route('/dynamic', methods=DYNAMIC_METHODS)",
+        "def dynamic():",
+        "    return 'dynamic'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "test_app.py", "def test_index():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const routes = result.features.filter((feature) => feature.source === "python-flask-route");
+    const byTitle = (title: string) => routes.find((feature) => feature.title === title);
+
+    expect(project.detected.frameworks).toContain("flask");
+    expect(byTitle("Flask route GET /")?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "index",
+      route: "GET /",
+    });
+    expect(byTitle("Flask route POST /submit")?.tests).toEqual([
+      { path: "test_app.py", command: "pytest" },
+    ]);
+    expect(byTitle("Flask route POST,DELETE /token")?.trustBoundaries).toContain("auth");
+    expect(routes.map((feature) => feature.title)).not.toContain("Flask route GET /dynamic");
+  });
+
+  it("does not map generic Python route decorators as Flask routes", async () => {
+    const root = await fixtureRoot("clawpatch-python-generic-routes-");
+    await writeFixture(root, "requirements.txt", "pytest\n");
+    await writeFixture(
+      root,
+      "web/app.py",
+      [
+        "class Router:",
+        "    def route(self, path):",
+        "        def wrapper(fn):",
+        "            return fn",
+        "        return wrapper",
+        "",
+        "router = Router()",
+        "",
+        "@router.route('/not-flask')",
+        "def handler():",
+        "    return 'ok'",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.frameworks).not.toContain("flask");
+    expect(result.features.some((feature) => feature.source === "python-flask-route")).toBe(false);
+  });
+
+  it("maps FastAPI routes in root and web source files", async () => {
+    const root = await fixtureRoot("clawpatch-python-fastapi-routes-");
+    await writeFixture(root, "requirements.txt", "fastapi\npytest\n");
+    await writeFixture(
+      root,
+      "app.py",
+      [
+        "from fastapi import FastAPI",
+        "",
+        "app = FastAPI()",
+        "",
+        "@app.get('/health')",
+        "async def health():",
+        "    return {'ok': True}",
+        "",
+        "@app.api_route('/webhook/{token}', methods=['GET', 'HEAD'])",
+        "def webhook(token: str):",
+        "    return token",
+        "",
+        "@app.api_route('/submit', methods=('POST',))",
+        "def submit():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.post(",
+        "    path='/admin/jobs',",
+        ")",
+        "def create_job():",
+        "    return {'queued': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "tests/test_app.py", "def test_health():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const health = result.features.find((feature) => feature.title === "FastAPI route GET /health");
+    const webhook = result.features.find(
+      (feature) => feature.title === "FastAPI route GET,HEAD /webhook/{token}",
+    );
+    const submit = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /submit",
+    );
+    const admin = result.features.find(
+      (feature) => feature.title === "FastAPI route POST /admin/jobs",
+    );
+
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(health?.source).toBe("python-fastapi-route");
+    expect(health?.entrypoints[0]).toMatchObject({
+      path: "app.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+    expect(health?.tests).toEqual([{ path: "tests/test_app.py", command: "pytest" }]);
+    expect(webhook?.entrypoints[0]?.route).toBe("GET,HEAD /webhook/{token}");
+    expect(submit?.entrypoints[0]?.route).toBe("POST /submit");
+    expect(admin?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "create_job",
+      route: "POST /admin/jobs",
+    });
+    expect(admin?.trustBoundaries).toContain("auth");
+  });
+
+  it("detects metadata-free root and web Python sources", async () => {
+    const root = await fixtureRoot("clawpatch-python-root-web-detect-");
+    await writeFixture(root, "app.py", "def app():\n    pass\n");
+    await writeFixture(
+      root,
+      "web/api.py",
+      [
+        "from fastapi import APIRouter",
+        "",
+        "router = APIRouter()",
+        "",
+        "@router.get(path='/health')",
+        "def health():",
+        "    return {'ok': True}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rootSource = result.features.find((feature) => feature.title === "Python source root");
+    const webRoute = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /health",
+    );
+
+    expect(project.detected.languages).toContain("python");
+    expect(project.detected.packageManagers).toContain("python");
+    expect(project.detected.frameworks).toContain("fastapi");
+    expect(rootSource?.ownedFiles).toEqual([{ path: "app.py", reason: "source group root" }]);
+    expect(webRoute?.entrypoints[0]).toMatchObject({
+      path: "web/api.py",
+      symbol: "health",
+      route: "GET /health",
+    });
+  });
+
   it("uses Hatch pytest commands in mapped Python features", async () => {
     const root = await fixtureRoot("clawpatch-python-hatch-map-");
     await writeFixture(
@@ -1548,6 +2462,60 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       { path: "setup.cfg", reason: "python project metadata" },
       { path: "requirements.txt", reason: "python project metadata" },
     ]);
+  });
+
+  it("maps setup.cfg Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-cfg-entry-points-");
+    await writeFixture(
+      root,
+      "setup.cfg",
+      [
+        "[metadata]",
+        "name = legacy-cli",
+        "",
+        "[options.entry_points]",
+        "console_scripts =",
+        "    legacy = legacy.cli:main",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "legacy/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "tests/test_cli.py", "def test_cli():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command legacy");
+
+    expect(titles).toContain("Python project legacy-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "legacy/cli.py", symbol: "main" });
+    expect(cli?.tests).toEqual([{ path: "tests/test_cli.py", command: "pytest" }]);
+  });
+
+  it("maps setup.py Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-py-entry-points-");
+    await writeFixture(
+      root,
+      "setup.py",
+      [
+        "from setuptools import setup",
+        "",
+        "setup(",
+        "    name='setup-cli',",
+        "    entry_points={'console_scripts': ['setcli=setup_cli.cli:main']},",
+        ")",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "setup_cli/cli.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command setcli");
+
+    expect(titles).toContain("Python project setup-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "setup_cli/cli.py", symbol: "main" });
   });
 
   it("keeps Python source group ids stable when a root gains files", async () => {

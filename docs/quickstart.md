@@ -42,10 +42,13 @@ clawpatch map
 
 This discovers reviewable features:
 
-- npm package bins and scripts
+- npm package bins and root/workspace scripts
 - Next.js routes
 - Go packages and commands
-- Python packages, console scripts, and pytest suites
+- Java/Kotlin Gradle modules
+- Python packages, console scripts, Flask/FastAPI routes, and pytest suites
+- JVM semantic role groups
+- Ruby packages, Rails apps, executables, and tests
 - Rust crates and binaries
 - SwiftPM targets and tests
 - Config files
