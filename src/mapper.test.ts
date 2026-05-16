@@ -3667,6 +3667,43 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("resolves built-in CMake dir variables in includes and sources", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-built-in-dir-vars-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/Targets.cmake)\n",
+    );
+    await writeFixture(
+      root,
+      "cmake/Targets.cmake",
+      "include(${CMAKE_CURRENT_LIST_DIR}/More.cmake)\nadd_executable(app ${CMAKE_SOURCE_DIR}/src/main.c ${PROJECT_SOURCE_DIR}/src/project.c ${CMAKE_CURRENT_SOURCE_DIR}/src/util.c ${CMAKE_CURRENT_LIST_DIR}/local.c)\n",
+    );
+    await writeFixture(
+      root,
+      "cmake/More.cmake",
+      "target_sources(app PRIVATE ${CMAKE_CURRENT_LIST_DIR}/extra.c)\n",
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/project.c", "int project(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 0; }\n");
+    await writeFixture(root, "cmake/local.c", "int local(void) { return 0; }\n");
+    await writeFixture(root, "cmake/extra.c", "int extra(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/project.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+      { path: "cmake/local.c", reason: "target source" },
+      { path: "cmake/extra.c", reason: "target source" },
+    ]);
+  });
+
   it("resolves nested CMake includes relative to the source dir", async () => {
     const root = await fixtureRoot("clawpatch-cmake-nested-include-source-dir-");
     await writeFixture(root, "CMakeLists.txt", "include(cmake/A.cmake)\n");

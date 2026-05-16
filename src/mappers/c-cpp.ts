@@ -128,6 +128,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const { contexts } = await referencedCMakeFiles(root, files);
   const extraSources = await cmakeTargetSources(root, contexts);
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
+    const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const args of cmakeCommandArgs(body, "add_executable")) {
       const [target = "", ...sources] = splitWords(args);
@@ -135,7 +136,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, sources)),
+        ...(await targetSourcePaths(root, dir, sources, listDir)),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -192,7 +193,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const sourcePaths = uniqueStrings([
-        ...(await targetSourcePaths(root, dir, sources)),
+        ...(await targetSourcePaths(root, dir, sources, listDir)),
         ...(extraSources.get(cmakeTargetKey(scope, target)) ?? []),
       ]);
       if (sourcePaths.length === 0) {
@@ -244,10 +245,14 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       continue;
     }
     const { file: cmakeFile, sourceDir: dir, targetScope: scope } = context;
+    const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const include of cmakeIncludes(body)) {
       const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
-      const full = isAbsolute(includePath) ? includePath : join(root, prefixDir(dir, includePath));
+      const full = resolveCMakePath(root, dir, listDir, includePath);
+      if (full === null) {
+        continue;
+      }
       const rel = normalize(relative(root, full));
       if (!cmakeFileSet.has(rel)) {
         continue;
@@ -255,7 +260,11 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       queueCMakeFile({ file: rel, sourceDir: dir, targetScope: scope }, contexts, pending);
     }
     for (const child of cmakeSubdirectories(body)) {
-      const full = isAbsolute(child) ? child : join(root, prefixDir(dir, child), "CMakeLists.txt");
+      const childFull = resolveCMakePath(root, dir, listDir, child);
+      if (childFull === null) {
+        continue;
+      }
+      const full = join(childFull, "CMakeLists.txt");
       const rel = normalize(relative(root, full));
       if (!cmakeFileSet.has(rel)) {
         continue;
@@ -296,6 +305,7 @@ async function cmakeTargetSources(
 ): Promise<Map<string, string[]>> {
   const sources = new Map<string, string[]>();
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
+    const listDir = parentDir(cmakeFile);
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const args of cmakeCommandArgs(body, "target_sources")) {
       const [target = "", ...sourceTokens] = splitWords(args);
@@ -306,7 +316,10 @@ async function cmakeTargetSources(
       const existing = sources.get(key) ?? [];
       sources.set(
         key,
-        uniqueStrings([...existing, ...(await targetSourcePaths(root, dir, sourceTokens))]),
+        uniqueStrings([
+          ...existing,
+          ...(await targetSourcePaths(root, dir, sourceTokens, listDir)),
+        ]),
       );
     }
   }
@@ -325,7 +338,7 @@ function cmakeIncludes(body: string): string[] {
   const includes: string[] = [];
   for (const args of cmakeCommandArgs(body, "include")) {
     const path = splitWords(args)[0];
-    if (path !== undefined && !path.startsWith("$")) {
+    if (path !== undefined) {
       includes.push(path);
     }
   }
@@ -336,7 +349,7 @@ function cmakeSubdirectories(body: string): string[] {
   const directories: string[] = [];
   for (const args of cmakeCommandArgs(body, "add_subdirectory")) {
     const path = splitWords(args)[0];
-    if (path !== undefined && !path.startsWith("$")) {
+    if (path !== undefined) {
       directories.push(path);
     }
   }
@@ -777,10 +790,18 @@ function pickEntry(candidates: string[], targetName: string): string | null {
   return first === undefined ? null : first;
 }
 
-async function targetSourcePaths(root: string, dir: string, sources: string[]): Promise<string[]> {
+async function targetSourcePaths(
+  root: string,
+  dir: string,
+  sources: string[],
+  listDir = dir,
+): Promise<string[]> {
   const paths: string[] = [];
   for (const source of sources.filter(isCOrCppSource)) {
-    const full = isAbsolute(source) ? source : join(root, prefixDir(dir, source));
+    const full = resolveCMakePath(root, dir, listDir, source);
+    if (full === null) {
+      continue;
+    }
     const rel = normalize(relative(root, full));
     if (
       !shouldSkip(rel) &&
@@ -792,6 +813,34 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
     }
   }
   return paths;
+}
+
+function resolveCMakePath(
+  root: string,
+  sourceDir: string,
+  listDir: string,
+  value: string,
+): string | null {
+  const expanded = expandCMakeDirVariables(root, sourceDir, listDir, value);
+  if (expanded.includes("$")) {
+    return null;
+  }
+  return isAbsolute(expanded) ? expanded : join(root, prefixDir(sourceDir, expanded));
+}
+
+function expandCMakeDirVariables(
+  root: string,
+  sourceDir: string,
+  listDir: string,
+  value: string,
+): string {
+  const sourceRoot = join(root, sourceDir);
+  const listRoot = join(root, listDir);
+  return value
+    .replace(/\$\{CMAKE_CURRENT_SOURCE_DIR\}/gu, sourceRoot)
+    .replace(/\$\{CMAKE_CURRENT_LIST_DIR\}/gu, listRoot)
+    .replace(/\$\{CMAKE_SOURCE_DIR\}/gu, root)
+    .replace(/\$\{PROJECT_SOURCE_DIR\}/gu, root);
 }
 
 function isCOrCppDependencyPath(path: string): boolean {
