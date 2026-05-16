@@ -167,6 +167,7 @@ async function controllerSeeds(
         source: "laravel-controller",
         confidence: "high",
         entryPath: path,
+        identityKey: declaredClassName ?? className,
         symbol: className,
         route: controllerRoutes[0]?.uri ?? null,
         command: null,

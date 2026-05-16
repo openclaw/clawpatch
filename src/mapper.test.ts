@@ -3337,6 +3337,62 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(dashboard?.entrypoints[0]?.route).toBe("/{tenant}/dashboard");
   });
 
+  it("keeps Laravel controller feature IDs stable when first route changes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-stable-controller-id-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/stable-controller-id",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/TrackController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class TrackController {}\n",
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+    );
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstController = first.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/TrackController.php",
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/catalog/tracks', TrackController::class);\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+    );
+
+    const second = await mapFeatures(root, project, []);
+    const secondController = second.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/TrackController.php",
+    );
+
+    expect(firstController?.featureId).toBeDefined();
+    expect(secondController?.featureId).toBe(firstController?.featureId);
+    expect(secondController?.entrypoints[0]?.route).toBe("/catalog/tracks");
+  });
+
   it("ignores commented-out Laravel routes", async () => {
     const root = await fixtureRoot("clawpatch-laravel-commented-routes-");
     await writeFixture(

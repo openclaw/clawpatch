@@ -55,7 +55,7 @@ export async function mapFeatures(
       seed.kind,
       seed.source,
       seed.entryPath,
-      seed.command ?? seed.route ?? seed.symbol ?? "",
+      seed.identityKey ?? seed.command ?? seed.route ?? seed.symbol ?? "",
     ]);
     const previous = existingById.get(featureId);
     const discoveredTests =
