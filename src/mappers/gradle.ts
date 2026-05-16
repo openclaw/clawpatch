@@ -307,8 +307,10 @@ async function kotlinRoleSeeds(
       projectPackages,
       projectTypes,
     );
-    const evidence =
-      frameworkEvidence.length > 0 ? frameworkEvidence : kotlinPathRoleEvidence(filePath, tags);
+    const evidence = kotlinEvidenceWithPathFallback(
+      frameworkEvidence,
+      kotlinPathRoleEvidence(filePath, tags),
+    );
     for (const item of evidence) {
       const byFile = matches.get(item.role) ?? new Map();
       const reasons = byFile.get(filePath) ?? [];
@@ -383,6 +385,16 @@ function kotlinRoleSource(role: KotlinRoleKey): string {
     return `kotlin-android-role-${role.slice("android-".length)}`;
   }
   return `kotlin-server-role-${role.slice("server-".length)}`;
+}
+
+function kotlinEvidenceWithPathFallback(
+  frameworkEvidence: KotlinRoleEvidence[],
+  pathEvidence: KotlinRoleEvidence[],
+): KotlinRoleEvidence[] {
+  if (frameworkEvidence.every((item) => item.role === "server-extension-boundary")) {
+    return dedupeKotlinEvidence([...frameworkEvidence, ...pathEvidence]);
+  }
+  return frameworkEvidence;
 }
 
 async function jvmRoleSeeds(
@@ -1094,16 +1106,14 @@ function isKotlinExternalClientImport(full: string): boolean {
 }
 
 function isAndroidEntrypointImport(full: string): boolean {
-  return (
-    [
-      "android.app.Activity",
-      "android.content.BroadcastReceiver",
-      "androidx.activity.ComponentActivity",
-      "androidx.appcompat.app.AppCompatActivity",
-      "androidx.fragment.app.Fragment",
-      "androidx.lifecycle.LifecycleService",
-    ].includes(full) || full.startsWith("androidx.compose.")
-  );
+  return [
+    "android.app.Activity",
+    "android.content.BroadcastReceiver",
+    "androidx.activity.ComponentActivity",
+    "androidx.appcompat.app.AppCompatActivity",
+    "androidx.fragment.app.Fragment",
+    "androidx.lifecycle.LifecycleService",
+  ].includes(full);
 }
 
 function isSpringDataPersistenceImport(full: string): boolean {
@@ -1388,13 +1398,27 @@ async function gradleTags(
   }
   const buildSource = await readFile(join(root, buildFile), "utf8").catch(() => "");
   if (
-    /\bcom\.android\.(?:application|library|test|dynamic-feature)\b/u.test(buildSource) ||
+    appliesAndroidGradlePlugin(buildSource) ||
     /\bandroid\s*\{/u.test(buildSource) ||
     sourceFiles.some((file) => file.endsWith("AndroidManifest.xml"))
   ) {
     tags.push("android");
   }
   return tags;
+}
+
+function appliesAndroidGradlePlugin(source: string): boolean {
+  for (const line of source.split("\n")) {
+    if (
+      /\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']/u.test(
+        line,
+      ) &&
+      !/\bapply\s+false\b/u.test(line)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isGradleSourceFile(path: string): boolean {

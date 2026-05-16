@@ -2426,6 +2426,23 @@ describe("mapFeatures", () => {
       "build.gradle.kts",
       'plugins { id("com.android.application") version "1.0" apply false }\n',
     );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/RootController.kt",
+      [
+        "package com.example.api",
+        "",
+        "import org.springframework.web.bind.annotation.GetMapping",
+        "import org.springframework.web.bind.annotation.RestController",
+        "",
+        "@RestController",
+        "class RootController {",
+        '  @GetMapping("/root")',
+        '  fun root(): String = "ok"',
+        "}",
+        "",
+      ].join("\n"),
+    );
     await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.application") }\n');
     await writeFixture(
       root,
@@ -2537,10 +2554,20 @@ describe("mapFeatures", () => {
     const di = result.features.find((feature) =>
       feature.title.startsWith("Kotlin Android role dependency injection "),
     );
+    const rootModule = result.features.find((feature) => feature.title === "Gradle module .");
+    const rootWeb = result.features.find(
+      (feature) =>
+        feature.source === "kotlin-server-role-web-entrypoint" &&
+        feature.ownedFiles.some(
+          (file) => file.path === "src/main/kotlin/com/example/api/RootController.kt",
+        ),
+    );
 
     expect(project.detected.languages).toContain("kotlin");
     expect(project.detected.packageManagers).toContain("gradle");
     expect(titles).toContain("Gradle module app");
+    expect(rootModule?.tags).not.toContain("android");
+    expect(rootWeb?.source).toBe("kotlin-server-role-web-entrypoint");
     expect(gradleModule?.tags).toEqual(expect.arrayContaining(["gradle", "kotlin", "android"]));
     expect(ui?.source).toBe("kotlin-android-role-ui-entrypoint");
     expect(ui?.kind).toBe("ui-flow");
@@ -2634,6 +2661,11 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/main/kotlin/com/example/network/PaymentClient.kt",
+      "package com.example.network\ninterface PaymentClient\n",
+    );
+    await writeFixture(
+      root,
       "src/main/kotlin/com/example/config/AppConfig.kt",
       [
         "package com.example.config",
@@ -2691,6 +2723,7 @@ describe("mapFeatures", () => {
       expect.arrayContaining([
         "src/main/kotlin/com/example/client/RemoteClient.kt",
         "src/main/kotlin/com/example/network/FallbackClient.kt",
+        "src/main/kotlin/com/example/network/PaymentClient.kt",
       ]),
     );
   });
@@ -2800,6 +2833,39 @@ describe("mapFeatures", () => {
           feature.source === "kotlin-android-role-ui-entrypoint" &&
           feature.ownedFiles.some(
             (file) => file.path === "app/src/main/kotlin/com/example/alerts/Notifier.kt",
+          ),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat Compose runtime state imports as UI roles", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-compose-state-");
+    await writeFixture(root, "settings.gradle.kts", 'pluginManagement {}\ninclude(":app")\n');
+    await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.library") }\n');
+    await writeFixture(
+      root,
+      "app/src/main/kotlin/com/example/state/CounterState.kt",
+      [
+        "package com.example.state",
+        "",
+        "import androidx.compose.runtime.mutableStateOf",
+        "",
+        "class CounterState {",
+        "  val count = mutableStateOf(0)",
+        "}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-android-role-ui-entrypoint" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "app/src/main/kotlin/com/example/state/CounterState.kt",
           ),
       ),
     ).toBe(false);
