@@ -204,7 +204,7 @@ async function pyprojectHasToolSection(root: string, tool: string): Promise<bool
   }
   const source = await readFile(join(root, "pyproject.toml"), "utf8");
   const escaped = tool.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`^\\s*\\[tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
+  return new RegExp(`^\\s*\\[\\[?tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
 }
 
 async function dependencyFileHas(root: string, dependency: string): Promise<boolean> {

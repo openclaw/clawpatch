@@ -1049,6 +1049,19 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       test: "uv run pytest",
     });
 
+    const uvArrayRoot = await fixtureRoot("clawpatch-python-uv-array-table-");
+    await writeFixture(
+      uvArrayRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-array"\ndependencies = ["pytest"]\n\n[[tool.uv.index]]\nname = "private"\nurl = "https://example.invalid/simple"\n',
+    );
+    expect((await detectProject(uvArrayRoot)).detected).toMatchObject({
+      packageManagers: ["uv"],
+      commands: {
+        test: "uv run pytest",
+      },
+    });
+
     const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
     await writeFixture(
       poetryRoot,
@@ -1299,6 +1312,26 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     expect(project.detected.commands.test).toBe("uv run pytest");
     expect(source?.tests).toEqual([{ path: "src/uv_map/test_app.py", command: "uv run pytest" }]);
+  });
+
+  it("uses uv pytest commands from pyproject uv array-table config in mapped Python features", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-array-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "uv-array-map"\ndependencies = ["pytest"]\n\n[[tool.uv.index]]\nname = "private"\nurl = "https://example.invalid/simple"\n',
+    );
+    await writeFixture(root, "src/uv_array_map/app.py", "def app():\n    pass\n");
+    await writeFixture(root, "src/uv_array_map/test_app.py", "def test_app():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Python source src");
+
+    expect(project.detected.commands.test).toBe("uv run pytest");
+    expect(source?.tests).toEqual([
+      { path: "src/uv_array_map/test_app.py", command: "uv run pytest" },
+    ]);
   });
 
   it("uses Poetry and PDM pytest commands from pyproject tool config in mapped Python features", async () => {

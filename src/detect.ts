@@ -292,7 +292,7 @@ async function pyprojectHasToolSection(root: string, tool: string): Promise<bool
   }
   const source = await readFile(join(root, "pyproject.toml"), "utf8");
   const escaped = tool.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`^\\s*\\[tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
+  return new RegExp(`^\\s*\\[\\[?tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
 }
 
 function pythonRunCommand(runner: string | null, command: string): string {
@@ -408,7 +408,9 @@ function pythonTomlTable(source: string, name: string): string {
 
 function pythonToolSections(source: string): string[] {
   const tools = new Set<string>();
-  for (const match of source.matchAll(/^\s*\[tool\.([A-Za-z0-9_.-]+)[^\]]*\]\s*(?:#.*)?$/gmu)) {
+  for (const match of source.matchAll(
+    /^\s*\[\[?tool\.([A-Za-z0-9_.-]+)[^\]]*\]\]?\s*(?:#.*)?$/gmu,
+  )) {
     const name = match[1]?.split(".")[0];
     if (name !== undefined) {
       tools.add(name);
