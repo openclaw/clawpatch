@@ -176,7 +176,7 @@ export function shouldSkip(path: string): boolean {
     return false;
   }
   return (
-    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.venv|venv|vendor|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
+    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.venv|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
       path,
     ) ||
     path === "target" ||

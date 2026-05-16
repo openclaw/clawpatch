@@ -138,6 +138,25 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Route /_error");
   });
 
+  it("maps application routes in vendor directories", async () => {
+    const root = await fixtureRoot("clawpatch-next-vendor-route-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "fixture-app", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "app/vendor/page.tsx",
+      "export default function VendorPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("Route /vendor");
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -1306,6 +1325,26 @@ add_executable(headerapp include/headers.hpp)
       { path: "include/late_lib.hpp", reason: "target source" },
     ]);
     expect(headers?.ownedFiles).toEqual([{ path: "include/headers.hpp", reason: "target source" }]);
+  });
+
+  it("does not attach unrelated top-level CMake tests to every target", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-cpp-test-scope-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app src/app.cpp)\nadd_executable(tool src/tool.cpp)\n",
+    );
+    await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/tool.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "tests/tool_test.cpp", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+    const tool = result.features.find((feature) => feature.title === "CMake binary tool");
+
+    expect(app?.tests).toEqual([]);
+    expect(tool?.tests).toEqual([{ path: "tests/tool_test.cpp", command: null }]);
   });
 
   it("detects header-only C++ CMake libraries as C++ projects", async () => {

@@ -15,7 +15,9 @@ import { FeatureSeed } from "./types.js";
 export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
   const files = (await walk(root, [""])).filter(
     (path) =>
-      !isSampleProjectPath(path) && (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
+      !isCOrCppDependencyPath(path) &&
+      !isSampleProjectPath(path) &&
+      (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
   );
   if (files.length === 0) {
     return [];
@@ -88,7 +90,6 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         trustBoundaries: ["user-input", "filesystem", "process-exec"],
         ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: makefile, reason: "build target declaration" }],
-        testPrefixes: [`${dir}tests`],
       });
     }
     for (const rawTarget of readVariableWords(body, "lib_LTLIBRARIES")) {
@@ -117,7 +118,6 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         trustBoundaries: packageTrustBoundaries(target),
         ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: makefile, reason: "build target declaration" }],
-        testPrefixes: [`${dir}tests`],
       });
     }
   }
@@ -165,7 +165,6 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         trustBoundaries: ["user-input", "filesystem", "process-exec"],
         ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: cmakeFile, reason: "CMake target declaration" }],
-        testPrefixes: [`${dir}tests`],
       });
     }
     for (const match of body.matchAll(libPattern)) {
@@ -196,7 +195,6 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         trustBoundaries: packageTrustBoundaries(target),
         ownedFiles: targetSourceRefs(sourcePaths),
         contextFiles: [{ path: cmakeFile, reason: "CMake target declaration" }],
-        testPrefixes: [`${dir}tests`],
       });
     }
   }
@@ -416,11 +414,20 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
   for (const source of sources.filter(isCOrCppSource)) {
     const full = isAbsolute(source) ? source : join(root, prefixDir(dir, source));
     const rel = normalize(relative(root, full));
-    if (!shouldSkip(rel) && !isSampleProjectPath(rel) && (await isSafeFile(root, full))) {
+    if (
+      !shouldSkip(rel) &&
+      !isCOrCppDependencyPath(rel) &&
+      !isSampleProjectPath(rel) &&
+      (await isSafeFile(root, full))
+    ) {
       paths.push(rel);
     }
   }
   return paths;
+}
+
+function isCOrCppDependencyPath(path: string): boolean {
+  return /(^|\/)vendor(\/|$)/u.test(path);
 }
 
 function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {
