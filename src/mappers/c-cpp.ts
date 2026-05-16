@@ -128,9 +128,9 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const seeds: FeatureSeed[] = [];
   const cmakeFiles = files.filter(isCMake);
   const sourceDirs = await cmakeSourceDirs(root, cmakeFiles);
-  const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
-  const libPattern =
-    /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gimsu;
+  const extraSources = await cmakeTargetSources(root, cmakeFiles, sourceDirs);
+  const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
+  const libPattern = /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
   for (const cmakeFile of cmakeFiles) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
@@ -139,7 +139,10 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       if (!isValidTargetName(target)) {
         continue;
       }
-      const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
+      const sourcePaths = uniqueStrings([
+        ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
+        ...(extraSources.get(target) ?? []),
+      ]);
       if (sourcePaths.length === 0) {
         continue;
       }
@@ -170,7 +173,10 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       if (!isValidTargetName(target)) {
         continue;
       }
-      const sourcePaths = await targetSourcePaths(root, dir, splitWords(match[2] ?? ""));
+      const sourcePaths = uniqueStrings([
+        ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
+        ...(extraSources.get(target) ?? []),
+      ]);
       if (sourcePaths.length === 0) {
         continue;
       }
@@ -195,6 +201,34 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
     }
   }
   return seeds;
+}
+
+async function cmakeTargetSources(
+  root: string,
+  cmakeFiles: string[],
+  sourceDirs: Map<string, string>,
+): Promise<Map<string, string[]>> {
+  const sources = new Map<string, string[]>();
+  const pattern = /target_sources\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
+  for (const cmakeFile of cmakeFiles) {
+    const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
+    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
+    for (const match of body.matchAll(pattern)) {
+      const target = match[1] ?? "";
+      if (!isValidTargetName(target)) {
+        continue;
+      }
+      const existing = sources.get(target) ?? [];
+      sources.set(
+        target,
+        uniqueStrings([
+          ...existing,
+          ...(await targetSourcePaths(root, dir, splitWords(match[2] ?? ""))),
+        ]),
+      );
+    }
+  }
+  return sources;
 }
 
 async function cmakeSourceDirs(root: string, cmakeFiles: string[]): Promise<Map<string, string>> {
@@ -391,6 +425,10 @@ async function targetSourcePaths(root: string, dir: string, sources: string[]): 
 
 function targetSourceRefs(sources: string[]): Array<{ path: string; reason: string }> {
   return sources.map((source) => ({ path: source, reason: "target source" }));
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function automakeVariableName(target: string): string {

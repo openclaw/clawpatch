@@ -1210,11 +1210,15 @@ ADD_EXECUTABLE(upper src/upper.c)
 add_executable(absin ${root}/src/absin.cpp)
 add_executable(absout /src/main.cpp)
 add_executable(7zip src/seven.c)
+add_executable(latebin)
+target_sources(latebin PRIVATE src/late_main.c src/late_util.c)
 #[[
 add_executable(commented src/commented.c)
 ]]
 add_library(core STATIC include/core.hpp src/core.c src/core_util.c)
 add_library(foo.bar STATIC src/dot.c)
+add_library(latelib)
+target_sources(latelib PUBLIC src/late_lib.c include/late_lib.hpp)
 ADD_LIBRARY(upperlib STATIC src/upperlib.c)
 add_library(headers INTERFACE include/headers.hpp)
 add_library(vendored INTERFACE vendor/dep.hpp)
@@ -1227,12 +1231,16 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(root, "src/upper.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/absin.cpp", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/seven.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/late_main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/late_util.c", "int late_util(void) { return 0; }\n");
     await writeFixture(root, "src/commented.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/util.cpp", "int util() { return 1; }\n");
     await writeFixture(root, "include/core.hpp", "int core(void);\n");
     await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
     await writeFixture(root, "src/core_util.c", "int core_util(void) { return 2; }\n");
     await writeFixture(root, "src/dot.c", "int dot(void) { return 1; }\n");
+    await writeFixture(root, "src/late_lib.c", "int late_lib(void) { return 1; }\n");
+    await writeFixture(root, "include/late_lib.hpp", "int late_lib(void);\n");
     await writeFixture(root, "src/upperlib.c", "int upperlib(void) { return 1; }\n");
     await writeFixture(root, "include/headers.hpp", "int header_only(void);\n");
     await writeFixture(root, "vendor/dep.hpp", "int dep(void);\n");
@@ -1242,7 +1250,9 @@ add_executable(headerapp include/headers.hpp)
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
     const myapp = result.features.find((feature) => feature.title === "CMake binary myapp");
+    const latebin = result.features.find((feature) => feature.title === "CMake binary latebin");
     const core = result.features.find((feature) => feature.title === "CMake library core");
+    const latelib = result.features.find((feature) => feature.title === "CMake library latelib");
     const headers = result.features.find((feature) => feature.title === "CMake library headers");
     const mainFeatures = result.features.filter(
       (feature) =>
@@ -1256,10 +1266,12 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("CMake binary upper");
     expect(titles).toContain("CMake binary absin");
     expect(titles).toContain("CMake binary 7zip");
+    expect(titles).toContain("CMake binary latebin");
     expect(titles).not.toContain("CMake binary absout");
     expect(titles).not.toContain("CMake binary commented");
     expect(titles).toContain("CMake library core");
     expect(titles).toContain("CMake library foo.bar");
+    expect(titles).toContain("CMake library latelib");
     expect(titles).toContain("CMake library upperlib");
     expect(titles).toContain("CMake library headers");
     expect(titles).not.toContain("CMake library vendored");
@@ -1277,12 +1289,21 @@ add_executable(headerapp include/headers.hpp)
       { path: "tests/main_test.cpp", reason: "nearby test" },
     ]);
     expect(myapp?.tests).toEqual([{ path: "tests/main_test.cpp", command: null }]);
+    expect(latebin?.entrypoints[0]?.path).toBe("src/late_main.c");
+    expect(latebin?.ownedFiles).toEqual([
+      { path: "src/late_main.c", reason: "target source" },
+      { path: "src/late_util.c", reason: "target source" },
+    ]);
     expect(core?.entrypoints[0]?.path).toBe("src/core.c");
     expect(core?.entrypoints[0]?.symbol).toBeNull();
     expect(core?.ownedFiles).toEqual([
       { path: "include/core.hpp", reason: "target source" },
       { path: "src/core.c", reason: "target source" },
       { path: "src/core_util.c", reason: "target source" },
+    ]);
+    expect(latelib?.ownedFiles).toEqual([
+      { path: "src/late_lib.c", reason: "target source" },
+      { path: "include/late_lib.hpp", reason: "target source" },
     ]);
     expect(headers?.ownedFiles).toEqual([{ path: "include/headers.hpp", reason: "target source" }]);
   });
@@ -1607,6 +1628,22 @@ add_executable(headerapp include/headers.hpp)
 
     expect(app?.tests).toEqual([]);
     expect(app?.contextFiles).toEqual([]);
+  });
+
+  it("attaches plural-suffixed C and C++ tests without mapping them as binaries", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-plural-tests-");
+    await writeFixture(root, "src/app.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/app_tests.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/FooTests.cpp", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "C++ binary app");
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(app?.tests).toEqual([{ path: "src/app_tests.cpp", command: null }]);
+    expect(titles).not.toContain("C++ binary app_tests");
+    expect(titles).not.toContain("C++ binary FooTests");
   });
 
   it("skips dependency trees during C and C++ discovery", async () => {

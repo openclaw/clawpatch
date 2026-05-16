@@ -257,8 +257,8 @@ export function isCOrCppTestPath(path: string): boolean {
   return (
     /(^|\/)(test|tests|__tests__)\//u.test(path) ||
     /^test[_-]/u.test(base) ||
-    /[_-]test\./u.test(base) ||
-    /Test\./u.test(base)
+    /[_-]tests?\./u.test(base) ||
+    /Tests?\./u.test(base)
   );
 }
 
