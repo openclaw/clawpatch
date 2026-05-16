@@ -1062,6 +1062,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       test: "poetry run pytest",
     });
 
+    const poetryPyprojectRoot = await fixtureRoot("clawpatch-python-poetry-pyproject-");
+    await writeFixture(
+      poetryPyprojectRoot,
+      "pyproject.toml",
+      '[tool.poetry]\nname = "poetry-pyproject"\n\n[tool.poetry.group.dev.dependencies]\npytest = "^8"\nruff = "^0.5"\n',
+    );
+    expect((await detectProject(poetryPyprojectRoot)).detected).toMatchObject({
+      packageManagers: ["poetry"],
+      commands: {
+        lint: "poetry run ruff check .",
+        test: "poetry run pytest",
+      },
+    });
+
     const hatchRoot = await fixtureRoot("clawpatch-python-hatch-");
     await writeFixture(
       hatchRoot,
@@ -1163,6 +1177,20 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       typecheck: "pdm run pyright",
       lint: "pdm run ruff check .",
       test: "pdm run pytest",
+    });
+
+    const pdmPyprojectNoLockRoot = await fixtureRoot("clawpatch-python-pdm-pyproject-no-lock-");
+    await writeFixture(
+      pdmPyprojectNoLockRoot,
+      "pyproject.toml",
+      '[tool.pdm.dev-dependencies]\ndev = ["pytest", "ruff"]\n',
+    );
+    expect((await detectProject(pdmPyprojectNoLockRoot)).detected).toMatchObject({
+      packageManagers: ["pdm"],
+      commands: {
+        lint: "pdm run ruff check .",
+        test: "pdm run pytest",
+      },
     });
 
     const directRoot = await fixtureRoot("clawpatch-python-direct-");
@@ -1271,6 +1299,42 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     expect(project.detected.commands.test).toBe("uv run pytest");
     expect(source?.tests).toEqual([{ path: "src/uv_map/test_app.py", command: "uv run pytest" }]);
+  });
+
+  it("uses Poetry and PDM pytest commands from pyproject tool config in mapped Python features", async () => {
+    const poetryRoot = await fixtureRoot("clawpatch-python-poetry-pyproject-map-");
+    await writeFixture(
+      poetryRoot,
+      "pyproject.toml",
+      '[tool.poetry]\nname = "poetry-map"\n\n[tool.poetry.group.dev.dependencies]\npytest = "^8"\n',
+    );
+    await writeFixture(poetryRoot, "src/poetry_map/app.py", "def app():\n    pass\n");
+    await writeFixture(poetryRoot, "src/poetry_map/test_app.py", "def test_app():\n    pass\n");
+
+    const poetryProject = await detectProject(poetryRoot);
+    const poetryResult = await mapFeatures(poetryRoot, poetryProject, []);
+    const poetrySource = poetryResult.features.find(
+      (feature) => feature.title === "Python source src",
+    );
+    expect(poetrySource?.tests).toEqual([
+      { path: "src/poetry_map/test_app.py", command: "poetry run pytest" },
+    ]);
+
+    const pdmRoot = await fixtureRoot("clawpatch-python-pdm-pyproject-map-");
+    await writeFixture(
+      pdmRoot,
+      "pyproject.toml",
+      '[tool.pdm.dev-dependencies]\ndev = ["pytest"]\n',
+    );
+    await writeFixture(pdmRoot, "src/pdm_map/app.py", "def app():\n    pass\n");
+    await writeFixture(pdmRoot, "src/pdm_map/test_app.py", "def test_app():\n    pass\n");
+
+    const pdmProject = await detectProject(pdmRoot);
+    const pdmResult = await mapFeatures(pdmRoot, pdmProject, []);
+    const pdmSource = pdmResult.features.find((feature) => feature.title === "Python source src");
+    expect(pdmSource?.tests).toEqual([
+      { path: "src/pdm_map/test_app.py", command: "pdm run pytest" },
+    ]);
   });
 
   it("maps Python metadata-only projects without pyproject", async () => {

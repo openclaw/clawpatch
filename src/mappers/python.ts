@@ -180,10 +180,13 @@ async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promis
   if ((await pathExists(join(root, "uv.lock"))) || (await pyprojectHasToolSection(root, "uv"))) {
     return "uv run pytest";
   }
-  if (await pathExists(join(root, "poetry.lock"))) {
+  if (
+    (await pathExists(join(root, "poetry.lock"))) ||
+    (await pyprojectHasToolSection(root, "poetry"))
+  ) {
     return "poetry run pytest";
   }
-  if (await pathExists(join(root, "pdm.lock"))) {
+  if ((await pathExists(join(root, "pdm.lock"))) || (await pyprojectHasToolSection(root, "pdm"))) {
     return "pdm run pytest";
   }
   if (

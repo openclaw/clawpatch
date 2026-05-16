@@ -227,7 +227,7 @@ async function detectPackageManagers(root: string): Promise<string[]> {
       found.push(name);
     }
   }
-  for (const tool of ["uv", "hatch"]) {
+  for (const tool of ["uv", "poetry", "pdm", "hatch"]) {
     if (!found.includes(tool) && (await pyprojectHasToolSection(root, tool))) {
       found.push(tool);
     }
@@ -268,10 +268,13 @@ async function pythonRunner(root: string): Promise<string | null> {
   if ((await pathExists(join(root, "uv.lock"))) || (await pyprojectHasToolSection(root, "uv"))) {
     return "uv";
   }
-  if (await pathExists(join(root, "poetry.lock"))) {
+  if (
+    (await pathExists(join(root, "poetry.lock"))) ||
+    (await pyprojectHasToolSection(root, "poetry"))
+  ) {
     return "poetry";
   }
-  if (await pathExists(join(root, "pdm.lock"))) {
+  if ((await pathExists(join(root, "pdm.lock"))) || (await pyprojectHasToolSection(root, "pdm"))) {
     return "pdm";
   }
   if (
