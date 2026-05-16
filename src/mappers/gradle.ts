@@ -756,13 +756,16 @@ function kotlinImportForType(
 ): string | undefined {
   const direct = info.imports.get(type);
   if (direct !== undefined) {
-    return direct;
+    return direct.startsWith("kotlin.") ? undefined : direct;
   }
   if (projectTypes.has(type) || isKotlinImplicitType(type)) {
     return undefined;
   }
   for (const full of info.imports.values()) {
     if (full.endsWith(".*")) {
+      if (full.startsWith("kotlin.")) {
+        return undefined;
+      }
       return `${full.slice(0, -1)}${type}`;
     }
   }
@@ -1067,7 +1070,7 @@ function methodReturnEvidence(info: JavaFileInfo, projectPackages: Set<string>):
 }
 
 function isExternalProjectImport(full: string, projectPackages: Set<string>): boolean {
-  if (/^(?:java|javax|jakarta)\./u.test(full)) {
+  if (/^(?:java|javax|jakarta|kotlin)\./u.test(full)) {
     return false;
   }
   for (const packageName of projectPackages) {
@@ -1396,7 +1399,9 @@ async function gradleTags(
   ) {
     tags.push("kotlin");
   }
-  const buildSource = await readFile(join(root, buildFile), "utf8").catch(() => "");
+  const buildSource = stripGradleComments(
+    await readFile(join(root, buildFile), "utf8").catch(() => ""),
+  );
   if (
     appliesAndroidGradlePlugin(buildSource) ||
     /\bandroid\s*\{/u.test(buildSource) ||
@@ -1419,6 +1424,10 @@ function appliesAndroidGradlePlugin(source: string): boolean {
     }
   }
   return false;
+}
+
+function stripGradleComments(source: string): string {
+  return stripJavaComments(source);
 }
 
 function isGradleSourceFile(path: string): boolean {

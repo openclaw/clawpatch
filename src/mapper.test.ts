@@ -2790,7 +2790,12 @@ describe("mapFeatures", () => {
     await writeFixture(
       root,
       "apps/android/build.gradle.kts",
-      'plugins { id("org.jetbrains.kotlin.jvm") }\n',
+      [
+        'plugins { id("org.jetbrains.kotlin.jvm") }',
+        '// id("com.android.application")',
+        '/* android { namespace = "example" } */',
+        "",
+      ].join("\n"),
     );
     await writeFixture(
       root,
@@ -2804,6 +2809,9 @@ describe("mapFeatures", () => {
     expect(
       result.features.some((feature) => feature.source.startsWith("kotlin-android-role-")),
     ).toBe(false);
+    expect(
+      result.features.find((feature) => feature.title === "Gradle module apps/android")?.tags,
+    ).not.toContain("android");
   });
 
   it("does not treat non-entrypoint Android framework imports as UI roles", async () => {
@@ -2976,6 +2984,37 @@ describe("mapFeatures", () => {
     expect(framework?.ownedFiles[0]?.reason).toContain("external type org.scheduler.");
     expect(framework?.ownedFiles[0]?.reason).not.toContain("org.scheduler.LocalBase");
     expect(framework?.ownedFiles[0]?.reason).not.toContain("org.scheduler.String");
+  });
+
+  it("does not treat Kotlin stdlib return types as framework components", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-stdlib-type-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/util/Timeouts.kt",
+      [
+        "package com.example.util",
+        "",
+        "import kotlin.time.Duration",
+        "",
+        "fun timeout(): Duration = Duration.ZERO",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/util/Timeouts.kt",
+          ),
+      ),
+    ).toBe(false);
   });
 
   it("normalizes root Gradle source groups", async () => {
