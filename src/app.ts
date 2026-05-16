@@ -6,7 +6,7 @@ import { detectProject } from "./detect.js";
 import { ClawpatchError, assertDefined } from "./errors.js";
 import { runCommand } from "./exec.js";
 import { nowIso, writeJson } from "./fs.js";
-import { discoverGit, findProjectRoot } from "./git.js";
+import { changedFilesSince, discoverGit, findProjectRoot } from "./git.js";
 import { stableId, runId } from "./id.js";
 import { mapFeatures } from "./mapper.js";
 import { providerByName } from "./provider.js";
@@ -138,7 +138,10 @@ export async function reviewCommand(
   const loaded = await loadProjectState(context);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
-  const features = selectFeatures(await readFeatures(loaded.paths), flags);
+  const features = await selectReviewFeatures(loaded, flags);
+  if (features.length === 0 && typeof flags["since"] === "string") {
+    return { next: "no features touched by diff" };
+  }
   if (flags["dryRun"] === true) {
     return {
       dryRun: true,
@@ -468,7 +471,7 @@ export async function revalidateCommand(
   const loaded = await loadProjectState(context);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
-  const findings = await selectRevalidationFindings(loaded.paths, flags);
+  const findings = await selectRevalidationFindings(loaded, flags);
   const currentRunId = runId();
   const currentGit = await discoverGit(loaded.root);
   const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
@@ -551,7 +554,7 @@ export async function revalidateCommand(
     });
     throw error;
   }
-  if (flags["all"] === true) {
+  if (flags["all"] === true || typeof flags["since"] === "string") {
     return {
       revalidated: results.length,
       open: results.filter((result) => result.outcome === "open").length,
@@ -815,19 +818,32 @@ function validationCommandsForFeature(
 }
 
 async function selectRevalidationFindings(
-  paths: ReturnType<typeof statePaths>,
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
   flags: Record<string, string | boolean>,
 ): Promise<FindingRecord[]> {
-  if (flags["all"] === true) {
-    const filtered = filterFindings(await readFindings(paths), {
+  const findingId = stringFlag(flags, "finding");
+  if (flags["all"] === true || findingId === undefined) {
+    const filtered = filterFindings(await readFindings(loaded.paths), {
       ...flags,
       status: stringFlag(flags, "status") ?? "open",
     });
-    const limit = Number(stringFlag(flags, "limit") ?? String(filtered.length));
-    return filtered.slice(0, Number.isFinite(limit) && limit > 0 ? limit : filtered.length);
+    const sinceFiltered = await filterFindingsByOwnedFilesSince(loaded, filtered, flags);
+    const limit = Number(stringFlag(flags, "limit") ?? String(sinceFiltered.length));
+    return sinceFiltered.slice(
+      0,
+      Number.isFinite(limit) && limit > 0 ? limit : sinceFiltered.length,
+    );
   }
-  const findingId = assertDefined(stringFlag(flags, "finding"), "missing --finding");
-  return [assertDefined(await readFinding(paths, findingId), `finding not found: ${findingId}`)];
+  return filterFindingsByOwnedFilesSince(
+    loaded,
+    [
+      assertDefined(
+        await readFinding(loaded.paths, findingId),
+        `finding not found: ${findingId}`,
+      ),
+    ],
+    flags,
+  );
 }
 
 async function refreshFeatureStatus(
@@ -900,17 +916,79 @@ function normalizePath(path: string): string {
   return path.replace(/\\/gu, "/").replace(/\/$/u, "");
 }
 
-function selectFeatures(
+async function selectReviewFeatures(
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
+  flags: Record<string, string | boolean>,
+): Promise<FeatureRecord[]> {
+  const candidates = selectReviewCandidates(await readFeatures(loaded.paths), flags);
+  const sinceFiltered = await filterFeaturesByFilesSince(loaded.root, candidates, flags);
+  return limitFeatures(sinceFiltered, flags);
+}
+
+function selectReviewCandidates(
   features: FeatureRecord[],
   flags: Record<string, string | boolean>,
 ): FeatureRecord[] {
   const featureId = stringFlag(flags, "feature");
+  return featureId === undefined
+    ? features.filter((feature) => ["pending", "error"].includes(feature.status))
+    : features.filter((feature) => feature.featureId === featureId);
+}
+
+async function filterFeaturesByFilesSince(
+  root: string,
+  features: FeatureRecord[],
+  flags: Record<string, string | boolean>,
+): Promise<FeatureRecord[]> {
+  const since = stringFlag(flags, "since");
+  if (since === undefined) {
+    return features;
+  }
+  const changed = await changedFilesSince(root, since);
+  return features.filter((feature) => featureTouchesFiles(feature, changed, true));
+}
+
+async function filterFindingsByOwnedFilesSince(
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
+  findings: FindingRecord[],
+  flags: Record<string, string | boolean>,
+): Promise<FindingRecord[]> {
+  const since = stringFlag(flags, "since");
+  if (since === undefined) {
+    return findings;
+  }
+  const changed = await changedFilesSince(loaded.root, since);
+  const features = await readFeatures(loaded.paths);
+  const featuresById = new Map(features.map((feature) => [feature.featureId, feature]));
+  return findings.filter((finding) => {
+    const feature = featuresById.get(finding.featureId);
+    return feature !== undefined && featureTouchesFiles(feature, changed, false);
+  });
+}
+
+function featureTouchesFiles(
+  feature: FeatureRecord,
+  changed: Set<string>,
+  includeContext: boolean,
+): boolean {
+  const featureFiles = new Set([
+    ...feature.ownedFiles.map((file) => file.path),
+    ...(includeContext ? feature.contextFiles.map((file) => file.path) : []),
+  ]);
+  for (const file of changed) {
+    if (featureFiles.has(file)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function limitFeatures(
+  features: FeatureRecord[],
+  flags: Record<string, string | boolean>,
+): FeatureRecord[] {
   const limit = Number(stringFlag(flags, "limit") ?? "1");
-  const selected =
-    featureId === undefined
-      ? features.filter((feature) => ["pending", "error"].includes(feature.status))
-      : features.filter((feature) => feature.featureId === featureId);
-  return selected.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 1);
+  return features.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 1);
 }
 
 function reviewJobs(flags: Record<string, string | boolean>): number {

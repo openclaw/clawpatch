@@ -15,7 +15,7 @@ import {
   statusCommand,
   triageCommand,
 } from "./app.js";
-import { packageVersion, parseArgs } from "./cli.js";
+import { main as cliMain, packageVersion, parseArgs } from "./cli.js";
 import { loadConfig } from "./config.js";
 import { runCommand } from "./exec.js";
 import {
@@ -32,6 +32,100 @@ import {
 import { buildReviewPrompt } from "./prompt.js";
 import { fixtureRoot, testOptions, writeFixture } from "./test-helpers.js";
 import { findingRecordSchema } from "./types.js";
+import type { FeatureRecord } from "./types.js";
+
+async function sinceFixture(prefix: string): Promise<string> {
+  const root = await fixtureRoot(prefix);
+  await writeFixture(
+    root,
+    "package.json",
+    JSON.stringify({
+      name: "since",
+      bin: {
+        one: "src/one.ts",
+        two: "src/two.ts",
+        three: "src/three.ts",
+      },
+      scripts: { test: "vitest run" },
+    }),
+  );
+  await writeFixture(root, "src/one.ts", "export const one = 'TODO_BUG';\n");
+  await writeFixture(root, "src/two.ts", "export const two = 'TODO_BUG';\n");
+  await writeFixture(root, "src/three.ts", "export const three = 'TODO_BUG';\n");
+  await writeFixture(root, "tests/one.test.ts", "expect('one').toBe('one');\n");
+  await initGit(root);
+  await commitAll(root, "base");
+  await checkCommand(root, "git tag --no-sign base");
+  return root;
+}
+
+async function initGit(root: string): Promise<void> {
+  await checkCommand(root, "git init -q");
+  await checkCommand(root, "git config user.email test@example.com");
+  await checkCommand(root, "git config user.name Test");
+  await checkCommand(root, "git config commit.gpgsign false");
+  await checkCommand(root, "git config tag.gpgSign false");
+}
+
+async function commitAll(root: string, message: string): Promise<void> {
+  await checkCommand(root, "git add package.json src tests");
+  await checkCommand(root, `git -c commit.gpgsign=false commit -q -m "${message}"`);
+}
+
+async function checkCommand(root: string, command: string): Promise<void> {
+  const result = await runCommand(command, root);
+  if (result.exitCode !== 0) {
+    throw new Error(`${command} failed: ${result.stderr || result.stdout}`);
+  }
+}
+
+async function runCli(argv: string[]): Promise<{ stdout: string; stderr: string }> {
+  let stdout = "";
+  let stderr = "";
+  const stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(((chunk: unknown) => {
+    stdout += String(chunk);
+    return true;
+  }) as typeof process.stdout.write);
+  const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+    stderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write);
+  try {
+    await cliMain(argv);
+    return { stdout, stderr };
+  } finally {
+    stdoutSpy.mockRestore();
+    stderrSpy.mockRestore();
+  }
+}
+
+function expectedFeatureIds(
+  features: FeatureRecord[],
+  changed: Set<string>,
+  includeContext: boolean,
+): string[] {
+  return features
+    .filter((feature) => ["pending", "error"].includes(feature.status))
+    .filter((feature) => featureTouches(feature, changed, includeContext))
+    .map((feature) => feature.featureId);
+}
+
+function featureTouches(
+  feature: FeatureRecord,
+  changed: Set<string>,
+  includeContext: boolean,
+): boolean {
+  const featureFiles = new Set([
+    ...feature.ownedFiles.map((file) => file.path),
+    ...(includeContext ? feature.contextFiles.map((file) => file.path) : []),
+  ]);
+  for (const file of changed) {
+    if (featureFiles.has(file)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 describe("workflow", () => {
   it("rejects unknown long flags", () => {
@@ -84,6 +178,12 @@ describe("workflow", () => {
     expect(parseArgs(["review", "--limit", "4", "--jobs", "3"]).flags).toMatchObject({
       limit: "4",
       jobs: "3",
+    });
+    expect(parseArgs(["review", "--since", "HEAD~5"]).flags).toMatchObject({
+      since: "HEAD~5",
+    });
+    expect(parseArgs(["revalidate", "--since", "origin/main"]).flags).toMatchObject({
+      since: "origin/main",
     });
     expect(parseArgs(["report", "--status", "open", "--severity", "high"]).flags).toMatchObject({
       status: "open",
@@ -185,6 +285,147 @@ describe("workflow", () => {
         },
       ],
     });
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("selects review features whose owned files overlap the diff range", async () => {
+    const root = await sinceFixture("clawpatch-since-owned-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await commitAll(root, "change two");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+    const reviewed = await reviewCommand(context, { since: "base", limit: "20", dryRun: true });
+
+    expect(reviewed).toMatchObject({
+      dryRun: true,
+      featureIds: expectedFeatureIds(features, new Set(["src/two.ts"]), true),
+    });
+  });
+
+  it("selects review features whose context files overlap the diff range", async () => {
+    const root = await sinceFixture("clawpatch-since-context-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    await writeFixture(root, "tests/one.test.ts", "expect('changed').toBe('changed');\n");
+    await commitAll(root, "change test");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+    const reviewed = await reviewCommand(context, { since: "base", limit: "20", dryRun: true });
+    const selectedIds = (reviewed as { featureIds: string[] }).featureIds;
+
+    expect(selectedIds).toEqual(expectedFeatureIds(features, new Set(["tests/one.test.ts"]), true));
+    expect(selectedIds.length).toBeGreaterThan(0);
+    expect(
+      selectedIds.every((id) =>
+        features
+          .find((feature) => feature.featureId === id)
+          ?.contextFiles.some((file) => file.path === "tests/one.test.ts"),
+      ),
+    ).toBe(true);
+  });
+
+  it("returns cleanly when --since touches no review features", async () => {
+    const root = await sinceFixture("clawpatch-since-empty-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = await reviewCommand(context, { since: "HEAD", dryRun: true });
+
+    expect(reviewed).toMatchObject({ next: "no features touched by diff" });
+  });
+
+  it("rejects invalid --since refs before running git diff", async () => {
+    const root = await sinceFixture("clawpatch-since-invalid-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+
+    await expect(reviewCommand(context, { since: "bad ref with spaces" })).rejects.toMatchObject({
+      code: "invalid-input",
+      exitCode: 2,
+    });
+  });
+
+  it("applies --since before --limit for review selection", async () => {
+    const root = await sinceFixture("clawpatch-since-limit-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await writeFixture(root, "src/three.ts", "export const three = 'changed';\n");
+    await commitAll(root, "change two and three");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+    const reviewed = await reviewCommand(context, { since: "base", limit: "2", dryRun: true });
+
+    expect(reviewed).toMatchObject({
+      dryRun: true,
+      featureIds: expectedFeatureIds(features, new Set(["src/two.ts", "src/three.ts"]), true).slice(
+        0,
+        2,
+      ),
+    });
+  });
+
+  it("runs review --since through the CLI entrypoint", async () => {
+    const root = await sinceFixture("clawpatch-since-cli-");
+    await runCli(["--root", root, "--json", "--quiet", "init"]);
+    await runCli(["--root", root, "--json", "--quiet", "map"]);
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await commitAll(root, "change two");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+
+    const reviewed = await runCli([
+      "--root",
+      root,
+      "--json",
+      "--quiet",
+      "review",
+      "--since",
+      "base",
+      "--limit",
+      "20",
+      "--dry-run",
+    ]);
+
+    expect(JSON.parse(reviewed.stdout)).toMatchObject({
+      dryRun: true,
+      featureIds: expectedFeatureIds(features, new Set(["src/two.ts"]), true),
+    });
+    expect(reviewed.stderr).toBe("");
+  });
+
+  it("revalidates only findings whose feature owned files overlap --since", async () => {
+    const root = await sinceFixture("clawpatch-since-revalidate-");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    await reviewCommand(context, { limit: "20", jobs: "2" });
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await commitAll(root, "change two");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const [features, findings] = await Promise.all([readFeatures(paths), readFindings(paths)]);
+    const touchedFeatureIds = new Set(
+      features
+        .filter((feature) => featureTouches(feature, new Set(["src/two.ts"]), false))
+        .map((feature) => feature.featureId),
+    );
+    const expected = findings.filter((finding) => touchedFeatureIds.has(finding.featureId));
+    const result = await revalidateCommand(context, { since: "base" });
+
+    expect(result).toMatchObject({ revalidated: expected.length });
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 

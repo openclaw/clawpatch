@@ -4,6 +4,7 @@
 
 - Detected Java/Kotlin language and default Gradle build/test commands for root Gradle projects.
 - Added FastAPI route feature mapping and kept root/web Python project detection in sync.
+- Added `--since <ref>` on `clawpatch review` and `clawpatch revalidate` to restrict runs to features whose owned or context files changed since the given git ref, thanks @mvanhorn.
 - Added Flask route feature mapping for Python projects, including `web/` source roots, common root entry files, non-list method literals, and Python framework detection.
 - Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.
 - Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults, thanks @xiamx.

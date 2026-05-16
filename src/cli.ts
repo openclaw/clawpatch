@@ -22,7 +22,7 @@ import { GlobalOptions } from "./config.js";
 
 const moduleRequire = createRequire(import.meta.url);
 
-async function main(argv: string[]): Promise<void> {
+export async function main(argv: string[]): Promise<void> {
   const parsed = parseArgs(argv);
   if (parsed.help) {
     printHelp(parsed.command);
@@ -148,7 +148,7 @@ const commandFlags = {
   init: new Set(["force"]),
   map: new Set(["dryRun"]),
   status: new Set<string>(),
-  review: new Set(["feature", "limit", "jobs", "provider", "model", "dryRun"]),
+  review: new Set(["feature", "limit", "since", "jobs", "provider", "model", "dryRun"]),
   report: new Set(["status", "severity", "feature", "category", "triage", "output"]),
   show: new Set(["finding"]),
   next: new Set(["status"]),
@@ -163,6 +163,7 @@ const commandFlags = {
     "category",
     "triage",
     "limit",
+    "since",
     "provider",
     "model",
   ]),
@@ -183,6 +184,7 @@ const valueFlagNames = new Set([
   "feature",
   "finding",
   "limit",
+  "since",
   "jobs",
   "provider",
   "model",
@@ -243,7 +245,12 @@ function validateCommandRequirements(
       throw new ClawpatchError(`missing --${kebab(flag)}`, 2, "invalid-usage");
     }
   }
-  if (command === "revalidate" && typeof flags["finding"] !== "string" && flags["all"] !== true) {
+  if (
+    command === "revalidate" &&
+    typeof flags["finding"] !== "string" &&
+    flags["all"] !== true &&
+    typeof flags["since"] !== "string"
+  ) {
     throw new ClawpatchError("missing --finding or --all", 2, "invalid-usage");
   }
 }
@@ -346,6 +353,7 @@ Usage:
 Flags:
   --feature <id>
   --limit <n>
+  --since <ref>
   --jobs <n>        default: 10
   --provider <name>
   --model <name>
@@ -454,6 +462,7 @@ Flags:
 
 Usage:
   clawpatch revalidate --finding <id> [flags]
+  clawpatch revalidate --since <ref> [flags]
 
 Flags:
   --finding <id>
@@ -464,6 +473,7 @@ Flags:
   --category <category>
   --triage <triage>
   --limit <n>
+  --since <ref>
   --provider <name>
   --model <name>
   --json
