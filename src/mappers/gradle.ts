@@ -132,6 +132,12 @@ const kotlinRoleDefinitions = {
     tags: ["kotlin", "server", "external-api"],
     trustBoundaries: ["network", "external-api", "serialization"],
   },
+  "server-configuration": {
+    title: "configuration",
+    kind: "config",
+    tags: ["kotlin", "server", "config"],
+    trustBoundaries: ["filesystem"],
+  },
   "server-framework-component": {
     title: "framework component",
     kind: "library",
@@ -540,22 +546,20 @@ function kotlinFrameworkRoleEvidence(
         confidence: "high",
       });
     }
+    if (!isAndroid && ["Configuration", "Bean", "ConfigurationProperties"].includes(annotation)) {
+      evidence.push({
+        role: "server-configuration",
+        reason: `configuration annotation @${annotation}`,
+        confidence: "high",
+      });
+    }
   }
 
   for (const full of info.imports.values()) {
-    if (
-      isAndroid &&
-      (full.startsWith("android.app.") ||
-        full.startsWith("android.content.BroadcastReceiver") ||
-        full.startsWith("androidx.activity.") ||
-        full.startsWith("androidx.appcompat.app.") ||
-        full.startsWith("androidx.compose.") ||
-        full.startsWith("androidx.fragment.app.") ||
-        full.startsWith("androidx.lifecycle.LifecycleService"))
-    ) {
+    if (isAndroid && isAndroidEntrypointImport(full)) {
       evidence.push({
         role: "android-ui-entrypoint",
-        reason: `Android UI import ${full}`,
+        reason: `Android entrypoint import ${full}`,
         confidence: "high",
       });
     }
@@ -627,6 +631,17 @@ function kotlinFrameworkRoleEvidence(
       evidence.push({
         role: "server-persistence-boundary",
         reason: `persistence import ${full}`,
+        confidence: "high",
+      });
+    }
+    if (
+      !isAndroid &&
+      (full.startsWith("org.springframework.context.annotation.") ||
+        full.startsWith("org.springframework.boot.context.properties."))
+    ) {
+      evidence.push({
+        role: "server-configuration",
+        reason: `configuration import ${full}`,
         confidence: "high",
       });
     }
@@ -1075,6 +1090,19 @@ function isKotlinExternalClientImport(full: string): boolean {
     full.startsWith("software.amazon.awssdk.") ||
     full.startsWith("com.google.cloud.") ||
     full.startsWith("com.azure.")
+  );
+}
+
+function isAndroidEntrypointImport(full: string): boolean {
+  return (
+    [
+      "android.app.Activity",
+      "android.content.BroadcastReceiver",
+      "androidx.activity.ComponentActivity",
+      "androidx.appcompat.app.AppCompatActivity",
+      "androidx.fragment.app.Fragment",
+      "androidx.lifecycle.LifecycleService",
+    ].includes(full) || full.startsWith("androidx.compose.")
   );
 }
 

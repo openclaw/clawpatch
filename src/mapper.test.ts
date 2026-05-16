@@ -2634,6 +2634,22 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/main/kotlin/com/example/config/AppConfig.kt",
+      [
+        "package com.example.config",
+        "",
+        "import org.springframework.context.annotation.Bean",
+        "import org.springframework.context.annotation.Configuration",
+        "",
+        "@Configuration",
+        "class AppConfig {",
+        '  @Bean fun name(): String = "orders"',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
       "src/test/kotlin/com/example/api/OrderControllerTest.kt",
       "package com.example.api\nclass OrderControllerTest\n",
     );
@@ -2652,6 +2668,9 @@ describe("mapFeatures", () => {
     const clientFeatures = result.features.filter((feature) =>
       feature.title.startsWith("Kotlin server role external client "),
     );
+    const configuration = result.features.find((feature) =>
+      feature.title.startsWith("Kotlin server role configuration "),
+    );
 
     expect(web?.source).toBe("kotlin-server-role-web-entrypoint");
     expect(web?.tests).toEqual([
@@ -2659,6 +2678,10 @@ describe("mapFeatures", () => {
     ]);
     expect(service?.source).toBe("kotlin-server-role-application-service");
     expect(persistence?.source).toBe("kotlin-server-role-persistence-boundary");
+    expect(configuration?.source).toBe("kotlin-server-role-configuration");
+    expect(configuration?.ownedFiles.map((file) => file.path)).toContain(
+      "src/main/kotlin/com/example/config/AppConfig.kt",
+    );
     const clientFiles = clientFeatures.flatMap((feature) =>
       feature.ownedFiles.map((file) => file.path),
     );
@@ -2747,6 +2770,38 @@ describe("mapFeatures", () => {
 
     expect(
       result.features.some((feature) => feature.source.startsWith("kotlin-android-role-")),
+    ).toBe(false);
+  });
+
+  it("does not treat non-entrypoint Android framework imports as UI roles", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-non-ui-import-");
+    await writeFixture(root, "settings.gradle.kts", 'pluginManagement {}\ninclude(":app")\n');
+    await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.library") }\n');
+    await writeFixture(
+      root,
+      "app/src/main/kotlin/com/example/alerts/Notifier.kt",
+      [
+        "package com.example.alerts",
+        "",
+        "import android.app.Notification",
+        "import android.app.PendingIntent",
+        "",
+        "class Notifier(private val notification: Notification, private val intent: PendingIntent)",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-android-role-ui-entrypoint" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "app/src/main/kotlin/com/example/alerts/Notifier.kt",
+          ),
+      ),
     ).toBe(false);
   });
 
