@@ -784,7 +784,7 @@ function kotlinImportForType(
   for (const full of info.imports.values()) {
     if (full.endsWith(".*")) {
       if (full.startsWith("kotlin.")) {
-        return undefined;
+        continue;
       }
       const candidate = `${full.slice(0, -1)}${type}`;
       if (isExternalProjectImport(candidate, projectPackages)) {
@@ -1437,9 +1437,10 @@ async function gradleTags(
 function appliesAndroidGradlePlugin(source: string): boolean {
   for (const line of source.split("\n")) {
     if (
-      /\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']/u.test(
+      (/\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']/u.test(
         line,
-      ) &&
+      ) ||
+        /\balias\s*\(\s*libs\.plugins\.[A-Za-z0-9_.]*android[A-Za-z0-9_.]*\s*\)/iu.test(line)) &&
       !/(?:\bapply\s+false\b|\.apply\s*\(\s*false\s*\))/u.test(line)
     ) {
       return true;

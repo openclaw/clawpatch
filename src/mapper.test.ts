@@ -2443,7 +2443,11 @@ describe("mapFeatures", () => {
         "",
       ].join("\n"),
     );
-    await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.application") }\n');
+    await writeFixture(
+      root,
+      "app/build.gradle.kts",
+      "plugins { alias(libs.plugins.android.application) }\n",
+    );
     await writeFixture(
       root,
       "app/src/main/kotlin/com/example/ui/MainActivity.kt",
@@ -2807,6 +2811,7 @@ describe("mapFeatures", () => {
       "apps/android/build.gradle.kts",
       [
         'plugins { id("org.jetbrains.kotlin.jvm") }',
+        "plugins { alias(libs.plugins.android.application).apply(false) }",
         '// id("com.android.application")',
         '/* android { namespace = "example" } */',
         "",
@@ -2961,7 +2966,7 @@ describe("mapFeatures", () => {
       [
         "package com.example.jobs",
         "",
-        "import java.util.*",
+        "import kotlin.time.*",
         "import org.scheduler.*",
         "",
         "open class LocalBase",
