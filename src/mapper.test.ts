@@ -3522,6 +3522,19 @@ add_executable(headerapp include/headers.hpp)
     expect(coreShared?.entrypoints[0]?.symbol).toBe("core_shared");
   });
 
+  it("prefers exact target-name source stems before prefix matches", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-target-stem-entry-");
+    await writeFixture(root, "CMakeLists.txt", "add_library(app src/apple.c src/app.c)\n");
+    await writeFixture(root, "src/apple.c", "int apple(void) { return 1; }\n");
+    await writeFixture(root, "src/app.c", "int app(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake library app");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/app.c");
+  });
+
   it("keeps existing CMake library ids when a target starts sharing sources", async () => {
     const root = await fixtureRoot("clawpatch-cmake-shared-source-stability-");
     await writeFixture(root, "CMakeLists.txt", "add_library(core_static STATIC src/core.c)\n");
@@ -3702,6 +3715,31 @@ add_executable(headerapp include/headers.hpp)
       { path: "cmake/local.c", reason: "target source" },
       { path: "cmake/extra.c", reason: "target source" },
     ]);
+  });
+
+  it("resolves CMake source dir variables from nested project roots", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-nested-project-vars-");
+    await writeFixture(
+      root,
+      "sub/CMakeLists.txt",
+      "add_executable(project_app ${PROJECT_SOURCE_DIR}/src/project.c)\nadd_executable(source_app ${CMAKE_SOURCE_DIR}/src/source.c)\n",
+    );
+    await writeFixture(root, "src/project.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/source.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "sub/src/project.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "sub/src/source.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const projectApp = result.features.find(
+      (feature) => feature.title === "CMake binary project_app",
+    );
+    const sourceApp = result.features.find(
+      (feature) => feature.title === "CMake binary source_app",
+    );
+
+    expect(projectApp?.entrypoints[0]?.path).toBe("sub/src/project.c");
+    expect(sourceApp?.entrypoints[0]?.path).toBe("sub/src/source.c");
   });
 
   it("resolves nested CMake includes relative to the source dir", async () => {
