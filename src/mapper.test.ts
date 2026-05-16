@@ -408,6 +408,7 @@ describe("mapFeatures", () => {
         "import SuspensePage from './pages/SuspensePage';",
         "import UserPage from './pages/UserPage';",
         "import LinkedPage from './pages/LinkedPage';",
+        "import ErrorPage from './pages/ErrorPage';",
         "import EscapePage from '../../../outside';",
         "export default function App() {",
         "  return <Routes>",
@@ -422,6 +423,7 @@ describe("mapFeatures", () => {
         "    </Route>",
         "    <Route index={false} element={<ReportsPage />} />",
         '    <Route path="/suspense" element={<Suspense><SuspensePage /></Suspense>} />',
+        '    <Route path="/with-error" element={<ReportsPage />} errorElement={<ErrorPage />} />',
         '    <Route element={<ReportsPage />} path="/reports" />',
         '    <Route path="/settings" element={<SettingsPage />} />',
         '    <Route path="/linked" element={<LinkedPage />} />',
@@ -479,6 +481,11 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "frontend/src/pages/ErrorPage.tsx",
+      "export default function ErrorPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
       "frontend/src/pages/ReactLazyPage.tsx",
       "export default function ReactLazyPage() { return null; }\n",
     );
@@ -513,6 +520,9 @@ describe("mapFeatures", () => {
     const reports = result.features.find((feature) => feature.title === "React route /reports");
     const settings = result.features.find((feature) => feature.title === "React route /settings");
     const suspense = result.features.find((feature) => feature.title === "React route /suspense");
+    const withError = result.features.find(
+      (feature) => feature.title === "React route /with-error",
+    );
     const user = result.features.find((feature) => feature.title === "React route /users/:id");
     const linked = result.features.find((feature) => feature.title === "React route /linked");
     const escape = result.features.find((feature) => feature.title === "React route /escape");
@@ -534,6 +544,7 @@ describe("mapFeatures", () => {
     ]);
     expect(reactLazy?.entrypoints[0]?.path).toBe("frontend/src/pages/ReactLazyPage.tsx");
     expect(reports?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
+    expect(withError?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
     expect(settings?.entrypoints[0]?.path).toBe("frontend/src/pages/SettingsPage.tsx");
     expect(suspense?.entrypoints[0]?.path).toBe("frontend/src/pages/SuspensePage.tsx");
     expect(user?.entrypoints[0]?.path).toBe("frontend/src/pages/UserPage.tsx");
@@ -709,6 +720,87 @@ describe("mapFeatures", () => {
     expect(home?.tests).toEqual([
       { path: "frontend/src/pages/HomePage.test.tsx", command: "pnpm --dir frontend test" },
     ]);
+  });
+
+  it("honors package-local npm lockfiles in React packages", async () => {
+    const root = await fixtureRoot("clawpatch-react-nested-npm-");
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - frontend\n");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "frontend/package-lock.json", "{}\n");
+    await writeFixture(
+      root,
+      "frontend/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "frontend/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.tests).toEqual([
+      { path: "frontend/src/pages/HomePage.test.tsx", command: "npm --prefix frontend run test" },
+    ]);
+  });
+
+  it("prioritizes exact React tests before same-directory fallback tests", async () => {
+    const root = await fixtureRoot("clawpatch-react-exact-tests-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import Foo from './pages/Foo';",
+        'export function App() { return <Routes><Route path="/foo" element={<Foo />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/Foo.tsx",
+      "export default function Foo() { return null; }\n",
+    );
+    for (let index = 0; index < 9; index += 1) {
+      await writeFixture(root, `src/pages/A${index}.test.tsx`, "test('nearby', () => {});\n");
+    }
+    await writeFixture(root, "src/pages/Foo.test.tsx", "test('foo', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const foo = result.features.find((feature) => feature.title === "React route /foo");
+
+    expect(foo?.tests[0]).toEqual({ path: "src/pages/Foo.test.tsx", command: "npm run test" });
   });
 
   it("maps nested SwiftPM, Apple, and Android Gradle app surfaces", async () => {
@@ -1446,6 +1538,9 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       [
         "from fastapi import APIRouter",
         "router = APIRouter()",
+        '@router.get("")',
+        "def collection():",
+        "    return []",
         '@router.get("/items")',
         "def items():",
         "    return []",
@@ -1457,6 +1552,8 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const titles = result.features.map((feature) => feature.title);
 
     expect(titles).toContain("FastAPI route GET /v1/items");
+    expect(titles).toContain("FastAPI route GET /v1");
+    expect(titles).not.toContain("FastAPI route GET /v1/");
     expect(titles).not.toContain("FastAPI route GET /items");
   });
 

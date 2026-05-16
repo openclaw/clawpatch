@@ -651,6 +651,9 @@ function inferredRoutePrefix(file: string): string {
 }
 
 function joinRoutePaths(prefix: string, path: string): string {
+  if (path.length === 0) {
+    return prefix.replace(/\/$/u, "") || "/";
+  }
   const joined = `${prefix.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`.replace(/\/+/gu, "/");
   return joined === "" ? "/" : joined;
 }

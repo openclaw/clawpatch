@@ -206,6 +206,7 @@ async function hasPackageManagerMarker(root: string, packageRoot: string): Promi
   return (
     (await pathExists(join(root, packageRoot, "pnpm-lock.yaml"))) ||
     (await pathExists(join(root, packageRoot, "pnpm-workspace.yaml"))) ||
+    (await pathExists(join(root, packageRoot, "package-lock.json"))) ||
     (await pathExists(join(root, packageRoot, "yarn.lock"))) ||
     (await pathExists(join(root, packageRoot, "bun.lockb")))
   );
@@ -542,7 +543,7 @@ function hasIndexRouteProp(props: string): boolean {
 }
 
 function routeElementComponent(props: string): string | null {
-  const element = /\belement=\{([\s\S]*)\}/u.exec(props)?.[1];
+  const element = readJsxExpressionProp(props, "element");
   if (element === undefined) {
     return null;
   }
@@ -550,6 +551,41 @@ function routeElementComponent(props: string): string | null {
     .map((match) => match[1])
     .filter((component): component is string => component !== undefined);
   return components.at(-1) ?? null;
+}
+
+function readJsxExpressionProp(props: string, propName: string): string | undefined {
+  const match = new RegExp(`(?:^|\\s)${propName}\\s*=\\s*\\{`, "u").exec(props);
+  if (match === null) {
+    return undefined;
+  }
+  let depth = 1;
+  let quote: string | null = null;
+  let escaped = false;
+  const start = match.index + match[0].length;
+  for (let index = start; index < props.length; index += 1) {
+    const char = props[index];
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'" || char === "`") {
+      quote = char;
+    } else if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return props.slice(start, index);
+      }
+    }
+  }
+  return undefined;
 }
 
 function stripJsxComments(source: string): string {
@@ -756,13 +792,13 @@ function realPathInsideRoot(root: string, path: string): boolean {
 function associatedTests(files: string[], tests: string[], command: string | null): SeedTestRef[] {
   const fileStems = new Set(files.map((file) => basename(file).replace(/\.[^.]+$/u, "")));
   const dirs = new Set(files.map((file) => dirname(file)));
-  return tests
-    .filter((test) => {
-      const testStem = basename(test).replace(/\.(test|spec)\.[^.]+$/u, "");
-      return fileStems.has(testStem) || [...dirs].some((dir) => pathMatchesPrefix(test, dir));
-    })
-    .slice(0, 8)
-    .map((path) => ({ path, command }));
+  const exact = tests.filter((test) =>
+    fileStems.has(basename(test).replace(/\.(test|spec)\.[^.]+$/u, "")),
+  );
+  const nearby = tests.filter(
+    (test) => !exact.includes(test) && [...dirs].some((dir) => pathMatchesPrefix(test, dir)),
+  );
+  return [...exact, ...nearby].slice(0, 8).map((path) => ({ path, command }));
 }
 
 function packageTestCommand(info: ReactPackage): string | null {
