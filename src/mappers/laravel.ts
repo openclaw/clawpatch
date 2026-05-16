@@ -410,6 +410,46 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
         action: match[7] ?? null,
       });
     }
+    routes.push(...controllerGroupRoutes(file, source, imports));
+  }
+  return routes;
+}
+
+function controllerGroupRoutes(
+  file: string,
+  source: string,
+  imports: Map<string, string>,
+): RouteRef[] {
+  const routes: RouteRef[] = [];
+  for (const group of source.matchAll(
+    /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)controller\s*\(\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class\s*\)\s*->\s*((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)group\s*\(\s*function\s*\([^)]*\)\s*\{(?<body>.*?)\}\s*\)\s*;/gmsu,
+  )) {
+    const controllerClass = resolveImportedClassName(imports, group[2] ?? "");
+    const body = group.groups?.["body"];
+    if (controllerClass === null || body === undefined) {
+      continue;
+    }
+    const groupPrefixes = [
+      ...fileDefaultRoutePrefixes(file),
+      ...fluentRoutePrefixes(group[1] ?? ""),
+      ...fluentRoutePrefixes(group[3] ?? ""),
+    ];
+    for (const route of body.matchAll(
+      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(['"])([^'"]+)\5/gmsu,
+    )) {
+      const method = route[2];
+      const uri = route[4];
+      if (method === undefined || uri === undefined) {
+        continue;
+      }
+      routes.push({
+        file,
+        method,
+        uri: routeUriWithPrefixes([...groupPrefixes, ...fluentRoutePrefixes(route[1] ?? "")], uri),
+        controllerClass,
+        action: route[6] ?? null,
+      });
+    }
   }
   return routes;
 }
