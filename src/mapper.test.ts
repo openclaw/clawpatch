@@ -1856,6 +1856,33 @@ add_executable(headerapp include/headers.hpp)
     expect(target?.ownedFiles).toEqual([{ path: "new.c", reason: "target source" }]);
   });
 
+  it("keeps same-named CMake and Autotools targets", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-autotools-same-target-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app main.c cmake_only.c)\n");
+    await writeFixture(
+      root,
+      "Makefile.am",
+      "bin_PROGRAMS = app\napp_SOURCES = main.c auto_only.c\n",
+    );
+    await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "cmake_only.c", "int cmake_only(void) { return 0; }\n");
+    await writeFixture(root, "auto_only.c", "int auto_only(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const cmake = result.features.find((feature) => feature.title === "CMake binary app");
+    const autotools = result.features.find((feature) => feature.title === "Autotools binary app");
+
+    expect(cmake?.ownedFiles).toEqual([
+      { path: "main.c", reason: "target source" },
+      { path: "cmake_only.c", reason: "target source" },
+    ]);
+    expect(autotools?.ownedFiles).toEqual([
+      { path: "main.c", reason: "target source" },
+      { path: "auto_only.c", reason: "target source" },
+    ]);
+  });
+
   it("maps standalone C main files without php-src extension semantics", async () => {
     const root = await fixtureRoot("clawpatch-c-main-map-");
     await writeFixture(root, "src/tool.c", "int main(void) { return 0; }\n");
@@ -1972,6 +1999,20 @@ add_executable(headerapp include/headers.hpp)
       root,
       "src/app.cpp",
       'const char *url = R"json({"url":"http://example.com"})json";\nconst char *open = "/*";\nint main(void) { return 0; }\nconst char *close = "*/";\n',
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
+  });
+
+  it("ignores C and C++ block markers inside line comments", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-line-comment-block-marker-");
+    await writeFixture(
+      root,
+      "src/app.cpp",
+      "// /* disabled guard\nint main(void) { return 0; }\n// */\n",
     );
 
     const project = await detectProject(root);

@@ -387,7 +387,7 @@ async function mainFunctionTargets(
 }
 
 function definesMain(source: string): boolean {
-  const stripped = stripLineComments(stripBlockComments(stripCOrCppLiterals(source)), "//");
+  const stripped = stripCOrCppComments(stripCOrCppLiterals(source));
   const pattern =
     /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/gmu;
   for (const match of stripped.matchAll(pattern)) {
@@ -398,8 +398,38 @@ function definesMain(source: string): boolean {
   return false;
 }
 
-function stripBlockComments(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//gu, " ");
+function stripCOrCppComments(source: string): string {
+  let stripped = "";
+  for (let index = 0; index < source.length; ) {
+    const char = source[index];
+    const next = source[index + 1];
+    if (char === "/" && next === "/") {
+      stripped += "  ";
+      index += 2;
+      while (index < source.length && source[index] !== "\n") {
+        stripped += " ";
+        index += 1;
+      }
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      stripped += "  ";
+      index += 2;
+      while (index < source.length) {
+        if (source[index] === "*" && source[index + 1] === "/") {
+          stripped += "  ";
+          index += 2;
+          break;
+        }
+        stripped += source[index] === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      continue;
+    }
+    stripped += char;
+    index += 1;
+  }
+  return stripped;
 }
 
 function stripCOrCppLiterals(source: string): string {
@@ -669,7 +699,7 @@ function dedupeByEntry(seeds: FeatureSeed[]): FeatureSeed[] {
   const seen = new Set<string>();
   const output: FeatureSeed[] = [];
   for (const seed of seeds) {
-    const key = `${seed.entryPath}:${seed.kind}:${seed.command ?? seed.symbol ?? seed.title}`;
+    const key = `${seed.source}:${seed.entryPath}:${seed.kind}:${seed.command ?? seed.symbol ?? seed.title}`;
     if (seen.has(key)) {
       continue;
     }
