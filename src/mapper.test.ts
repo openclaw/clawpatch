@@ -2467,6 +2467,21 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "app/src/main/kotlin/com/example/ui/ProfileFragment.kt",
+      [
+        "package com.example.ui",
+        "",
+        "import dagger.hilt.android.AndroidEntryPoint",
+        "",
+        "@AndroidEntryPoint",
+        "class ProfileFragment : BaseFragment()",
+        "",
+        "open class BaseFragment",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
       "app/src/main/kotlin/com/example/ui/MainViewModel.kt",
       [
         "package com.example.ui",
@@ -2590,6 +2605,9 @@ describe("mapFeatures", () => {
     expect(ui?.confidence).toBe("high");
     expect(ui?.ownedFiles.map((file) => file.path)).toContain(
       "app/src/main/kotlin/com/example/ui/MainActivity.kt",
+    );
+    expect(ui?.ownedFiles.map((file) => file.path)).toContain(
+      "app/src/main/kotlin/com/example/ui/ProfileFragment.kt",
     );
     expect(ui?.tests).toEqual([
       { path: "app/src/test/kotlin/com/example/ui/MainActivityTest.kt", command: null },
@@ -2869,6 +2887,35 @@ describe("mapFeatures", () => {
     ).toBe(false);
   });
 
+  it("does not treat project-local Android supertype names as framework roles", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-local-supertype-");
+    await writeFixture(root, "settings.gradle.kts", 'pluginManagement {}\ninclude(":app")\n');
+    await writeFixture(root, "app/build.gradle.kts", 'plugins { id("com.android.library") }\n');
+    await writeFixture(
+      root,
+      "app/src/main/kotlin/com/example/domain/Service.kt",
+      "package com.example.domain\nopen class Service\n",
+    );
+    await writeFixture(
+      root,
+      "app/src/main/kotlin/com/example/domain/Billing.kt",
+      "package com.example.domain\nclass Billing : Service()\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-android-role-ui-entrypoint" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "app/src/main/kotlin/com/example/domain/Billing.kt",
+          ),
+      ),
+    ).toBe(false);
+  });
+
   it("does not treat Compose runtime state imports as UI roles", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-android-compose-state-");
     await writeFixture(root, "settings.gradle.kts", 'pluginManagement {}\ninclude(":app")\n');
@@ -3089,7 +3136,7 @@ describe("mapFeatures", () => {
         "",
         "import org.framework.FrameworkBase",
         "",
-        "class Handler : FrameworkBase(dep = dep, config = config)",
+        "class Handler(callback: () -> Unit) : FrameworkBase(dep = dep, config = config)",
         "",
       ].join("\n"),
     );

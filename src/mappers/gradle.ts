@@ -406,7 +406,9 @@ function kotlinEvidenceWithPathFallback(
     return dedupeKotlinEvidence([
       ...frameworkEvidence,
       ...pathEvidence.filter((item) =>
-        ["android-data-boundary", "android-external-client"].includes(item.role),
+        ["android-ui-entrypoint", "android-data-boundary", "android-external-client"].includes(
+          item.role,
+        ),
       ),
     ]);
   }
@@ -682,14 +684,14 @@ function kotlinFrameworkRoleEvidence(
     for (const type of declaration.supertypes) {
       if (
         isAndroid &&
-        [
-          "Activity",
-          "AppCompatActivity",
-          "ComponentActivity",
-          "Fragment",
-          "Service",
-          "BroadcastReceiver",
-        ].includes(type)
+        kotlinImportedTypeMatches(info, type, [
+          "android.app.Activity",
+          "android.app.Service",
+          "android.content.BroadcastReceiver",
+          "androidx.activity.ComponentActivity",
+          "androidx.appcompat.app.AppCompatActivity",
+          "androidx.fragment.app.Fragment",
+        ])
       ) {
         evidence.push({
           role: "android-ui-entrypoint",
@@ -697,14 +699,20 @@ function kotlinFrameworkRoleEvidence(
           confidence: "high",
         });
       }
-      if (isAndroid && ["ViewModel", "AndroidViewModel"].includes(type)) {
+      if (
+        isAndroid &&
+        kotlinImportedTypeMatches(info, type, [
+          "androidx.lifecycle.ViewModel",
+          "androidx.lifecycle.AndroidViewModel",
+        ])
+      ) {
         evidence.push({
           role: "android-view-model",
           reason: `inherits Android ViewModel type ${type}`,
           confidence: "high",
         });
       }
-      if (isAndroid && ["RoomDatabase"].includes(type)) {
+      if (isAndroid && kotlinImportedTypeMatches(info, type, ["androidx.room.RoomDatabase"])) {
         evidence.push({
           role: "android-data-boundary",
           reason: `inherits Room type ${type}`,
@@ -747,6 +755,11 @@ function kotlinDeclarationRoleEvidence(
     }
   }
   return evidence;
+}
+
+function kotlinImportedTypeMatches(info: KotlinFileInfo, type: string, allowed: string[]): boolean {
+  const direct = info.imports.get(type);
+  return direct !== undefined && allowed.includes(direct);
 }
 
 function kotlinFunctionReturnRoleEvidence(
@@ -979,8 +992,11 @@ function parseJavaDeclarations(source: string): JavaDeclaration[] {
 
 function parseKotlinDeclarations(source: string): KotlinDeclaration[] {
   const declarations: KotlinDeclaration[] = [];
-  const declarationPattern =
-    /\b(?:(?:data|sealed|open|abstract|final|inner|value|annotation)\s+)*(?:(enum)\s+)?(?:(fun)\s+)?(class|interface|object)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^{};]*>)?(?:\s+(?:(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\([^{}]*?\))?|public|private|protected|internal)\s+)*constructor\s*\([^{}]*?\)|\s*\([^{}]*?\))?(?:\s*:\s*([^{\n]+))?/gsu;
+  const primaryConstructor = String.raw`\((?:[^(){}]|\([^(){}]*\))*\)`;
+  const declarationPattern = new RegExp(
+    String.raw`\b(?:(?:data|sealed|open|abstract|final|inner|value|annotation)\s+)*(?:(enum)\s+)?(?:(fun)\s+)?(class|interface|object)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*<[^{};]*>)?(?:\s+(?:(?:@[A-Za-z_][A-Za-z0-9_.]*(?:\([^{}]*?\))?|public|private|protected|internal)\s+)*constructor\s*${primaryConstructor}|\s*${primaryConstructor})?(?:\s*:\s*([^{\n]+))?`,
+    "gsu",
+  );
   for (const match of source.matchAll(declarationPattern)) {
     const rawKind = match[3];
     const name = match[4];
