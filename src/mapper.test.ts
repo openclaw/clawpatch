@@ -1032,6 +1032,11 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
     await writeFixture(
       root,
+      "app/Console/Commands/ReportCatalogWatermarks.php",
+      "<?php\nnamespace App\\Console\\Commands;\nuse Illuminate\\Console\\Attributes\\Signature;\n#[Signature('app:report-catalog-watermarks\n    {--json : Output JSON}')] final class ReportCatalogWatermarks {}\n",
+    );
+    await writeFixture(
+      root,
       "app/Models/Track.php",
       "<?php\nnamespace App\\Models;\nfinal class Track {}\n",
     );
@@ -1073,6 +1078,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(titles).toContain("Laravel controller LandingPageController");
     expect(titles).toContain("Laravel request StoreTrackRequest");
     expect(titles).toContain("Laravel command app:release-cut");
+    expect(titles).toContain("Laravel command app:report-catalog-watermarks");
     expect(titles).toContain("Laravel job RunSubmissionAnalysis");
     expect(titles).toContain("Laravel service TrackUploadService");
     expect(titles).toContain("Laravel model Track");
@@ -1117,8 +1123,8 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       root,
       "routes/admin.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\Admin\\UserController;\n" +
-        "Route::get('/admin/users', UserController::class);\n",
+        "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
+        "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -1341,13 +1347,24 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       ),
     );
     await writeFixture(root, "app/Service.php", "<?php\nfinal class Service {}\n");
+    await writeFixture(root, "tests/LibTest.php", "<?php\nfinal class LibTest {}\n");
 
-    expect((await detectProject(root)).detected.commands).toEqual({
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const phpTestSuite = result.features.find((feature) =>
+      feature.title.startsWith("PHP test suite tests"),
+    );
+
+    expect(project.detected.commands).toEqual({
       typecheck: "composer analyse",
       lint: "composer lint",
       format: "composer format",
       test: "composer test",
     });
+    expect(titles).toContain("Composer script test");
+    expect(phpTestSuite?.tags).toEqual(["php", "test"]);
+    expect(titles).not.toContain("Laravel project php-tool");
   });
 
   it("uses PHPUnit for Laravel package projects without artisan", async () => {

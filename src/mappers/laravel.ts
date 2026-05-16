@@ -30,7 +30,8 @@ const maxAssociatedTests = 8;
 
 export async function laravelSeeds(root: string): Promise<FeatureSeed[]> {
   const composer = await readComposerJson(root);
-  if (!(await isLaravelProject(root, composer))) {
+  const isLaravel = await isLaravelProject(root, composer);
+  if (!isLaravel && composer === null) {
     return [];
   }
 
@@ -38,17 +39,21 @@ export async function laravelSeeds(root: string): Promise<FeatureSeed[]> {
   const testFiles = await phpTestFiles(root);
   const routes = await laravelRoutes(root);
   const seeds: FeatureSeed[] = [
-    ...(await projectSeeds(root, composer)),
+    ...(isLaravel ? await projectSeeds(root, composer) : []),
     ...composerScriptSeeds(composer),
-    ...(await controllerSeeds(root, routes, testFiles, testCommand)),
-    ...(await requestSeeds(root, testFiles, testCommand)),
-    ...(await commandSeeds(root, testFiles, testCommand)),
-    ...(await jobSeeds(root, testFiles, testCommand)),
-    ...(await serviceSeeds(root, testFiles, testCommand)),
-    ...(await modelSeeds(root, testFiles, testCommand)),
-    ...(await groupedPhpSeeds(root, "database/migrations", "Laravel migrations", "migration")),
-    ...(await groupedPhpSeeds(root, "database/seeders", "Laravel seeders", "seeder")),
-    ...testSuiteSeeds(testFiles, testCommand),
+    ...(isLaravel ? await controllerSeeds(root, routes, testFiles, testCommand) : []),
+    ...(isLaravel ? await requestSeeds(root, testFiles, testCommand) : []),
+    ...(isLaravel ? await commandSeeds(root, testFiles, testCommand) : []),
+    ...(isLaravel ? await jobSeeds(root, testFiles, testCommand) : []),
+    ...(isLaravel ? await serviceSeeds(root, testFiles, testCommand) : []),
+    ...(isLaravel ? await modelSeeds(root, testFiles, testCommand) : []),
+    ...(isLaravel
+      ? await groupedPhpSeeds(root, "database/migrations", "Laravel migrations", "migration")
+      : []),
+    ...(isLaravel
+      ? await groupedPhpSeeds(root, "database/seeders", "Laravel seeders", "seeder")
+      : []),
+    ...testSuiteSeeds(testFiles, testCommand, isLaravel ? "Laravel" : "PHP"),
   ];
 
   return seeds;
@@ -375,24 +380,31 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
     const source = stripPhpComments(await readFile(join(root, file), "utf8"));
     const imports = phpUseMap(source);
     for (const match of source.matchAll(
-      /Route::(get|post|put|patch|delete|options|any|resource|apiResource)\s*\(\s*(['"])([^'"]*)\2\s*,\s*(?:\[\s*)?(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class(?:\s*,\s*(['"])([^'"]+)\5)?/gmu,
+      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;{}]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any|resource|apiResource)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(?:\[\s*)?(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class(?:\s*,\s*(['"])([^'"]+)\6)?/gmsu,
     )) {
-      const method = match[1];
-      const uri = match[3];
-      const controllerClass = resolveImportedClassName(imports, match[4] ?? "");
+      const chain = match[1] ?? "";
+      const method = match[2];
+      const uri = match[4];
+      const controllerClass = resolveImportedClassName(imports, match[5] ?? "");
       if (method === undefined || uri === undefined || controllerClass === null) {
         continue;
       }
       routes.push({
         file,
         method,
-        uri: routeUri(uri),
+        uri: routeUriWithPrefixes(fluentRoutePrefixes(chain), uri),
         controllerClass,
-        action: match[6] ?? null,
+        action: match[7] ?? null,
       });
     }
   }
   return routes;
+}
+
+function fluentRoutePrefixes(chain: string): string[] {
+  return [...chain.matchAll(/\bprefix\s*\(\s*(['"])([^'"]*)\1\s*\)/gmu)]
+    .map((match) => match[2])
+    .filter((prefix) => prefix !== undefined);
 }
 
 function stripPhpComments(source: string): string {
@@ -457,6 +469,28 @@ function phpUseMap(source: string): Map<string, string> {
       imports.set(short, qualified);
     }
   }
+  for (const match of source.matchAll(
+    /^\s*use\s+([A-Za-z_\\][A-Za-z0-9_\\]*)\\\s*\{\s*([^}]+)\s*\}\s*;/gimu,
+  )) {
+    const prefix = match[1];
+    const members = match[2];
+    if (prefix === undefined || members === undefined) {
+      continue;
+    }
+    for (const member of members.split(",")) {
+      const memberMatch =
+        /^\s*([A-Za-z_\\][A-Za-z0-9_\\]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?\s*$/iu.exec(member);
+      const memberName = memberMatch?.[1];
+      if (memberName === undefined) {
+        continue;
+      }
+      const qualified = `${prefix}\\${memberName}`;
+      const short = memberMatch?.[2] ?? memberName.split("\\").at(-1);
+      if (short !== undefined) {
+        imports.set(short, qualified);
+      }
+    }
+  }
   return imports;
 }
 
@@ -485,6 +519,14 @@ function routeUri(uri: string): string {
   return uri.startsWith("/") ? uri : `/${uri}`;
 }
 
+function routeUriWithPrefixes(prefixes: string[], uri: string): string {
+  const combined = [...prefixes, uri]
+    .map((segment) => segment.replace(/^\/+|\/+$/gu, ""))
+    .filter((segment) => segment.length > 0)
+    .join("/");
+  return routeUri(combined);
+}
+
 function describeRoutes(routes: RouteRef[]): string {
   return routes
     .slice(0, 6)
@@ -499,6 +541,7 @@ async function artisanSignature(root: string, path: string): Promise<string | nu
   const source = await readFile(join(root, path), "utf8");
   return (
     /\$signature\s*=\s*(['"])([^'"]+)\1/u.exec(source)?.[2]?.split(/\s+/u)[0] ??
+    /Signature\s*\(\s*(['"])([^'"]+)\1/u.exec(source)?.[2]?.split(/\s+/u)[0] ??
     /AsCommand\s*\(\s*name:\s*(['"])([^'"]+)\1/u.exec(source)?.[2] ??
     null
   );
@@ -553,13 +596,17 @@ async function phpTestFiles(root: string): Promise<string[]> {
   return (await walk(root, ["tests"])).filter((path) => path.endsWith("Test.php")).slice(0, 300);
 }
 
-function testSuiteSeeds(testFiles: string[], command: string | null): FeatureSeed[] {
+function testSuiteSeeds(
+  testFiles: string[],
+  command: string | null,
+  projectType: "Laravel" | "PHP",
+): FeatureSeed[] {
   return [...groupedTestFiles(testFiles).entries()].flatMap(([root, files]) =>
     partitionSourceFiles(root, files, groupedMaxOwnedFiles).map((group) => ({
-      title: `Laravel test suite ${group.label}`,
-      summary: `Laravel/PHP tests in ${group.label}.`,
+      title: `${projectType} test suite ${group.label}`,
+      summary: `${projectType} tests in ${group.label}.`,
       kind: "test-suite",
-      source: "laravel-test-suite",
+      source: projectType === "Laravel" ? "laravel-test-suite" : "php-test-suite",
       confidence: "medium",
       entryPath: group.label,
       symbol: group.label,
@@ -568,7 +615,7 @@ function testSuiteSeeds(testFiles: string[], command: string | null): FeatureSee
       ownedFiles: group.files.map((path) => ({ path, reason: "PHP test" })),
       contextFiles: [],
       tests: group.files.map((path) => ({ path, command })),
-      tags: ["php", "laravel", "test"],
+      tags: projectType === "Laravel" ? ["php", "laravel", "test"] : ["php", "test"],
       trustBoundaries: [],
       testCommand: command,
       skipNearbyTests: true,

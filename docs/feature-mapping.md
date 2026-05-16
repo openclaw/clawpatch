@@ -65,6 +65,7 @@ Known gaps:
 
 - no Express/Fastify/Hono route mapper yet
 - no FastAPI/Flask/Django route mapper yet
-- Laravel route parsing is convention-based and does not execute Laravel route discovery
+- Laravel route parsing is convention-based, does not execute Laravel route discovery,
+  and may omit prefixes applied by `Route::group(...)` wrappers
 - no import graph expansion beyond nearby tests yet
 - no agent enrichment yet
