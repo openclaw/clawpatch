@@ -2117,6 +2117,16 @@ add_executable(headerapp include/headers.hpp)
     expect(project.detected.packageManagers).not.toContain("cmake");
   });
 
+  it("detects non-C and C++ languages under vendor path components", async () => {
+    const root = await fixtureRoot("clawpatch-vendor-language-detect-");
+    await writeFixture(root, "src/pkg/vendor/app.py", "def main():\n    pass\n");
+    await writeFixture(root, "src/main/vendor/App.java", "class App {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toEqual(expect.arrayContaining(["python", "java"]));
+  });
+
   it("maps Python project metadata, console scripts, source groups, and tests", async () => {
     const root = await fixtureRoot("clawpatch-python-map-");
     await writeFixture(

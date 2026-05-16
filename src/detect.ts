@@ -222,13 +222,16 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("gradle");
   }
-  if (!found.includes("cmake") && (await containsFileNamed(root, "CMakeLists.txt", 5))) {
+  if (
+    !found.includes("cmake") &&
+    (await containsFileNamed(root, "CMakeLists.txt", 5, shouldSkipCOrCppSearchEntry))
+  ) {
     found.push("cmake");
   }
   if (
     !found.includes("autotools") &&
-    ((await containsFileNamed(root, "Makefile.am", 5)) ||
-      (await containsFileNamed(root, "Makefile.in", 5)))
+    ((await containsFileNamed(root, "Makefile.am", 5, shouldSkipCOrCppSearchEntry)) ||
+      (await containsFileNamed(root, "Makefile.in", 5, shouldSkipCOrCppSearchEntry)))
   ) {
     found.push("autotools");
   }
@@ -788,19 +791,19 @@ async function detectLanguages(root: string): Promise<string[]> {
 }
 
 async function containsCFile(root: string): Promise<boolean> {
-  return containsFileWithExtension(root, ".c", 5);
+  return containsFileWithExtension(root, ".c", 5, shouldSkipCOrCppSearchEntry);
 }
 
 async function containsCppFile(root: string): Promise<boolean> {
   return (
-    (await containsFileWithExtension(root, ".C", 5)) ||
-    (await containsFileWithExtension(root, ".H", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".cpp", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".cc", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".cxx", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".hpp", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".hh", 5)) ||
-    (await containsFileWithExtensionIgnoringCase(root, ".hxx", 5))
+    (await containsFileWithExtension(root, ".C", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtension(root, ".H", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cpp", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cc", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cxx", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hpp", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hh", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hxx", 5, shouldSkipCOrCppSearchEntry))
   );
 }
 
@@ -920,26 +923,36 @@ async function collectPythonFrameworkScanFiles(
   }
 }
 
-async function containsFileNamed(root: string, name: string, maxDepth: number): Promise<boolean> {
-  return containsFileMatching(root, maxDepth, (entry) => entry === name);
+async function containsFileNamed(
+  root: string,
+  name: string,
+  maxDepth: number,
+  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
+): Promise<boolean> {
+  return containsFileMatching(root, maxDepth, (entry) => entry === name, skipEntry);
 }
 
 async function containsFileWithExtension(
   root: string,
   extension: string,
   maxDepth: number,
+  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
-  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension));
+  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension), skipEntry);
 }
 
 async function containsFileWithExtensionIgnoringCase(
   root: string,
   extension: string,
   maxDepth: number,
+  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
   const lowercaseExtension = extension.toLowerCase();
-  return containsFileMatching(root, maxDepth, (entry) =>
-    entry.toLowerCase().endsWith(lowercaseExtension),
+  return containsFileMatching(
+    root,
+    maxDepth,
+    (entry) => entry.toLowerCase().endsWith(lowercaseExtension),
+    skipEntry,
   );
 }
 
@@ -947,6 +960,7 @@ async function containsFileMatching(
   dir: string,
   remainingDepth: number,
   predicate: (entry: string) => boolean,
+  skipEntry: (entry: string) => boolean = shouldSkipSearchEntry,
 ): Promise<boolean> {
   if (remainingDepth < 0 || !(await pathExists(dir))) {
     return false;
@@ -956,7 +970,7 @@ async function containsFileMatching(
     return false;
   }
   for (const entry of await readdir(dir)) {
-    if (shouldSkipSearchEntry(entry)) {
+    if (skipEntry(entry)) {
       continue;
     }
     const full = join(dir, entry);
@@ -967,7 +981,10 @@ async function containsFileMatching(
     if (info.isFile() && predicate(entry)) {
       return true;
     }
-    if (info.isDirectory() && (await containsFileMatching(full, remainingDepth - 1, predicate))) {
+    if (
+      info.isDirectory() &&
+      (await containsFileMatching(full, remainingDepth - 1, predicate, skipEntry))
+    ) {
       return true;
     }
   }
@@ -975,33 +992,38 @@ async function containsFileMatching(
 }
 
 function shouldSkipSearchEntry(entry: string): boolean {
+  return [
+    "node_modules",
+    "dist",
+    "build",
+    "target",
+    ".build",
+    ".swiftpm",
+    ".git",
+    ".clawpatch",
+    ".worktrees",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    "fixtures",
+    "__fixtures__",
+    "testdata",
+    "Pods",
+    "Carthage",
+    "SourcePackages",
+    "DerivedData",
+  ].includes(entry);
+}
+
+function shouldSkipCOrCppSearchEntry(entry: string): boolean {
   return (
-    [
-      "node_modules",
-      "dist",
-      "build",
-      "target",
-      ".build",
-      ".swiftpm",
-      ".git",
-      ".clawpatch",
-      ".worktrees",
-      ".venv",
-      "venv",
-      "vendor",
-      "CMakeFiles",
-      "__pycache__",
-      ".mypy_cache",
-      ".ruff_cache",
-      ".pytest_cache",
-      "fixtures",
-      "__fixtures__",
-      "testdata",
-      "Pods",
-      "Carthage",
-      "SourcePackages",
-      "DerivedData",
-    ].includes(entry) || /^cmake-build-[^/]+$/u.test(entry)
+    shouldSkipSearchEntry(entry) ||
+    entry === "vendor" ||
+    entry === "CMakeFiles" ||
+    /^cmake-build-[^/]+$/u.test(entry)
   );
 }
 
