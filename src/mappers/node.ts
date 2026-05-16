@@ -146,11 +146,13 @@ async function sourceGroupSeeds(
   const testFiles = await packageTestFiles(root, info);
   const seeds: FeatureSeed[] = [];
 
-  for (const sourceRoot of packageSourceRoots(info.root)) {
+  for (const sourceRoot of await packageSourceRoots(root, info)) {
     if (!(await pathExists(join(root, sourceRoot)))) {
       continue;
     }
-    const files = (await walk(root, [sourceRoot])).filter(isReviewableNodeSourceFile);
+    const files = (await walk(root, [sourceRoot])).filter(
+      (path) => isReviewableNodeSourceFile(path) && !isRailsExcludedNodeSourcePath(info, path),
+    );
     if (files.length === 0) {
       continue;
     }
@@ -493,16 +495,37 @@ async function packageContextFiles(root: string, info: PackageInfo): Promise<See
   return refs;
 }
 
-function packageSourceRoots(packageRoot: string): string[] {
-  return sourceDirectories.map((dir) => packageRelativePath(packageRoot, dir));
+async function packageSourceRoots(root: string, info: PackageInfo): Promise<string[]> {
+  if (await isRailsPackage(root, info.root)) {
+    return [
+      ...new Set(
+        [...sourceDirectories, "app/javascript", "app/packs", "app/frontend"].map((dir) =>
+          packageRelativePath(info.root, dir),
+        ),
+      ),
+    ].filter((path) => !pathMatchesPrefix(path, packageRelativePath(info.root, "app/assets")));
+  }
+  return sourceDirectories.map((dir) => packageRelativePath(info.root, dir));
+}
+
+function isRailsExcludedNodeSourcePath(info: PackageInfo, path: string): boolean {
+  return pathMatchesPrefix(path, packageRelativePath(info.root, "app/assets"));
 }
 
 async function packageTestFiles(root: string, info: PackageInfo): Promise<string[]> {
   const prefixes = [
-    ...packageSourceRoots(info.root),
+    ...(await packageSourceRoots(root, info)),
     ...testDirectories.map((dir) => packageRelativePath(info.root, dir)),
   ];
   return (await walk(root, prefixes)).filter(isNodeTestPath).slice(0, 200);
+}
+
+async function isRailsPackage(root: string, packageRoot: string): Promise<boolean> {
+  return (
+    packageRoot === "." &&
+    (await pathExists(join(root, "Gemfile"))) &&
+    (await pathExists(join(root, "config/application.rb")))
+  );
 }
 
 function partitionSourceFiles(

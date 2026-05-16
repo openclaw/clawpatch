@@ -150,6 +150,9 @@ async function languageDefaultCommands(
   ) {
     return gradleDefaultCommands(root);
   }
+  if (languages.includes("ruby")) {
+    return rubyDefaultCommands(root);
+  }
 
   return {
     typecheck: null,
@@ -241,10 +244,14 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   if (!found.some((name) => pythonPackageManagers.has(name)) && (await isPythonProject(root))) {
     found.push((await pathExists(join(root, "requirements.txt"))) ? "pip" : "python");
   }
+  if ((await isRubyProject(root)) && !found.some((name) => rubyPackageManagers.has(name))) {
+    found.push((await pathExists(join(root, "Gemfile"))) ? "bundler" : "ruby");
+  }
   return found;
 }
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
+const rubyPackageManagers = new Set(["bundler", "ruby"]);
 
 async function isRootGradleProject(root: string): Promise<boolean> {
   return (
@@ -334,6 +341,39 @@ function pythonRunCommand(runner: string | null, command: string): string {
     return `hatch run ${command}`;
   }
   return command;
+}
+
+async function rubyDefaultCommands(root: string): Promise<ProjectCommands> {
+  const source = await rubyDependencySource(root);
+  const hasBundle = await pathExists(join(root, "Gemfile"));
+  const hasRspec = /\brspec\b/iu.test(source) || (await containsRubySpecFile(root, 5));
+  const hasMinitest = /\bminitest\b/iu.test(source) || (await containsRubyTestFile(root, 5));
+  const hasRubocop =
+    /\brubocop\b/iu.test(source) ||
+    (await pathExists(join(root, ".rubocop.yml"))) ||
+    (await pathExists(join(root, ".rubocop_todo.yml")));
+  const run = hasBundle ? "bundle exec " : "";
+  return {
+    typecheck: null,
+    lint: hasRubocop ? `${run}rubocop` : null,
+    format: null,
+    test: hasRspec ? `${run}rspec` : hasMinitest ? `${run}rake test` : null,
+  };
+}
+
+async function rubyDependencySource(root: string): Promise<string> {
+  const chunks: string[] = [];
+  for (const path of ["Gemfile", "gems.rb"]) {
+    if (await pathExists(join(root, path))) {
+      chunks.push(await readFile(join(root, path), "utf8"));
+    }
+  }
+  for (const entry of await readdir(root).catch(() => [])) {
+    if (entry.endsWith(".gemspec")) {
+      chunks.push(await readFile(join(root, entry), "utf8"));
+    }
+  }
+  return chunks.join("\n");
 }
 
 async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
@@ -713,7 +753,27 @@ async function detectFrameworks(root: string, pkg: PackageJson | null): Promise<
       }
     }
   }
+  for (const name of await detectRubyFrameworks(root)) {
+    if (!frameworks.includes(name)) {
+      frameworks.push(name);
+    }
+  }
+  return uniqueStrings(frameworks);
+}
+
+async function detectRubyFrameworks(root: string): Promise<string[]> {
+  const source = await rubyDependencySource(root);
+  const frameworks: string[] = [];
+  for (const name of ["jekyll", "rails", "sinatra"]) {
+    if (new RegExp(`\\b${name}\\b`, "iu").test(source)) {
+      frameworks.push(name);
+    }
+  }
   return frameworks;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function dependencyNames(pkg: PackageJson | null): Set<string> {
@@ -740,6 +800,10 @@ async function detectLanguages(root: string): Promise<string[]> {
     ["python", "setup.py"],
     ["python", "setup.cfg"],
     ["python", "requirements.txt"],
+    ["ruby", "Gemfile"],
+    ["ruby", "gems.rb"],
+    ["ruby", "Rakefile"],
+    ["ruby", "config.ru"],
   ];
   const languages: string[] = [];
   for (const [language, file] of checks) {
@@ -752,6 +816,9 @@ async function detectLanguages(root: string): Promise<string[]> {
   }
   if (!languages.includes("java") && (await containsReviewableJavaFile(root))) {
     languages.push("java");
+  }
+  if (!languages.includes("ruby") && (await isRubyProject(root))) {
+    languages.push("ruby");
   }
   if (
     !languages.includes("swift") &&
@@ -798,6 +865,19 @@ async function isPythonProject(root: string): Promise<boolean> {
     (await pathExists(join(root, "requirements.txt"))) ||
     (await containsReviewablePythonFile(root))
   );
+}
+
+async function isRubyProject(root: string): Promise<boolean> {
+  if (
+    (await pathExists(join(root, "Gemfile"))) ||
+    (await pathExists(join(root, "gems.rb"))) ||
+    (await pathExists(join(root, "Rakefile"))) ||
+    (await pathExists(join(root, "config.ru"))) ||
+    (await containsFileWithExtension(root, ".gemspec", 1))
+  ) {
+    return true;
+  }
+  return containsReviewableRubyFile(root);
 }
 
 async function containsReviewablePythonFile(root: string): Promise<boolean> {
@@ -887,6 +967,23 @@ async function collectPythonFrameworkScanFiles(
   }
 }
 
+async function containsReviewableRubyFile(root: string): Promise<boolean> {
+  for (const prefix of ["app", "lib", "scripts", "exe", "bin"]) {
+    if (await containsFileWithExtension(join(root, prefix), ".rb", 4)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function containsRubySpecFile(root: string, maxDepth: number): Promise<boolean> {
+  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith("_spec.rb"));
+}
+
+async function containsRubyTestFile(root: string, maxDepth: number): Promise<boolean> {
+  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith("_test.rb"));
+}
+
 async function containsFileNamed(root: string, name: string, maxDepth: number): Promise<boolean> {
   return containsFileMatching(root, maxDepth, (entry) => entry === name);
 }
@@ -947,6 +1044,8 @@ function shouldSkipSearchEntry(entry: string): boolean {
     ".mypy_cache",
     ".ruff_cache",
     ".pytest_cache",
+    ".bundle",
+    "vendor",
     "fixtures",
     "__fixtures__",
     "testdata",

@@ -7,6 +7,7 @@ import { gradleSeeds } from "./mappers/gradle.js";
 import { nextSeeds } from "./mappers/next.js";
 import { nodeSeeds } from "./mappers/node.js";
 import { pythonSeeds } from "./mappers/python.js";
+import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
 import { nearbyTests } from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
@@ -25,6 +26,7 @@ const featureMappers: FeatureMapper[] = [
   { name: "next", map: nextSeeds },
   { name: "go", map: goSeeds },
   { name: "python", map: pythonSeeds },
+  { name: "ruby", map: rubySeeds },
   { name: "rust", map: rustSeeds },
   { name: "swift", map: swiftSeeds },
   { name: "apple", map: appleSeeds },

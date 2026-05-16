@@ -181,6 +181,202 @@ describe("mapFeatures", () => {
     expect(cli?.summary).toContain("source src/cli.ts");
   });
 
+  it("maps Ruby metadata, executables, source groups, and tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(
+      root,
+      "fixture.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'fixture-ruby'\n  spec.add_dependency 'redis'\nend\n",
+    );
+    await writeFixture(root, "Rakefile", "task :default\n");
+    await writeFixture(root, "exe/fixture", "#!/usr/bin/env ruby\nputs 'ok'\n");
+    await writeFixture(root, "script/helper.rb", "#!/usr/bin/env ruby\nputs 'helper'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(
+      root,
+      "lib/fixture/client.rb",
+      "module Fixture\n  class Client\n  end\nend\n",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await writeFixture(
+        root,
+        `lib/fixture/type/type${String(index).padStart(2, "0")}.rb`,
+        "module Fixture\nend\n",
+      );
+    }
+    await writeFixture(root, "spec/fixture/client_spec.rb", "RSpec.describe Fixture::Client\n");
+    await writeFixture(root, "vendor/bundle/ignored.rb", "module Ignored\nend\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === "Ruby project fixture-ruby",
+    );
+    const cli = result.features.find((feature) => feature.title === "Ruby CLI command fixture");
+    const source = result.features.find((feature) => feature.title === "Ruby source lib/fixture");
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+    expect(titles).toContain("Ruby project fixture-ruby");
+    expect(titles).toContain("Ruby CLI command fixture");
+    expect(titles).toContain("Ruby CLI command helper.rb");
+    expect(titles).toContain("Ruby Rake tasks");
+    expect(titles).toContain("Ruby source lib");
+    expect(titles).toContain("Ruby source lib/fixture");
+    expect(titles).toContain("Ruby source lib/fixture/type");
+    expect(titles).toContain("Ruby test suite spec");
+    expect(rubyProject?.ownedFiles).toContainEqual({
+      path: "fixture.gemspec",
+      reason: "ruby project metadata",
+    });
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(cli?.entrypoints[0]?.path).toBe("exe/fixture");
+    expect(source?.ownedFiles.map((ref) => ref.path)).toContain("lib/fixture/client.rb");
+    expect(source?.tests).toEqual([
+      { path: "spec/fixture/client_spec.rb", command: "bundle exec rspec" },
+    ]);
+    expect(
+      result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path)),
+    ).not.toContain("vendor/bundle/ignored.rb");
+  });
+
+  it("maps Gemfile-only Jekyll sites without mistaking dependencies for project names", async () => {
+    const root = await fixtureRoot("clawpatch-map-jekyll-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'jekyll'\ngem 'jekyll-feed'\ngem 'hive-ruby'\n",
+    );
+    await writeFixture(root, "_config.yml", "title: Docs\n");
+    await writeFixture(root, "index.md", "---\nlayout: home\n---\n");
+    await writeFixture(root, "_layouts/default.html", "{{ content }}\n");
+    await writeFixture(root, "_includes/header.html", "<header></header>\n");
+    await writeFixture(root, "_sass/site.scss", "body { color: black; }\n");
+    await writeFixture(root, "assets/main.scss", "---\n---\n@import 'site';\n");
+    await writeFixture(root, "_posts/2021-01-01-one.md", "---\ntitle: One\n---\n");
+    await writeFixture(root, "_posts/2022-01-01-two.md", "---\ntitle: Two\n---\n");
+    await writeFixture(root, "_topics/ruby.md", "---\ntitle: Ruby\n---\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const siteConfig = result.features.find(
+      (feature) => feature.title === "Jekyll site configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("jekyll");
+    expect(titles).toContain(`Ruby project ${root.split("/").at(-1)}`);
+    expect(titles).not.toContain("Ruby project jekyll");
+    expect(titles).toContain("Jekyll site configuration");
+    expect(titles).toContain("Jekyll theme _layouts");
+    expect(titles).toContain("Jekyll theme _includes");
+    expect(titles).toContain("Jekyll theme _sass");
+    expect(titles).toContain("Jekyll content _posts/2021");
+    expect(titles).toContain("Jekyll content _posts/2022");
+    expect(titles).toContain("Jekyll content _topics");
+    expect(rubyProject?.entrypoints[0]?.symbol).toBeNull();
+    expect(siteConfig?.ownedFiles.map((ref) => ref.path)).toContain("index.md");
+  });
+
+  it("maps Rails app structure and skips common Rails binstubs", async () => {
+    const root = await fixtureRoot("clawpatch-map-rails-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "rails-webpacker-shell", dependencies: { "@rails/ujs": "1.0.0" } }),
+    );
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\ngem 'rails'\ngem 'pg'\n");
+    await writeFixture(root, "config/application.rb", "module FixtureRails\nend\n");
+    await writeFixture(root, "config/routes.rb", "Rails.application.routes.draw do\nend\n");
+    await writeFixture(root, "config/secrets.yml", "redacted: placeholder\n");
+    await writeFixture(
+      root,
+      "config/environments/test.rb",
+      "Rails.application.configure do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "config/initializers/filter.rb",
+      "Rails.application.config.filter_parameters += [:password]\n",
+    );
+    await writeFixture(root, "db/schema.rb", "ActiveRecord::Schema.define do\nend\n");
+    await writeFixture(
+      root,
+      "db/migrate/20200101000000_create_widgets.rb",
+      "class CreateWidgets < ActiveRecord::Migration[6.1]\nend\n",
+    );
+    await writeFixture(
+      root,
+      "bin/rails",
+      "#!/usr/bin/env ruby\nAPP_PATH = '../config/application'\n",
+    );
+    await writeFixture(
+      root,
+      "app/controllers/widgets_controller.rb",
+      "class WidgetsController < ApplicationController\nend\n",
+    );
+    await writeFixture(root, "app/models/widget.rb", "class Widget < ApplicationRecord\nend\n");
+    await writeFixture(root, "app/views/widgets/index.html.haml", "%h1 Widgets\n");
+    await writeFixture(root, "app/views/widgets/index.json.jbuilder", "json.widgets []\n");
+    await writeFixture(root, "app/assets/javascripts/widgets.coffee", "console.log 'widgets'\n");
+    await writeFixture(root, "app/assets/stylesheets/widgets.scss", ".widgets { color: black; }\n");
+    await writeFixture(root, "src/client.ts", "export function client() {}\n");
+    await writeFixture(root, "lib/client.ts", "export function libClient() {}\n");
+    await writeFixture(root, "pages/home.tsx", "export function Home() { return null; }\n");
+    await writeFixture(
+      root,
+      "test/controllers/widgets_controller_test.rb",
+      "class WidgetsControllerTest\nend\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const referencedFiles = result.features.flatMap((feature) => [
+      ...feature.ownedFiles.map((ref) => ref.path),
+      ...feature.contextFiles.map((ref) => ref.path),
+    ]);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const railsConfig = result.features.find(
+      (feature) => feature.title === "Rails application configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("rails");
+    expect(titles).not.toContain("Ruby CLI command rails");
+    expect(titles).not.toContain("Node source app");
+    expect(titles).not.toContain("Node source app/assets");
+    expect(titles).toContain("Node source src");
+    expect(titles).toContain("Node source lib");
+    expect(titles).toContain("Node source pages");
+    expect(titles).toContain("Rails application configuration");
+    expect(titles).toContain("Rails database schema and migrations");
+    expect(titles).toContain("Rails views app/views");
+    expect(titles).toContain("Rails assets app/assets");
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).toContain("config/routes.rb");
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain("config/secrets.yml");
+    expect(referencedFiles).not.toContain("config/secrets.yml");
+  });
+
   it("maps workspace packages and splits large Node source groups", async () => {
     const root = await fixtureRoot("clawpatch-node-workspace-map-");
     await writeFixture(

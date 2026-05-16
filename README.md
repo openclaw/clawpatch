@@ -53,6 +53,7 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Java/Kotlin Gradle source groups and root Gradle build/test commands
 - JVM semantic roles from Java code evidence such as annotations, imports,
   interfaces, inheritance, and method signatures
+- Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
 - Python project metadata, console scripts, bounded source groups, pytest suites,

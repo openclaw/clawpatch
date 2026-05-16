@@ -36,6 +36,8 @@ Supported deterministic mappers today:
 - Python project metadata, console scripts, root app files, bounded source groups,
   pytest suites, and Flask/FastAPI routes
 - JVM semantic role groups from Java annotations, imports, inheritance, interfaces, and method signatures
+- Ruby project metadata, executables, source groups, RSpec/Minitest suites,
+  Rails configs, routes, views, assets, and database files
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
@@ -67,6 +69,11 @@ common Python source roots including `web/`, pytest files, Flask `@*.route(...)`
 handlers, and FastAPI `@*.get(...)` / `@*.api_route(...)` handlers. Flask and
 FastAPI route methods are read from list, tuple, or set literals. FastAPI paths
 can be positional strings or literal `path=` keywords.
+
+Ruby mapping covers project metadata, executables, source groups, RSpec and
+Minitest suites, and Rails app structure. Rails legacy `config/secrets.yml` is
+not mapped as reviewable config because it can contain provider-sensitive
+secrets.
 
 Known gaps:
 
