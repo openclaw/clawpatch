@@ -476,8 +476,19 @@ export async function revalidateCommand(
   await writeRun(loaded.paths, run);
   const results: Array<{ finding: string; outcome: FindingRecord["status"]; reasoning: string }> =
     [];
+  emitRevalidateProgress(context, "start", {
+    run: currentRunId,
+    findings: findings.length,
+  });
   try {
-    for (const finding of findings) {
+    for (const [index, finding] of findings.entries()) {
+      const started = Date.now();
+      emitRevalidateProgress(context, "finding-start", {
+        index: index + 1,
+        total: findings.length,
+        finding: finding.findingId,
+        title: finding.title,
+      });
       const prompt = await buildRevalidatePrompt(loaded.root, JSON.stringify(finding, null, 2));
       const output = await provider.revalidate(loaded.root, prompt, config.provider.model);
       const updated = appendFindingHistory(
@@ -503,12 +514,27 @@ export async function revalidateCommand(
         outcome: output.outcome,
         reasoning: output.reasoning,
       });
+      emitRevalidateProgress(context, "finding-done", {
+        index: index + 1,
+        total: findings.length,
+        finding: finding.findingId,
+        outcome: output.outcome,
+        elapsed: `${Math.round((Date.now() - started) / 1000)}s`,
+      });
     }
     await writeRun(loaded.paths, {
       ...run,
       status: "completed",
       finishedAt: nowIso(),
       findingIds: results.map((result) => result.finding),
+    });
+    emitRevalidateProgress(context, "done", {
+      run: currentRunId,
+      revalidated: results.length,
+      fixed: results.filter((result) => result.outcome === "fixed").length,
+      open: results.filter((result) => result.outcome === "open").length,
+      uncertain: results.filter((result) => result.outcome === "uncertain").length,
+      falsePositive: results.filter((result) => result.outcome === "false-positive").length,
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
@@ -518,6 +544,10 @@ export async function revalidateCommand(
       finishedAt: nowIso(),
       findingIds: run.findingIds,
       errors: [{ message, code: error instanceof ClawpatchError ? error.code : null }],
+    });
+    emitRevalidateProgress(context, "failed", {
+      run: currentRunId,
+      error: message,
     });
     throw error;
   }
@@ -903,6 +933,20 @@ function emitReviewProgress(
     .map(([key, value]) => `${key}=${String(value)}`)
     .join(" ");
   process.stderr.write(`clawpatch review ${event}${values.length > 0 ? ` ${values}` : ""}\n`);
+}
+
+function emitRevalidateProgress(
+  context: AppContext,
+  event: string,
+  fields: Record<string, string | number | boolean>,
+): void {
+  if (context.options.quiet) {
+    return;
+  }
+  const values = Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+  process.stderr.write(`clawpatch revalidate ${event}${values.length > 0 ? ` ${values}` : ""}\n`);
 }
 
 function lockFeature(feature: FeatureRecord, currentRunId: string): FeatureRecord {

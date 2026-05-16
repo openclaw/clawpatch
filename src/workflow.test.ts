@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { access, mkdir, readFile, rm, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -275,7 +275,13 @@ describe("workflow", () => {
       await writeFinding(paths, { ...finding, reasoning: markers[index] ?? "" });
     }
 
+    let progress = "";
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      progress += String(chunk);
+      return true;
+    });
     const result = await revalidateCommand(context, { all: true, status: "open", limit: "4" });
+    stderr.mockRestore();
     const updated = await readFindings(paths);
     const features = await readFeatures(paths);
 
@@ -293,6 +299,10 @@ describe("workflow", () => {
       "uncertain",
     ]);
     expect(updated.every((finding) => finding.history.at(-1)?.kind === "revalidate")).toBe(true);
+    expect(progress).toContain("clawpatch revalidate start");
+    expect(progress).toContain("clawpatch revalidate finding-start");
+    expect(progress).toContain("clawpatch revalidate finding-done");
+    expect(progress).toContain("clawpatch revalidate done");
     const uncertain = updated.find((finding) => finding.status === "uncertain");
     const uncertainFeature = features.find((feature) => feature.featureId === uncertain?.featureId);
     expect(uncertainFeature?.status).toBe("needs-fix");
