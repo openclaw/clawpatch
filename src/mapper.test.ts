@@ -1045,6 +1045,83 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
   });
 
+  it("maps FastAPI app and router routes with include prefixes", async () => {
+    const root = await fixtureRoot("clawpatch-fastapi-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "fastapi-app"\ndependencies = ["fastapi", "pytest"]\n',
+    );
+    await writeFixture(root, "backend/__init__.py", "");
+    await writeFixture(
+      root,
+      "backend/main.py",
+      [
+        "from fastapi import FastAPI",
+        "from backend.routes.auth_routes import router as auth_router",
+        "from backend.routes.router import api_router",
+        "app = FastAPI()",
+        'app.include_router(auth_router, prefix="/api/v1/auth")',
+        'app.include_router(api_router, prefix="/api/v1")',
+        '@app.get("/health")',
+        "def health():",
+        "    return {'ok': True}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "backend/routes/router.py",
+      [
+        "from fastapi import APIRouter",
+        "from backend.routes import (",
+        "    case_routes,",
+        ")",
+        "api_router = APIRouter()",
+        'api_router.include_router(case_routes.router, prefix="/cases")',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "backend/routes/auth_routes.py",
+      [
+        "from fastapi import APIRouter",
+        "router = APIRouter()",
+        '@router.post("/login")',
+        "def login():",
+        "    return {'token': 'x'}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "backend/routes/case_routes.py",
+      [
+        "from fastapi import APIRouter",
+        "router = APIRouter()",
+        '@router.get("/{case_id}")',
+        "async def get_case(case_id: str):",
+        "    return {'id': case_id}",
+      ].join("\n"),
+    );
+    await writeFixture(root, "tests/test_case_routes.py", "def test_get_case():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const caseRoute = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /api/v1/cases/{case_id}",
+    );
+
+    expect(titles).toContain("FastAPI route GET /health");
+    expect(titles).toContain("FastAPI route POST /api/v1/auth/login");
+    expect(caseRoute?.source).toBe("fastapi-route");
+    expect(caseRoute?.entrypoints[0]).toMatchObject({
+      path: "backend/routes/case_routes.py",
+      symbol: "get_case",
+      route: "GET /api/v1/cases/{case_id}",
+    });
+    expect(caseRoute?.tests).toEqual([{ path: "tests/test_case_routes.py", command: "pytest" }]);
+  });
+
   it("resolves Python console scripts and tests from non-src package roots", async () => {
     const root = await fixtureRoot("clawpatch-python-roots-");
     await writeFixture(

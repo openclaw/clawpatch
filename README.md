@@ -53,6 +53,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - React Router routes and React components
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
+- Python project metadata, console scripts, bounded source groups, pytest suites,
+  and FastAPI routes
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
 - SwiftPM `Sources/*` targets and `Tests/*` suites

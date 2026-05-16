@@ -22,6 +22,13 @@ type SourceGroup = {
   files: string[];
 };
 
+type FastApiRoute = {
+  method: string;
+  path: string;
+  functionName: string;
+  file: string;
+};
+
 type PyprojectInfo = {
   name: string | null;
   scripts: PythonScript[];
@@ -37,6 +44,7 @@ const projectMetadataFiles = [
 ] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
+const fastApiMethods = ["get", "post", "put", "patch", "delete", "options", "head"] as const;
 
 export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   if (!(await isPythonProject(root))) {
@@ -99,6 +107,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
+  for (const route of await fastApiRouteSeeds(root, testFiles, testCommand)) {
+    seeds.push(route);
+  }
+
   for (const group of await pythonSourceGroups(root)) {
     const tests = associatedTests(group.files, testFiles, testCommand);
     seeds.push({
@@ -129,6 +141,232 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   }
 
   return seeds;
+}
+
+async function fastApiRouteSeeds(
+  root: string,
+  testFiles: string[],
+  testCommand: string | null,
+): Promise<FeatureSeed[]> {
+  const files = await pythonSourceFiles(root);
+  const sources = new Map<string, string>();
+  for (const file of files) {
+    sources.set(file, await readFile(join(root, file), "utf8"));
+  }
+  const prefixes = routePrefixes(root, sources);
+  const seeds: FeatureSeed[] = [];
+  for (const [file, source] of sources) {
+    for (const route of fastApiRoutesInFile(file, source, prefixes.get(file) ?? "")) {
+      const tests = associatedTests([route.file], testFiles, testCommand);
+      seeds.push({
+        title: `FastAPI route ${route.method.toUpperCase()} ${route.path}`,
+        summary: `FastAPI ${route.method.toUpperCase()} route '${route.path}' handled by ${route.functionName}.`,
+        kind: "route",
+        source: "fastapi-route",
+        confidence: "high",
+        entryPath: route.file,
+        symbol: route.functionName,
+        route: `${route.method.toUpperCase()} ${route.path}`,
+        command: null,
+        ownedFiles: [{ path: route.file, reason: "route handler" }],
+        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        tests,
+        tags: ["python", "fastapi", "route"],
+        trustBoundaries: ["user-input", "network", "serialization", "auth"],
+        testCommand,
+        skipNearbyTests: true,
+      });
+    }
+  }
+  return seeds;
+}
+
+async function pythonSourceFiles(root: string): Promise<string[]> {
+  const files = [];
+  for (const sourceRoot of await pythonSourceRoots(root)) {
+    files.push(...(await walk(root, [sourceRoot])).filter(isReviewablePythonSourceFile));
+  }
+  return uniquePaths(files);
+}
+
+function fastApiRoutesInFile(file: string, source: string, prefix: string): FastApiRoute[] {
+  const routes: FastApiRoute[] = [];
+  const lines = source.split("\n");
+  for (let index = 0; index < lines.length; index += 1) {
+    const decorator = fastApiDecorator(lines[index] ?? "");
+    if (decorator === null) {
+      continue;
+    }
+    const functionName = nextFunctionName(lines, index + 1);
+    if (functionName === null) {
+      continue;
+    }
+    routes.push({
+      method: decorator.method,
+      path: joinRoutePaths(prefix, decorator.path),
+      functionName,
+      file,
+    });
+  }
+  return routes;
+}
+
+function fastApiDecorator(line: string): { method: string; path: string } | null {
+  const methods = fastApiMethods.join("|");
+  const match = new RegExp(
+    `^\\s*@(?:app|router|api_router)\\.(${methods})\\(\\s*(["'])([^"']*)\\2`,
+    "u",
+  ).exec(line);
+  if (match?.[1] === undefined || match[3] === undefined) {
+    return null;
+  }
+  return { method: match[1], path: match[3] };
+}
+
+function nextFunctionName(lines: string[], start: number): string | null {
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (/^\s*@/u.test(line)) {
+      continue;
+    }
+    const match = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line);
+    return match?.[1] ?? null;
+  }
+  return null;
+}
+
+function routePrefixes(root: string, sources: Map<string, string>): Map<string, string> {
+  const exportedRouterPrefixes = new Map<string, string>();
+  const directRouterPrefixes = new Map<string, string>();
+  for (const [file, source] of sources) {
+    const aliases = pythonImportAliases(file, source);
+    for (const include of includeRouterCalls(source)) {
+      const parentPrefix =
+        include.receiver === "app" ? "" : (exportedRouterPrefixes.get(include.receiver) ?? "");
+      const fullPrefix = joinRoutePaths(parentPrefix, include.prefix);
+      if (!include.target.includes(".")) {
+        exportedRouterPrefixes.set(include.target, fullPrefix);
+      }
+      const moduleFile = aliases.get(include.target.split(".")[0] ?? "");
+      if (moduleFile !== undefined) {
+        directRouterPrefixes.set(moduleFile, fullPrefix);
+      }
+    }
+  }
+  const prefixes = new Map<string, string>();
+  for (const [file, source] of sources) {
+    const aliases = pythonImportAliases(file, source);
+    for (const include of includeRouterCalls(source)) {
+      const parentPrefix =
+        include.receiver === "app" ? "" : (exportedRouterPrefixes.get(include.receiver) ?? "");
+      const fullPrefix = joinRoutePaths(parentPrefix, include.prefix);
+      const moduleFile = aliases.get(include.target.split(".")[0] ?? "");
+      if (moduleFile !== undefined) {
+        prefixes.set(moduleFile, fullPrefix);
+      }
+    }
+  }
+  for (const [file, prefix] of directRouterPrefixes) {
+    prefixes.set(file, prefix);
+  }
+  for (const file of sources.keys()) {
+    if (!prefixes.has(file) && /(^|\/)routes\/[^/]+\.py$/u.test(file)) {
+      prefixes.set(file, inferredRoutePrefix(file));
+    }
+  }
+  return prefixes;
+}
+
+function includeRouterCalls(
+  source: string,
+): Array<{ receiver: string; target: string; prefix: string }> {
+  const calls: Array<{ receiver: string; target: string; prefix: string }> = [];
+  for (const match of source.matchAll(
+    /([A-Za-z_][A-Za-z0-9_]*)\.include_router\(\s*([A-Za-z_][A-Za-z0-9_]*(?:\.router)?)\s*,[^)]*?\bprefix\s*=\s*(["'])([^"']*)\3/gsu,
+  )) {
+    if (match[1] !== undefined && match[2] !== undefined && match[4] !== undefined) {
+      calls.push({ receiver: match[1], target: match[2], prefix: match[4] });
+    }
+  }
+  return calls;
+}
+
+function pythonImportAliases(file: string, source: string): Map<string, string> {
+  const aliases = new Map<string, string>();
+  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+\(([\s\S]*?)\)/gmu)) {
+    const moduleName = match[1];
+    const imports = match[2];
+    if (moduleName !== undefined && imports !== undefined) {
+      addPythonImportAliases(aliases, file, moduleName, imports);
+    }
+  }
+  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+)$/gmu)) {
+    const moduleName = match[1];
+    const imports = match[2];
+    if (moduleName === undefined || imports === undefined) {
+      continue;
+    }
+    addPythonImportAliases(aliases, file, moduleName, imports);
+  }
+  for (const match of source.matchAll(
+    /^import\s+([A-Za-z0-9_.]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gmu,
+  )) {
+    const moduleName = match[1];
+    const alias = match[2] ?? moduleName?.split(".").at(-1);
+    const moduleFile = moduleName === undefined ? null : moduleToPath(moduleName);
+    if (alias !== undefined && moduleFile !== null) {
+      aliases.set(alias, moduleFile);
+    }
+  }
+  return aliases;
+}
+
+function addPythonImportAliases(
+  aliases: Map<string, string>,
+  currentFile: string,
+  moduleName: string,
+  imports: string,
+): void {
+  for (const imported of imports.replace(/[()]/gu, "").split(",")) {
+    const item = imported.trim();
+    if (item.length === 0) {
+      continue;
+    }
+    const itemMatch = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/u.exec(item);
+    const importedName = itemMatch?.[1];
+    const alias = itemMatch?.[2] ?? importedName;
+    if (importedName === undefined || alias === undefined) {
+      continue;
+    }
+    const importedFile =
+      importedName === "router" || importedName.endsWith("_router")
+        ? moduleToPath(moduleName)
+        : (moduleToPath(`${moduleName}.${importedName}`) ?? moduleToPath(moduleName));
+    aliases.set(alias, importedFile ?? currentFile);
+  }
+}
+
+function moduleToPath(moduleName: string): string | null {
+  if (!moduleName.includes(".")) {
+    return null;
+  }
+  return `${moduleName.replace(/\./gu, "/")}.py`;
+}
+
+function inferredRoutePrefix(file: string): string {
+  const stem = basename(file)
+    .replace(/_routes\.py$/u, "")
+    .replace(/\.py$/u, "");
+  if (stem === "main" || stem === "router" || stem === "__init__") {
+    return "";
+  }
+  const base = file.startsWith("backend/routes/") ? "/api/v1" : "";
+  return joinRoutePaths(base, `/${stem}`);
+}
+
+function joinRoutePaths(prefix: string, path: string): string {
+  const joined = `${prefix.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`.replace(/\/+/gu, "/");
+  return joined === "" ? "/" : joined;
 }
 
 async function isPythonProject(root: string): Promise<boolean> {

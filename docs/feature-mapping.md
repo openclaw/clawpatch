@@ -37,6 +37,8 @@ Supported deterministic mappers today:
 - Go `cmd/*/main.go`
 - Go `internal/*` packages
 - Python project metadata, console scripts, bounded source groups, and pytest suites
+- FastAPI `@app` and `@router` routes, including common `include_router`
+  prefix wiring
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
@@ -64,12 +66,13 @@ and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest
 
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
 `[tool.poetry.scripts]` console scripts, source groups under common Python
-source roots, and pytest files. Framework-specific route mapping for FastAPI,
-Flask, and Django is not implemented yet.
+source roots, pytest files, and FastAPI route decorators. FastAPI prefix
+resolution handles common `app.include_router(...)` and nested
+`api_router.include_router(..., prefix=...)` wiring.
 
 Known gaps:
 
 - no Express/Fastify/Hono route mapper yet
-- no FastAPI/Flask/Django route mapper yet
+- no Flask/Django route mapper yet
 - no import graph expansion beyond nearby tests yet
 - no agent enrichment yet
