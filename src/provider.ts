@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCommand } from "./exec.js";
+import { runCommand, runCommandRaw } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
 import {
   FixPlanOutput,
@@ -23,6 +23,9 @@ export type Provider = {
 export function providerByName(name: string): Provider {
   if (name === "codex") {
     return codexProvider;
+  }
+  if (name === "acpx") {
+    return acpxProvider;
   }
   if (name === "mock") {
     return mockProvider;
@@ -52,6 +55,36 @@ const codexProvider: Provider = {
   },
   async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
     const output = await runCodexJson(root, prompt, model, revalidateJsonSchema);
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+const ACPX_TESTED_VERSIONS = "^0.8.0";
+
+const acpxProvider: Provider = {
+  name: "acpx",
+  async check(root: string): Promise<string> {
+    const result = await runCommand("acpx --version", root);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        "acpx CLI not available. Install: npm install -g acpx@latest",
+        4,
+        "provider-auth",
+      );
+    }
+    const version = result.stdout.trim();
+    return `${version} (tested against ${ACPX_TESTED_VERSIONS})`;
+  },
+  async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
+    const output = await runAcpxJson(root, prompt, model, reviewJsonSchema, "deny");
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
+    const output = await runAcpxJson(root, prompt, model, fixPlanJsonSchema, "approve");
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
+    const output = await runAcpxJson(root, prompt, model, revalidateJsonSchema, "deny");
     return revalidateOutputSchema.parse(output);
   },
 };
@@ -165,6 +198,142 @@ async function runCodexJson(
   return JSON.parse(raw) as unknown;
 }
 
+export function parseAcpxAgent(model: string | null): {
+  agent: string;
+  agentModel: string | null;
+} {
+  if (model === null) {
+    return { agent: "codex", agentModel: null };
+  }
+  const idx = model.lastIndexOf(":");
+  if (idx === -1) {
+    return { agent: model, agentModel: null };
+  }
+  return { agent: model.slice(0, idx), agentModel: model.slice(idx + 1) };
+}
+
+async function runAcpxJson(
+  root: string,
+  prompt: string,
+  model: string | null,
+  schema: object,
+  permission: "deny" | "approve",
+): Promise<unknown> {
+  const { agent, agentModel } = parseAcpxAgent(model);
+  const permFlag = permission === "deny" ? "--deny-all" : "--approve-all";
+  const modelArg = agentModel === null ? "" : ` --model ${shellQuote(agentModel)}`;
+  const command =
+    `acpx --cwd ${shellQuote(root)} ${permFlag} --format json --json-strict` +
+    `${modelArg} ${shellQuote(agent)} exec --file -`;
+  const result = await runCommandRaw(command, root, buildAcpxPrompt(prompt, schema));
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      `acpx provider failed: ${result.stderr || result.stdout}`,
+      acpxExitCode(result.stderr),
+      "provider-failure",
+    );
+  }
+  return extractAcpxJson(result.stdout);
+}
+
+function buildAcpxPrompt(prompt: string, schema: object): string {
+  return (
+    `${prompt}\n\n` +
+    "Return ONLY a JSON object matching this schema. No prose preamble, no markdown fences, " +
+    "no thinking-out-loud text before the JSON. " +
+    `Schema:\n${JSON.stringify(schema)}\n`
+  );
+}
+
+export function extractAcpxJson(stdout: string): unknown {
+  const candidates: string[] = [];
+  const chunkBuf: string[] = [];
+  const observedKinds = new Set<string>();
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let env: {
+      method?: string;
+      params?: {
+        update?: {
+          sessionUpdate?: string;
+          content?: { type?: string; text?: string };
+          output?: unknown;
+        };
+      };
+    };
+    try {
+      env = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (env.method !== "session/update") {
+      continue;
+    }
+    const update = env.params?.update;
+    if (update?.sessionUpdate === undefined) {
+      continue;
+    }
+    observedKinds.add(update.sessionUpdate);
+    if (
+      (update.sessionUpdate === "agent_message_chunk" ||
+        update.sessionUpdate === "agent_thought_chunk") &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string"
+    ) {
+      chunkBuf.push(update.content.text);
+    } else if (update.sessionUpdate === "tool_call_result" && typeof update.output === "string") {
+      candidates.push(update.output);
+    }
+  }
+  if (chunkBuf.length > 0) {
+    candidates.push(chunkBuf.join(""));
+  }
+  if (candidates.length === 0) {
+    throw new ClawpatchError(
+      `acpx provider produced no extractable text. Observed envelope kinds: ` +
+        `[${[...observedKinds].join(", ")}]. ` +
+        `acpx envelope shape may have changed since clawpatch was tested ` +
+        `against ${ACPX_TESTED_VERSIONS}. Check the installed acpx version.`,
+      8,
+      "malformed-output",
+    );
+  }
+
+  let lastErr: unknown;
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    let text = candidates[i]!.trim();
+    if (text.startsWith("```")) {
+      const firstNl = text.indexOf("\n");
+      if (firstNl > 0) {
+        text = text.slice(firstNl + 1);
+      }
+      if (text.endsWith("```")) {
+        text = text.slice(0, text.length - 3).trim();
+      }
+    }
+    const firstBrace = text.indexOf("{");
+    if (firstBrace > 0) {
+      text = text.slice(firstBrace);
+    }
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new ClawpatchError(
+    `acpx provider produced unparseable JSON: ${(lastErr as Error).message}. ` +
+      `Observed envelope kinds: [${[...observedKinds].join(", ")}]. ` +
+      `acpx envelope shape may have changed since clawpatch was tested ` +
+      `against ${ACPX_TESTED_VERSIONS}. Check the installed acpx version.`,
+    8,
+    "malformed-output",
+  );
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/gu, "'\\''")}'`;
 }
@@ -178,6 +347,22 @@ function providerExitCode(stderr: string): number {
   }
   return 1;
 }
+
+function acpxExitCode(stderr: string): number {
+  if (/auth|login|api key|not authenticated/iu.test(stderr)) {
+    return 4;
+  }
+  if (/quota|rate.?limit/iu.test(stderr)) {
+    return 5;
+  }
+  if (/acpx: command not found|spawn acpx ENOENT/iu.test(stderr)) {
+    return 4;
+  }
+  return 1;
+}
+
+// eslint-disable-next-line no-underscore-dangle
+export const __testing = { extractAcpxJson, parseAcpxAgent };
 
 const reviewJsonSchema = {
   type: "object",

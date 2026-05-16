@@ -73,10 +73,9 @@ working tree during the explicit fix command.
 Supported provider names today:
 
 - `codex`: local Codex CLI
+- `acpx`: any ACP-compatible coding agent (Codex / Claude / Pi / Gemini / ...) via openclaw/acpx
 - `mock`: deterministic test provider
 - `mock-fail`: failure test provider
-
-Direct OpenAI, Claude, Gemini, and provider panels are not implemented yet.
 
 ## Commands
 

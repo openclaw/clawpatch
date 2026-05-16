@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+### Added
+
+- `acpx` provider for routing review / fix / revalidate through any ACP-compatible coding agent via openclaw/acpx. Defaults to codex as the underlying agent; pick a different one with `model: claude`, `model: pi`, `model: claude:sonnet-4-5`, etc.
+- `runCommandRaw` exec helper that preserves full stdout for stream-protocol consumers. The existing `runCommand` continues to truncate stdout > 8KB.
 - Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.
 - Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults, thanks @xiamx.
 - Added progress output for `clawpatch revalidate`, thanks @twidtwid.
-- Improved Node/TypeScript mapping for large workspaces by splitting package source trees into bounded review groups with package-local tests.
 - Added generic nested SwiftPM, Apple/Xcode, and Gradle/Android app mapping.
+
+### Changed
+
+- Improved Node/TypeScript mapping for large workspaces by splitting package source trees into bounded review groups with package-local tests.
 
 ## 0.1.0 - 2026-05-15
 
