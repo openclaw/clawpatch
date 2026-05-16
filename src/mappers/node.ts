@@ -43,15 +43,33 @@ const sourceGroupMaxTests = 8;
 export async function nodeSeeds(root: string): Promise<FeatureSeed[]> {
   const rootPackage = await readPackageJson(root);
   const packages = await discoverPackages(root, rootPackage);
-  const packageManager = await detectNodePackageManager(root);
+  const rootPackageManager = await detectNodePackageManager(root);
   const seeds: FeatureSeed[] = [];
 
   for (const info of packages) {
+    const packageManager = await nodePackageManagerForPackage(root, info.root, rootPackageManager);
     seeds.push(...(await packageSeeds(root, info, packageManager, info.root === ".")));
     seeds.push(...(await sourceGroupSeeds(root, info, packageManager)));
   }
 
   return seeds;
+}
+
+async function nodePackageManagerForPackage(
+  root: string,
+  packageRoot: string,
+  rootPackageManager: string,
+): Promise<string> {
+  if (packageRoot === ".") {
+    return rootPackageManager;
+  }
+  const packageDir = join(root, packageRoot);
+  for (const lockfile of ["pnpm-lock.yaml", "yarn.lock", "bun.lockb", "package-lock.json"]) {
+    if (await pathExists(join(packageDir, lockfile))) {
+      return detectNodePackageManager(packageDir);
+    }
+  }
+  return rootPackageManager;
 }
 
 async function packageSeeds(

@@ -392,6 +392,16 @@ function routePrefixes(sources: Map<string, string>): FastApiPrefixInfo {
             const targetRouter = importedRouterName(include.target, aliases);
             if (moduleMounts !== undefined && targetRouter !== undefined) {
               changed = addMapValue(moduleMounts, targetRouter, fullPrefix) || changed;
+              const moduleAliases = aliasesByFile.get(moduleFile) ?? emptyPythonImportAliases();
+              const exportedFile = moduleFileForRouterTarget(targetRouter, moduleAliases);
+              if (exportedFile !== undefined && exportedFile !== moduleFile) {
+                changed = addMapValue(prefixes, exportedFile, fullPrefix) || changed;
+                const exportedRouter = importedRouterName(targetRouter, moduleAliases);
+                const exportedMounts = routerMountPrefixesByFile.get(exportedFile);
+                if (exportedRouter !== undefined && exportedMounts !== undefined) {
+                  changed = addMapValue(exportedMounts, exportedRouter, fullPrefix) || changed;
+                }
+              }
             }
           }
         }
