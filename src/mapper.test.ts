@@ -423,6 +423,7 @@ describe("mapFeatures", () => {
       "frontend/src/pages/CasesPage.test.tsx",
       "test('cases page', () => {});\n",
     );
+    await writeFixture(root, "frontend/src/shared/util.test.tsx", "test('util', () => {});\n");
     await writeFixture(
       root,
       "frontend/src/pages/SettingsPage.tsx",
@@ -1169,6 +1170,57 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const result = await mapFeatures(root, project, []);
 
     expect(result.features.map((feature) => feature.title)).toContain("FastAPI route GET /health");
+  });
+
+  it("maps FastAPI include prefixes in src layouts and relative imports", async () => {
+    const root = await fixtureRoot("clawpatch-fastapi-src-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "fastapi-src"\ndependencies = ["fastapi"]\n',
+    );
+    await writeFixture(root, "src/myapp/__init__.py", "");
+    await writeFixture(
+      root,
+      "src/myapp/main.py",
+      [
+        "from fastapi import FastAPI",
+        "from myapp.routes.auth import router as auth_router",
+        "from .routes.health import router as health_router",
+        "app = FastAPI()",
+        'app.include_router(auth_router, prefix="/api")',
+        "app.include_router(health_router)",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/myapp/routes/auth.py",
+      [
+        "from fastapi import APIRouter",
+        "router = APIRouter()",
+        '@router.get("/login")',
+        "def login():",
+        "    return {'ok': True}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/myapp/routes/health.py",
+      [
+        "from fastapi import APIRouter",
+        "router = APIRouter()",
+        '@router.get("/ready")',
+        "def ready():",
+        "    return {'ok': True}",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("FastAPI route GET /api/login");
+    expect(titles).toContain("FastAPI route GET /ready");
   });
 
   it("resolves Python console scripts and tests from non-src package roots", async () => {

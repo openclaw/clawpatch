@@ -75,7 +75,7 @@ async function routeSeeds(root: string, info: ReactPackage): Promise<FeatureSeed
         continue;
       }
       const entryPath = imports.get(route.component) ?? route.declarationPath;
-      const routeTests = associatedTests([entryPath, route.declarationPath], tests, testCommand);
+      const routeTests = associatedTests([entryPath], tests, testCommand);
       seeds.push({
         title: `React route ${route.path}`,
         summary: `React Router route '${route.path}' rendered by ${route.component}.`,

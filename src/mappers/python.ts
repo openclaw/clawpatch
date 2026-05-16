@@ -261,8 +261,9 @@ function routePrefixes(root: string, sources: Map<string, string>): Map<string, 
     }
   }
   const prefixes = new Map<string, string>();
+  const sourceFiles = new Set(sources.keys());
   for (const [file, source] of sources) {
-    const aliases = pythonImportAliases(file, source);
+    const aliases = pythonImportAliases(file, source, sourceFiles);
     for (const include of includeRouterCalls(source)) {
       const parentPrefix =
         include.receiver === "app" ? "" : (exportedRouterPrefixes.get(include.receiver) ?? "");
@@ -299,13 +300,17 @@ function includeRouterCalls(
   return calls;
 }
 
-function pythonImportAliases(file: string, source: string): Map<string, string> {
+function pythonImportAliases(
+  file: string,
+  source: string,
+  sourceFiles: ReadonlySet<string>,
+): Map<string, string> {
   const aliases = new Map<string, string>();
   for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+\(([\s\S]*?)\)/gmu)) {
     const moduleName = match[1];
     const imports = match[2];
     if (moduleName !== undefined && imports !== undefined) {
-      addPythonImportAliases(aliases, file, moduleName, imports);
+      addPythonImportAliases(aliases, file, moduleName, imports, sourceFiles);
     }
   }
   for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+)$/gmu)) {
@@ -314,14 +319,15 @@ function pythonImportAliases(file: string, source: string): Map<string, string> 
     if (moduleName === undefined || imports === undefined) {
       continue;
     }
-    addPythonImportAliases(aliases, file, moduleName, imports);
+    addPythonImportAliases(aliases, file, moduleName, imports, sourceFiles);
   }
   for (const match of source.matchAll(
     /^import\s+([A-Za-z0-9_.]+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gmu,
   )) {
     const moduleName = match[1];
     const alias = match[2] ?? moduleName?.split(".").at(-1);
-    const moduleFile = moduleName === undefined ? null : moduleToPath(moduleName);
+    const moduleFile =
+      moduleName === undefined ? null : resolvePythonModuleFile(file, moduleName, sourceFiles);
     if (alias !== undefined && moduleFile !== null) {
       aliases.set(alias, moduleFile);
     }
@@ -334,6 +340,7 @@ function addPythonImportAliases(
   currentFile: string,
   moduleName: string,
   imports: string,
+  sourceFiles: ReadonlySet<string>,
 ): void {
   for (const imported of imports.replace(/[()]/gu, "").split(",")) {
     const item = imported.trim();
@@ -348,17 +355,57 @@ function addPythonImportAliases(
     }
     const importedFile =
       importedName === "router" || importedName.endsWith("_router")
-        ? moduleToPath(moduleName)
-        : (moduleToPath(`${moduleName}.${importedName}`) ?? moduleToPath(moduleName));
+        ? resolvePythonModuleFile(currentFile, moduleName, sourceFiles)
+        : (resolvePythonModuleFile(currentFile, `${moduleName}.${importedName}`, sourceFiles) ??
+          resolvePythonModuleFile(currentFile, moduleName, sourceFiles));
     aliases.set(alias, importedFile ?? currentFile);
   }
 }
 
-function moduleToPath(moduleName: string): string | null {
-  if (!moduleName.includes(".")) {
+function resolvePythonModuleFile(
+  currentFile: string,
+  moduleName: string,
+  sourceFiles: ReadonlySet<string>,
+): string | null {
+  const candidates = modulePathCandidates(currentFile, moduleName);
+  for (const candidate of candidates) {
+    if (sourceFiles.has(candidate)) {
+      return candidate;
+    }
+  }
+  for (const candidate of candidates) {
+    const suffix = `/${candidate}`;
+    const match = [...sourceFiles].find((file) => file.endsWith(suffix));
+    if (match !== undefined) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function modulePathCandidates(currentFile: string, moduleName: string): string[] {
+  const modulePath = moduleName.startsWith(".")
+    ? relativePythonModulePath(currentFile, moduleName)
+    : moduleName.replace(/\./gu, "/");
+  if (modulePath === null || modulePath.length === 0) {
+    return [];
+  }
+  return [`${modulePath}.py`, `${modulePath}/__init__.py`];
+}
+
+function relativePythonModulePath(currentFile: string, moduleName: string): string | null {
+  const prefix = /^(\.+)(.*)$/u.exec(moduleName);
+  const dots = prefix?.[1];
+  const rest = prefix?.[2];
+  if (dots === undefined || rest === undefined) {
     return null;
   }
-  return `${moduleName.replace(/\./gu, "/")}.py`;
+  let base = dirname(currentFile);
+  for (let depth = 1; depth < dots.length; depth += 1) {
+    base = dirname(base);
+  }
+  const suffix = rest.replace(/^\./u, "").replace(/\./gu, "/");
+  return suffix.length === 0 ? base : `${base}/${suffix}`;
 }
 
 function inferredRoutePrefix(file: string): string {
