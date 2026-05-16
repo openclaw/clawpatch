@@ -3292,6 +3292,25 @@ add_executable(headerapp include/headers.hpp)
     });
   });
 
+  it("keeps CMake binaries with helper source names that look test-like", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-test-like-helper-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c src/test_mode.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/test_mode.c", "int helper(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("CMake test suite app");
+    expect(app?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/test_mode.c", reason: "target source" },
+    ]);
+  });
+
   it("maps semicolon-separated CMake source lists", async () => {
     const root = await fixtureRoot("clawpatch-cmake-semicolon-sources-");
     await writeFixture(
