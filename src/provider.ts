@@ -166,6 +166,9 @@ async function runCodexJson(
 }
 
 function shellQuote(value: string): string {
+  if (process.platform === "win32") {
+    return `"${value.replace(/"/gu, '""')}"`;
+  }
   return `'${value.replace(/'/gu, "'\\''")}'`;
 }
 
