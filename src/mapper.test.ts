@@ -1657,6 +1657,30 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("resolves repeated CMake includes relative to each source dir", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-repeated-include-source-dir-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app)\nadd_subdirectory(a)\nadd_subdirectory(b)\n",
+    );
+    await writeFixture(root, "a/CMakeLists.txt", "include(../cmake/Part.cmake)\n");
+    await writeFixture(root, "b/CMakeLists.txt", "include(../cmake/Part.cmake)\n");
+    await writeFixture(root, "cmake/Part.cmake", "target_sources(app PRIVATE local.c)\n");
+    await writeFixture(root, "a/local.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "b/local.c", "int helper(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]?.path).toBe("a/local.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "a/local.c", reason: "target source" },
+      { path: "b/local.c", reason: "target source" },
+    ]);
+  });
+
   it("ignores unreferenced CMake modules", async () => {
     const root = await fixtureRoot("clawpatch-cmake-unreferenced-module-");
     await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
@@ -1950,10 +1974,25 @@ add_executable(headerapp include/headers.hpp)
     expect(paths.some((path) => path.startsWith("cmake-build-debug/"))).toBe(false);
   });
 
-  it("ignores vendored C and C++ files during detection", async () => {
-    const root = await fixtureRoot("clawpatch-cpp-vendor-detect-");
+  it("ignores dependency and generated C and C++ files during detection", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-dependency-detect-");
     await writeFixture(root, "vendor/CMakeLists.txt", "add_executable(vendor main.c)\n");
     await writeFixture(root, "vendor/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(
+      root,
+      "CMakeFiles/CompilerIdCXX/CMakeCXXCompilerId.cpp",
+      "int main(void) { return 0; }\n",
+    );
+    await writeFixture(
+      root,
+      "cmake-build-debug/_deps/foo-src/CMakeLists.txt",
+      "add_executable(foo main.cpp)\n",
+    );
+    await writeFixture(
+      root,
+      "cmake-build-debug/_deps/foo-src/main.cpp",
+      "int main(void) { return 0; }\n",
+    );
 
     const project = await detectProject(root);
 

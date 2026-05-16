@@ -125,15 +125,12 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
 
 async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
-  const { sourceDirs, targetScopes } = await referencedCMakeFiles(root, files);
-  const cmakeFiles = [...sourceDirs.keys()];
-  const extraSources = await cmakeTargetSources(root, cmakeFiles, sourceDirs, targetScopes);
+  const { contexts } = await referencedCMakeFiles(root, files);
+  const extraSources = await cmakeTargetSources(root, contexts);
   const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
   const libPattern = /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
-  for (const cmakeFile of cmakeFiles) {
+  for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
-    const scope = targetScopes.get(cmakeFile) ?? dir;
     for (const match of body.matchAll(exePattern)) {
       const target = match[1] ?? "";
       if (!isValidTargetName(target)) {
@@ -202,28 +199,29 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
 }
 
 type CMakeDiscovery = {
-  sourceDirs: Map<string, string>;
-  targetScopes: Map<string, string>;
+  contexts: CMakeContext[];
+};
+
+type CMakeContext = {
+  file: string;
+  sourceDir: string;
+  targetScope: string;
 };
 
 async function referencedCMakeFiles(root: string, files: string[]): Promise<CMakeDiscovery> {
   const cmakeFileSet = new Set(files.filter(isCMake));
-  const sourceDirs = new Map<string, string>();
-  const targetScopes = new Map<string, string>();
-  const pending: string[] = [];
+  const contexts = new Map<string, CMakeContext>();
+  const pending: CMakeContext[] = [];
   for (const cmakeList of files.filter((file) => file.endsWith("CMakeLists.txt"))) {
     const dir = parentDir(cmakeList);
-    sourceDirs.set(cmakeList, dir);
-    targetScopes.set(cmakeList, dir);
-    pending.push(cmakeList);
+    queueCMakeFile({ file: cmakeList, sourceDir: dir, targetScope: dir }, contexts, pending);
   }
   while (pending.length > 0) {
-    const cmakeFile = pending.shift();
-    if (cmakeFile === undefined) {
+    const context = pending.shift();
+    if (context === undefined) {
       continue;
     }
-    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
-    const scope = targetScopes.get(cmakeFile) ?? dir;
+    const { file: cmakeFile, sourceDir: dir, targetScope: scope } = context;
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const include of cmakeIncludes(body)) {
       const includePath = include.endsWith(".cmake") ? include : `${include}.cmake`;
@@ -232,7 +230,7 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       if (!cmakeFileSet.has(rel)) {
         continue;
       }
-      queueCMakeFile(rel, dir, scope, sourceDirs, targetScopes, pending);
+      queueCMakeFile({ file: rel, sourceDir: dir, targetScope: scope }, contexts, pending);
     }
     for (const child of cmakeSubdirectories(body)) {
       const full = isAbsolute(child) ? child : join(root, prefixDir(dir, child), "CMakeLists.txt");
@@ -240,46 +238,44 @@ async function referencedCMakeFiles(root: string, files: string[]): Promise<CMak
       if (!cmakeFileSet.has(rel)) {
         continue;
       }
-      queueCMakeFile(rel, parentDir(rel), scope, sourceDirs, targetScopes, pending);
+      queueCMakeFile(
+        { file: rel, sourceDir: parentDir(rel), targetScope: scope },
+        contexts,
+        pending,
+      );
     }
   }
   return {
-    sourceDirs: new Map(
-      [...sourceDirs.entries()].toSorted(([left], [right]) => left.localeCompare(right)),
+    contexts: [...contexts.values()].toSorted((left, right) =>
+      cmakeContextKey(left).localeCompare(cmakeContextKey(right)),
     ),
-    targetScopes,
   };
 }
 
 function queueCMakeFile(
-  file: string,
-  sourceDir: string,
-  targetScope: string,
-  sourceDirs: Map<string, string>,
-  targetScopes: Map<string, string>,
-  pending: string[],
+  context: CMakeContext,
+  contexts: Map<string, CMakeContext>,
+  pending: CMakeContext[],
 ): void {
-  const knownSourceDir = sourceDirs.get(file);
-  const knownScope = targetScopes.get(file);
-  sourceDirs.set(file, knownSourceDir ?? sourceDir);
-  if (knownScope !== targetScope) {
-    targetScopes.set(file, targetScope);
-    pending.push(file);
+  const key = cmakeContextKey(context);
+  if (!contexts.has(key)) {
+    contexts.set(key, context);
+    pending.push(context);
   }
+}
+
+function cmakeContextKey(context: CMakeContext): string {
+  return `${context.file}\0${context.sourceDir}\0${context.targetScope}`;
 }
 
 async function cmakeTargetSources(
   root: string,
-  cmakeFiles: string[],
-  sourceDirs: Map<string, string>,
-  targetScopes: Map<string, string>,
+  contexts: CMakeContext[],
 ): Promise<Map<string, string[]>> {
   const sources = new Map<string, string[]>();
   const pattern = /target_sources\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
-  for (const cmakeFile of cmakeFiles) {
+  for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
-    const dir = sourceDirs.get(cmakeFile) ?? parentDir(cmakeFile);
-    const scope = targetScopes.get(cmakeFile) ?? dir;
     for (const match of body.matchAll(pattern)) {
       const target = match[1] ?? "";
       if (!isValidTargetName(target)) {

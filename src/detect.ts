@@ -975,31 +975,34 @@ async function containsFileMatching(
 }
 
 function shouldSkipSearchEntry(entry: string): boolean {
-  return [
-    "node_modules",
-    "dist",
-    "build",
-    "target",
-    ".build",
-    ".swiftpm",
-    ".git",
-    ".clawpatch",
-    ".worktrees",
-    ".venv",
-    "venv",
-    "vendor",
-    "__pycache__",
-    ".mypy_cache",
-    ".ruff_cache",
-    ".pytest_cache",
-    "fixtures",
-    "__fixtures__",
-    "testdata",
-    "Pods",
-    "Carthage",
-    "SourcePackages",
-    "DerivedData",
-  ].includes(entry);
+  return (
+    [
+      "node_modules",
+      "dist",
+      "build",
+      "target",
+      ".build",
+      ".swiftpm",
+      ".git",
+      ".clawpatch",
+      ".worktrees",
+      ".venv",
+      "venv",
+      "vendor",
+      "CMakeFiles",
+      "__pycache__",
+      ".mypy_cache",
+      ".ruff_cache",
+      ".pytest_cache",
+      "fixtures",
+      "__fixtures__",
+      "testdata",
+      "Pods",
+      "Carthage",
+      "SourcePackages",
+      "DerivedData",
+    ].includes(entry) || /^cmake-build-[^/]+$/u.test(entry)
+  );
 }
 
 function stripLineComments(source: string, marker: "//"): string {
