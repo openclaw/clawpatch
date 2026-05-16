@@ -3510,7 +3510,32 @@ add_executable(headerapp include/headers.hpp)
       { path: "src/main.c", reason: "target source" },
       { path: "src/util.c", reason: "target source" },
     ]);
+    expect(app?.contextFiles).toEqual([
+      { path: "CMakeLists.txt", reason: "CMake target declaration" },
+      { path: "src/CMakeLists.txt", reason: "CMake target source declaration" },
+    ]);
     expect(titles).not.toContain("C binary main");
+  });
+
+  it("resolves PROJECT_NAME CMake targets", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-project-name-target-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "project(app C)\nadd_executable(${PROJECT_NAME})\ntarget_sources(${PROJECT_NAME} PRIVATE src/main.c src/util.c)\n",
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]).toMatchObject({ path: "src/main.c", command: "app" });
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+    ]);
   });
 
   it("detects header-only C++ CMake libraries as C++ projects", async () => {
