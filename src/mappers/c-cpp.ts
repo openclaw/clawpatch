@@ -127,8 +127,10 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
   const seeds: FeatureSeed[] = [];
   const { contexts } = await referencedCMakeFiles(root, files);
   const extraSources = await cmakeTargetSources(root, contexts);
-  const exePattern = /add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
-  const libPattern = /add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
+  const exePattern =
+    /(?:^|[^A-Za-z0-9_])add_executable\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
+  const libPattern =
+    /(?:^|[^A-Za-z0-9_])add_library\s*\(\s*([A-Za-z0-9_.+-]+)(?:\s+([^)]*))?\)/gimsu;
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const match of body.matchAll(exePattern)) {
@@ -297,7 +299,7 @@ async function cmakeTargetSources(
   contexts: CMakeContext[],
 ): Promise<Map<string, string[]>> {
   const sources = new Map<string, string[]>();
-  const pattern = /target_sources\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
+  const pattern = /(?:^|[^A-Za-z0-9_])target_sources\s*\(\s*([A-Za-z0-9_.+-]+)\s+([^)]*)\)/gimsu;
   for (const { file: cmakeFile, sourceDir: dir, targetScope: scope } of contexts) {
     const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     for (const match of body.matchAll(pattern)) {
@@ -329,7 +331,7 @@ function isCMakeTestExecutableTarget(target: string, sourcePaths: string[]): boo
 
 function cmakeIncludes(body: string): string[] {
   const includes: string[] = [];
-  for (const match of body.matchAll(/include\s*\(([^)]*)\)/gimsu)) {
+  for (const match of body.matchAll(/(?:^|[^A-Za-z0-9_])include\s*\(([^)]*)\)/gimsu)) {
     const path = splitWords(match[1] ?? "")[0];
     if (path !== undefined && !path.startsWith("$")) {
       includes.push(path);
@@ -340,7 +342,7 @@ function cmakeIncludes(body: string): string[] {
 
 function cmakeSubdirectories(body: string): string[] {
   const directories: string[] = [];
-  for (const match of body.matchAll(/add_subdirectory\s*\(([^)]*)\)/gimsu)) {
+  for (const match of body.matchAll(/(?:^|[^A-Za-z0-9_])add_subdirectory\s*\(([^)]*)\)/gimsu)) {
     const path = splitWords(match[1] ?? "")[0];
     if (path !== undefined && !path.startsWith("$")) {
       directories.push(path);
