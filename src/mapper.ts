@@ -12,6 +12,7 @@ import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
 import { nearbyTests } from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
+import { turboTaskGraph } from "./mappers/turbo.js";
 import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
 import { FeatureRecord, ProjectRecord } from "./types.js";
 
@@ -155,8 +156,10 @@ function uniqueTests(tests: Array<{ path: string; command: string | null }>): Ar
 }
 
 async function collectSeeds(root: string): Promise<FeatureSeed[]> {
+  const projects = await discoverNodeProjects(root);
   const context: MapperContext = {
-    projects: await discoverNodeProjects(root),
+    projects,
+    taskGraph: await turboTaskGraph(root, projects),
   };
   const groups = await Promise.all(featureMappers.map((mapper) => mapper.map(root, context)));
   return dedupeSeeds(groups.flat());

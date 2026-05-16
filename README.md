@@ -51,6 +51,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
   workspace patterns
 - Nx project metadata from `project.json`, including project-scoped validation
   targets
+- Turborepo task metadata for workspace-aware validation commands and feature
+  context
 - Next.js `app/` and `pages/` routes, including routes inside monorepo apps
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context

@@ -9,16 +9,21 @@ import {
 } from "./projects.js";
 import { walk } from "./shared.js";
 import type { NodeProjectInfo } from "./projects.js";
+import type { WorkspaceTaskGraph } from "./task-graph.js";
 import { FeatureSeed, MapperContext } from "./types.js";
 
 export async function nextSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   const seedGroups = await Promise.all(
-    context.projects.map(async (project) => projectNextSeeds(root, project)),
+    context.projects.map(async (project) => projectNextSeeds(root, project, context.taskGraph)),
   );
   return seedGroups.flat();
 }
 
-async function projectNextSeeds(root: string, project: NodeProjectInfo): Promise<FeatureSeed[]> {
+async function projectNextSeeds(
+  root: string,
+  project: NodeProjectInfo,
+  taskGraph: WorkspaceTaskGraph,
+): Promise<FeatureSeed[]> {
   const prefixes = await nextPrefixes(root, project);
   if (prefixes.length === 0) {
     return [];
@@ -32,7 +37,7 @@ async function projectNextSeeds(root: string, project: NodeProjectInfo): Promise
     const kind = nextRouteKind(projectRelativePath);
     return kind === null ? [] : [{ file, projectRelativePath, kind }];
   });
-  const testCommand = projectTargetCommand(project, "test");
+  const testCommand = projectTargetCommand(project, "test", taskGraph);
   const contextFiles = await projectContextFiles(root, project);
 
   return routeFiles.map(({ file, projectRelativePath, kind }) => {

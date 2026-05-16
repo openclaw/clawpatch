@@ -6,6 +6,7 @@ export async function configSeeds(root: string): Promise<FeatureSeed[]> {
   const candidates = [
     "package.json",
     "tsconfig.json",
+    "turbo.json",
     "oxlint.json",
     "vitest.config.ts",
     "go.mod",

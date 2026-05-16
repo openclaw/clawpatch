@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added security ownership, CodeQL, Dependabot, dependency review, and a private disclosure policy for repository automation and package integrity, plus fixed the first CodeQL mapper sanitizer finding.
+- Added Turborepo task metadata mapping for workspace-aware feature validation commands.
 - Added JVM semantic role mapping from Java annotations, imports, inheritance, interfaces, and method signatures.
 - Added Ruby and Rails feature mapping while excluding legacy Rails secrets from reviewable config.
 - Fixed Ruby/Rails project detection so `gems.rb` uses Bundler commands and Rails JavaScript roots avoid duplicate Node feature queues.

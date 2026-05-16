@@ -30,6 +30,7 @@ Supported deterministic mappers today:
 - selected root and workspace package scripts
 - Node/TypeScript workspace packages from `package.json` workspaces, `pnpm-workspace.yaml`, and common package folders
 - Nx project metadata from `project.json`, including project names, source roots, project types, and target names
+- Turborepo `turbo.json` metadata for workspace-aware validation commands and feature context
 - bounded Node/TypeScript source groups under `src/`, `lib/`, `app/`, `pages/`, and `scripts/`
 - Next.js `app/` and `pages/` routes at the repo root or inside discovered monorepo projects
 - Go `cmd/*/main.go`
@@ -72,6 +73,11 @@ clawpatch next --project web
 When an Nx project target is available, nearby tests use the project-scoped
 command, such as `yarn nx test web`, instead of a repository-wide test command.
 
+When Turborepo metadata is available, mapped workspace features use filtered
+Turbo validation commands such as `pnpm turbo run test --filter web`. Clawpatch
+does not execute Turbo during mapping and leaves task dependency expansion to
+Turbo when validation commands run.
+
 Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
@@ -100,5 +106,4 @@ Known gaps:
 - no Express/Fastify/Hono route mapper yet
 - no Django route mapper yet
 - no import graph expansion beyond nearby tests yet
-- no Turborepo task metadata mapper yet
 - no agent enrichment yet

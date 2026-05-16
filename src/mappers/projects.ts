@@ -3,6 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { packageScripts, readPackageJson } from "../detect.js";
 import { pathExists } from "../fs.js";
 import { isSafeDirectory, normalize, pathMatchesPrefix, shouldSkip } from "./shared.js";
+import { taskGraphCommand, type WorkspaceTaskGraph } from "./task-graph.js";
 import type { SeedFileRef } from "./types.js";
 
 export type NodePackageJson = {
@@ -106,7 +107,15 @@ export function projectContextFiles(
   return existingProjectContextFiles(root, project);
 }
 
-export function projectTargetCommand(project: NodeProjectInfo, target: string): string | null {
+export function projectTargetCommand(
+  project: NodeProjectInfo,
+  target: string,
+  graph?: WorkspaceTaskGraph,
+): string | null {
+  const graphCommand = graph === undefined ? null : taskGraphCommand(graph, project, target);
+  if (graphCommand !== null) {
+    return graphCommand;
+  }
   if (project.targets[target] !== undefined) {
     return nxCommand(project.packageManager, target, project.name);
   }

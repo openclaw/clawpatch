@@ -16,6 +16,7 @@ import {
   projectTargetCommand,
 } from "./projects.js";
 import type { NodePackageJson, NodeProjectInfo } from "./projects.js";
+import type { WorkspaceTaskGraph } from "./task-graph.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 type PackageInfo = NodeProjectInfo & {
@@ -38,8 +39,8 @@ export async function nodeSeeds(root: string, context: MapperContext): Promise<F
   const seeds: FeatureSeed[] = [];
 
   for (const info of packages) {
-    seeds.push(...(await packageSeeds(root, info)));
-    seeds.push(...(await sourceGroupSeeds(root, info)));
+    seeds.push(...(await packageSeeds(root, info, context.taskGraph)));
+    seeds.push(...(await sourceGroupSeeds(root, info, context.taskGraph)));
   }
 
   return seeds;
@@ -49,14 +50,18 @@ function hasNodePackage(project: NodeProjectInfo): project is PackageInfo {
   return project.packageJsonPath !== null && project.packageJson !== null;
 }
 
-async function packageSeeds(root: string, info: PackageInfo): Promise<FeatureSeed[]> {
+async function packageSeeds(
+  root: string,
+  info: PackageInfo,
+  taskGraph: WorkspaceTaskGraph,
+): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const packageName = projectDisplayName(info);
   const packageTags = ["node", "package", ...projectTags(info)];
   if (info.root !== ".") {
     packageTags.push("workspace");
   }
-  const testCommand = projectTargetCommand(info, "test");
+  const testCommand = projectTargetCommand(info, "test", taskGraph);
 
   const manifestSeed: FeatureSeed = {
     title: `Node package ${packageName}`,
@@ -128,9 +133,13 @@ async function packageSeeds(root: string, info: PackageInfo): Promise<FeatureSee
   return seeds;
 }
 
-async function sourceGroupSeeds(root: string, info: PackageInfo): Promise<FeatureSeed[]> {
+async function sourceGroupSeeds(
+  root: string,
+  info: PackageInfo,
+  taskGraph: WorkspaceTaskGraph,
+): Promise<FeatureSeed[]> {
   const packageName = projectDisplayName(info);
-  const testCommand = projectTargetCommand(info, "test");
+  const testCommand = projectTargetCommand(info, "test", taskGraph);
   const testFiles = await packageTestFiles(root, info);
   const seeds: FeatureSeed[] = [];
 
