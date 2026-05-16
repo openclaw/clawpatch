@@ -5,13 +5,17 @@ import { configSeeds } from "./mappers/config.js";
 import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
 import { gradleSeeds } from "./mappers/gradle.js";
+import { laravelSeeds } from "./mappers/laravel.js";
 import { nextSeeds } from "./mappers/next.js";
 import { nodeSeeds } from "./mappers/node.js";
 import { pythonSeeds } from "./mappers/python.js";
+import { reactSeeds } from "./mappers/react.js";
+import { discoverNodeProjects } from "./mappers/projects.js";
+import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
 import { nearbyTests } from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
-import { FeatureMapper, FeatureSeed } from "./mappers/types.js";
+import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
 import { FeatureRecord, ProjectRecord } from "./types.js";
 
 export type MapResult = {
@@ -24,13 +28,16 @@ export type MapResult = {
 const featureMappers: FeatureMapper[] = [
   { name: "node", map: nodeSeeds },
   { name: "next", map: nextSeeds },
+  { name: "react", map: reactSeeds },
   { name: "go", map: goSeeds },
   { name: "python", map: pythonSeeds },
+  { name: "ruby", map: rubySeeds },
   { name: "rust", map: rustSeeds },
   { name: "c-cpp", map: cCppSeeds },
   { name: "swift", map: swiftSeeds },
   { name: "apple", map: appleSeeds },
   { name: "gradle", map: gradleSeeds },
+  { name: "laravel", map: laravelSeeds },
   { name: "config", map: configSeeds },
 ];
 
@@ -127,7 +134,7 @@ function featureIdentity(
       seed.kind,
       seed.source,
       seed.entryPath,
-      seed.command ?? seed.route ?? symbol ?? "",
+      seed.identityKey ?? seed.command ?? seed.route ?? symbol ?? "",
     ]),
     symbol,
   };
@@ -191,7 +198,10 @@ function uniqueTests(tests: Array<{ path: string; command: string | null }>): Ar
 }
 
 async function collectSeeds(root: string): Promise<FeatureSeed[]> {
-  const groups = await Promise.all(featureMappers.map((mapper) => mapper.map(root)));
+  const context: MapperContext = {
+    projects: await discoverNodeProjects(root),
+  };
+  const groups = await Promise.all(featureMappers.map((mapper) => mapper.map(root, context)));
   return dedupeSeeds(groups.flat());
 }
 

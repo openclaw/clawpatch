@@ -47,19 +47,28 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - npm package bins
 - selected root and workspace package scripts: `start`, `build`, `test`,
   `lint`, `typecheck`, `format`
-- Next.js `app/` and `pages/` routes
+- Node/TypeScript workspace packages under `apps/*`, `packages/*`, and package
+  workspace patterns
+- Nx project metadata from `project.json`, including project-scoped validation
+  targets
+- Next.js `app/` and `pages/` routes, including routes inside monorepo apps
+- React Router routes and React components
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
 - Java/Kotlin Gradle source groups and root Gradle build/test commands
 - JVM semantic roles from Java code evidence such as annotations, imports,
   interfaces, inheritance, and method signatures
+- Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
 - C/C++ standalone `main()` files, CMake `add_executable` / `add_library`
   targets, and autotools `bin_PROGRAMS` / `lib_LTLIBRARIES` targets
 - Python project metadata, console scripts, bounded source groups, pytest suites,
-  and Flask routes
+  and Flask/FastAPI routes
 - SwiftPM `Sources/*` targets and `Tests/*` suites
+- Laravel/PHP projects from `composer.json` and `artisan`, including routes,
+  controllers, form requests, Artisan commands, jobs, services, models,
+  migrations, seeders, Composer scripts, and PHP test suites
 - common project config files
 
 Deeper framework mappers and agent-assisted enrichment are next steps.
@@ -111,6 +120,7 @@ Useful flags:
 - `--limit <n>`
 - `--jobs <n>`
 - `--feature <id>`
+- `--project <name-or-root>`
 - `--finding <id>`
 - `--status <status>`
 - `--severity <severity>`

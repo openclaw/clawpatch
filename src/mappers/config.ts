@@ -13,6 +13,9 @@ export async function configSeeds(root: string): Promise<FeatureSeed[]> {
     "Cargo.lock",
     "rust-toolchain.toml",
     "Package.swift",
+    "composer.json",
+    "composer.lock",
+    "phpunit.xml",
     "Makefile",
   ];
   const seeds: FeatureSeed[] = [];

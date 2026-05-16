@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCommand } from "./exec.js";
+import { runCommandArgs } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
 import {
   FixPlanOutput,
@@ -36,7 +36,7 @@ export function providerByName(name: string): Provider {
 const codexProvider: Provider = {
   name: "codex",
   async check(root: string): Promise<string> {
-    const result = await runCommand("codex --version", root);
+    const result = await runCommandArgs("codex", ["--version"], root);
     if (result.exitCode !== 0) {
       throw new ClawpatchError("codex CLI not available", 4, "provider-auth");
     }
@@ -148,9 +148,22 @@ async function runCodexJson(
   const schemaPath = join(dir, "schema.json");
   const outputPath = join(dir, "output.json");
   await writeFile(schemaPath, JSON.stringify(schema), "utf8");
-  const modelArg = model === null ? "" : ` --model ${shellQuote(model)}`;
-  const command = `codex exec --cd ${shellQuote(root)} --sandbox ${sandbox} --output-schema ${shellQuote(schemaPath)} --output-last-message ${shellQuote(outputPath)}${modelArg} -`;
-  const result = await runCommand(command, root, prompt);
+  const args = [
+    "exec",
+    "--cd",
+    root,
+    "--sandbox",
+    sandbox,
+    "--output-schema",
+    schemaPath,
+    "--output-last-message",
+    outputPath,
+  ];
+  if (model !== null) {
+    args.push("--model", model);
+  }
+  args.push("-");
+  const result = await runCommandArgs("codex", args, root, prompt);
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
       `codex provider failed: ${result.stderr || result.stdout}`,
@@ -163,10 +176,6 @@ async function runCodexJson(
     throw new ClawpatchError("codex provider produced no JSON output", 8, "malformed-output");
   }
   return JSON.parse(raw) as unknown;
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/gu, "'\\''")}'`;
 }
 
 function providerExitCode(stderr: string): number {

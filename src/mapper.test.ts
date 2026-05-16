@@ -1,4 +1,4 @@
-import { symlink } from "node:fs/promises";
+import { mkdir, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { detectProject } from "./detect.js";
@@ -157,6 +157,219 @@ describe("mapFeatures", () => {
     expect(result.features.map((feature) => feature.title)).toContain("Route /vendor");
   });
 
+  it("maps Next routes inside Nx workspace projects", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-workspace-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "yarn.lock", "");
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify(
+        {
+          name: "web",
+          sourceRoot: "apps/web/src",
+          projectType: "application",
+          targets: { test: {}, lint: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/api/things/route.ts",
+      "export function GET() { return new Response('ok'); }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/admin/package.json",
+      JSON.stringify({ name: "admin", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/project.json",
+      JSON.stringify({ name: "admin", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/src/pages/settings.tsx",
+      "export default function Settings() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const webRoute = result.features.find((feature) => feature.title === "web route /users/:id");
+    const adminRoute = result.features.find((feature) => feature.title === "admin route /settings");
+
+    expect(titles).toContain("web route /users/:id");
+    expect(titles).toContain("web route /api/things");
+    expect(titles).toContain("admin route /settings");
+    expect(webRoute?.entrypoints[0]?.path).toBe("apps/web/src/app/(dashboard)/users/[id]/page.tsx");
+    expect(webRoute?.entrypoints[0]?.route).toBe("/users/:id");
+    expect(webRoute?.tags).toEqual(
+      expect.arrayContaining(["project:web", "project-root:apps/web", "project-type:application"]),
+    );
+    expect(webRoute?.tests).toEqual([
+      {
+        path: "apps/web/src/app/(dashboard)/users/[id]/page.test.tsx",
+        command: "yarn nx test web",
+      },
+    ]);
+    expect(webRoute?.contextFiles).toContainEqual({
+      path: "apps/web/project.json",
+      reason: "project context",
+    });
+    expect(adminRoute?.tests.every((test) => test.command === "yarn nx test admin")).toBe(true);
+  });
+
+  it("maps Next routes inside Nx projects without package manifests", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-nx-no-package-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "workspace-root" }, null, 2));
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(
+      root,
+      "apps/portal/project.json",
+      JSON.stringify(
+        {
+          name: "portal",
+          sourceRoot: "apps/portal/src",
+          projectType: "application",
+          targets: { test: {} },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.tsx",
+      "export default function Account() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/portal/src/app/account/page.test.tsx",
+      "test('route', () => {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "portal route /account");
+
+    expect(route?.entrypoints[0]?.path).toBe("apps/portal/src/app/account/page.tsx");
+    expect(route?.tests).toEqual([
+      { path: "apps/portal/src/app/account/page.test.tsx", command: "pnpm nx test portal" },
+    ]);
+    expect(route?.tags).toEqual(
+      expect.arrayContaining([
+        "project:portal",
+        "project-root:apps/portal",
+        "project-type:application",
+      ]),
+    );
+  });
+
+  it("keeps Nx target commands on the workspace package manager", async () => {
+    const root = await fixtureRoot("clawpatch-map-nx-root-package-manager-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", sourceRoot: "apps/web/src", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", scripts: { test: "vitest run" } }, null, 2),
+    );
+    await writeFixture(root, "apps/web/package-lock.json", "{}\n");
+    await writeFixture(
+      root,
+      "apps/web/src/app/home/page.tsx",
+      "export default function Home() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/src/app/home/page.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "web route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/src/app/home/page.test.tsx", command: "pnpm nx test web" },
+    ]);
+  });
+
+  it("uses Nx target commands for React route tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-react-nx-test-command-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", sourceRoot: "apps/web/src", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify(
+        { name: "web", dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/src/pages/HomePage.test.tsx", command: "pnpm nx test web" },
+    ]);
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -198,6 +411,463 @@ describe("mapFeatures", () => {
     expect(cli?.ownedFiles).toContainEqual({ path: "src/cli.ts", reason: "entrypoint" });
     expect(cli?.tests).toEqual([{ path: "src/cli.test.ts", command: null }]);
     expect(cli?.summary).toContain("source src/cli.ts");
+  });
+
+  it("maps Ruby metadata, executables, source groups, and tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(
+      root,
+      "fixture.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'fixture-ruby'\n  spec.add_dependency 'redis'\nend\n",
+    );
+    await writeFixture(root, "Rakefile", "task :default\n");
+    await writeFixture(root, "exe/fixture", "#!/usr/bin/env ruby\nputs 'ok'\n");
+    await writeFixture(root, "script/helper.rb", "#!/usr/bin/env ruby\nputs 'helper'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(
+      root,
+      "lib/fixture/client.rb",
+      "module Fixture\n  class Client\n  end\nend\n",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await writeFixture(
+        root,
+        `lib/fixture/type/type${String(index).padStart(2, "0")}.rb`,
+        "module Fixture\nend\n",
+      );
+    }
+    await writeFixture(root, "spec/fixture/client_spec.rb", "RSpec.describe Fixture::Client\n");
+    await writeFixture(root, "vendor/bundle/ignored.rb", "module Ignored\nend\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === "Ruby project fixture-ruby",
+    );
+    const cli = result.features.find((feature) => feature.title === "Ruby CLI command fixture");
+    const source = result.features.find((feature) => feature.title === "Ruby source lib/fixture");
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+    expect(titles).toContain("Ruby project fixture-ruby");
+    expect(titles).toContain("Ruby CLI command fixture");
+    expect(titles).toContain("Ruby CLI command helper.rb");
+    expect(titles).toContain("Ruby Rake tasks");
+    expect(titles).toContain("Ruby source lib");
+    expect(titles).toContain("Ruby source lib/fixture");
+    expect(titles).toContain("Ruby source lib/fixture/type");
+    expect(titles).toContain("Ruby test suite spec");
+    expect(rubyProject?.ownedFiles).toContainEqual({
+      path: "fixture.gemspec",
+      reason: "ruby project metadata",
+    });
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(cli?.entrypoints[0]?.path).toBe("exe/fixture");
+    expect(source?.ownedFiles.map((ref) => ref.path)).toContain("lib/fixture/client.rb");
+    expect(source?.tests).toEqual([
+      { path: "spec/fixture/client_spec.rb", command: "bundle exec rspec" },
+    ]);
+    expect(
+      result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path)),
+    ).not.toContain("vendor/bundle/ignored.rb");
+  });
+
+  it("treats gems.rb projects as Bundler-backed", async () => {
+    const root = await fixtureRoot("clawpatch-map-gems-rb-");
+    await writeFixture(
+      root,
+      "gems.rb",
+      "source 'https://rubygems.org'\ngem 'rspec'\ngem 'rubocop'\n",
+    );
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(root, "spec/fixture_spec.rb", "RSpec.describe Fixture\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.packageManagers).toContain("bundler");
+    expect(project.detected.commands).toMatchObject({
+      lint: "bundle exec rubocop",
+      test: "bundle exec rspec",
+    });
+  });
+
+  it("detects RuboCop extension gems as Ruby lint providers", async () => {
+    const root = await fixtureRoot("clawpatch-map-rubocop-extension-");
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\ngem 'rubocop-rails'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.commands.lint).toBe("bundle exec rubocop");
+  });
+
+  it("does not treat Ruby test helpers as Minitest tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-test-helper-");
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\n");
+    await writeFixture(root, "lib/test_helper.rb", "module TestHelper\nend\n");
+    await writeFixture(root, "lib/test_utils.rb", "module TestUtils\nend\n");
+    await writeFixture(root, "test/test_helper.rb", "require 'minitest/autorun'\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const owned = result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path));
+
+    expect(project.detected.commands.test).toBeNull();
+    expect(result.features.map((feature) => feature.title)).not.toContain("Ruby test suite test");
+    expect(owned).toContain("lib/test_helper.rb");
+    expect(owned).toContain("lib/test_utils.rb");
+    expect(owned).not.toContain("test/test_helper.rb");
+  });
+
+  it("detects co-located Ruby Minitest suffix tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-colocated-minitest-");
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\n");
+    await writeFixture(root, "lib/fixture.rb", "module Fixture\nend\n");
+    await writeFixture(root, "lib/fixture_test.rb", "require 'minitest/autorun'\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Ruby source lib");
+
+    expect(project.detected.commands.test).toBe("bundle exec rake test");
+    expect(source?.tests).toEqual([
+      { path: "lib/fixture_test.rb", command: "bundle exec rake test" },
+    ]);
+  });
+
+  it("keeps test-prefixed Ruby sources under lib reviewable", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-test-prefixed-source-");
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\n");
+    await writeFixture(root, "lib/test_client.rb", "module TestClient\nend\n");
+    await writeFixture(root, "test/test_client_test.rb", "require 'minitest/autorun'\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Ruby source lib");
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(source?.ownedFiles.map((ref) => ref.path)).toContain("lib/test_client.rb");
+    expect(source?.tests).toEqual([
+      { path: "test/test_client_test.rb", command: "bundle exec rake test" },
+    ]);
+  });
+
+  it("maps scripts directory Ruby files as source only", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-scripts-source-");
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\n");
+    await writeFixture(root, "scripts/support.rb", "module Support\nend\n");
+
+    const result = await mapFeatures(root, await detectProject(root), []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("Ruby source scripts");
+    expect(titles).not.toContain("Ruby CLI command support.rb");
+  });
+
+  it("ignores generated nested gemspec artifacts", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-generated-gemspec-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "node-only" }));
+    await writeFixture(
+      root,
+      "dist/generated.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'built-artifact'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(
+      root,
+      "tmp/runtime.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'tmp-artifact'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(
+      root,
+      "log/runtime.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'log-artifact'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(
+      root,
+      "target/generated.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'target-artifact'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(
+      root,
+      ".build/generated.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'build-artifact'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(root, "config/application.rb", "module NotRails\nend\n");
+    await writeFixture(root, "app/assets/admin.ts", "export const admin = true;\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const nodeAsset = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "app/assets/admin.ts"),
+    );
+
+    expect(project.detected.languages).not.toContain("ruby");
+    expect(project.detected.frameworks).not.toContain("rails");
+    expect(titles).not.toContain("Ruby project built-artifact");
+    expect(titles).not.toContain("Ruby project tmp-artifact");
+    expect(titles).not.toContain("Ruby project log-artifact");
+    expect(titles).not.toContain("Ruby project target-artifact");
+    expect(titles).not.toContain("Ruby project build-artifact");
+    expect(nodeAsset?.title).toBe("Node source app");
+  });
+
+  it("ignores gemspec directories during Ruby dependency scans", async () => {
+    const root = await fixtureRoot("clawpatch-map-ruby-gemspec-dir-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "gemspec-dir" }));
+    await mkdir(join(root, "fake.gemspec"));
+    await writeFixture(root, "config/application.rb", "module NotRails\nend\n");
+    await writeFixture(root, "app/assets/admin.ts", "export const admin = true;\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const nodeAsset = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "app/assets/admin.ts"),
+    );
+
+    expect(project.detected.frameworks).not.toContain("rails");
+    expect(nodeAsset?.title).toBe("Node source app");
+  });
+
+  it("does not apply nested Ruby gemspec dependencies to root Rails detection", async () => {
+    const root = await fixtureRoot("clawpatch-map-nested-ruby-gemspec-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "mixed-root" }));
+    await writeFixture(
+      root,
+      "engine/engine.gemspec",
+      "Gem::Specification.new do |spec|\n  spec.name = 'engine'\n  spec.add_dependency 'rails'\nend\n",
+    );
+    await writeFixture(root, "engine/lib/engine.rb", "module Engine\nend\n");
+    await writeFixture(root, "engine/test/test_engine.rb", "require 'minitest/autorun'\n");
+    await writeFixture(root, "config/application.rb", "module NotRails\nend\n");
+    await writeFixture(root, "app/assets/admin.ts", "export const admin = true;\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubySource = result.features.find(
+      (feature) => feature.title === "Ruby source engine/lib",
+    );
+    const nodeAsset = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "app/assets/admin.ts"),
+    );
+
+    expect(project.detected.languages).toContain("ruby");
+    expect(project.detected.frameworks).not.toContain("rails");
+    expect(project.detected.commands.test).toBe("rake test");
+    expect(titles).not.toContain("Rails application configuration");
+    expect(titles).toContain("Ruby test suite engine/test");
+    expect(rubySource?.tests).toEqual([
+      { path: "engine/test/test_engine.rb", command: "rake test" },
+    ]);
+    expect(nodeAsset?.title).toBe("Node source app");
+  });
+
+  it("maps Gemfile-only Jekyll sites without mistaking dependencies for project names", async () => {
+    const root = await fixtureRoot("clawpatch-map-jekyll-");
+    await writeFixture(
+      root,
+      "Gemfile",
+      "source 'https://rubygems.org'\ngem 'jekyll'\ngem 'jekyll-feed'\ngem 'hive-ruby'\n",
+    );
+    await writeFixture(root, "_config.yml", "title: Docs\n");
+    await writeFixture(root, "index.md", "---\nlayout: home\n---\n");
+    await writeFixture(root, "_layouts/default.html", "{{ content }}\n");
+    await writeFixture(root, "_includes/header.html", "<header></header>\n");
+    await writeFixture(root, "_sass/site.scss", "body { color: black; }\n");
+    await writeFixture(root, "assets/main.scss", "---\n---\n@import 'site';\n");
+    await writeFixture(root, "_posts/2021-01-01-one.md", "---\ntitle: One\n---\n");
+    await writeFixture(root, "_posts/2022-01-01-two.md", "---\ntitle: Two\n---\n");
+    await writeFixture(root, "_topics/ruby.md", "---\ntitle: Ruby\n---\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const siteConfig = result.features.find(
+      (feature) => feature.title === "Jekyll site configuration",
+    );
+
+    expect(project.detected.frameworks).toContain("jekyll");
+    expect(titles).toContain(`Ruby project ${root.split("/").at(-1)}`);
+    expect(titles).not.toContain("Ruby project jekyll");
+    expect(titles).toContain("Jekyll site configuration");
+    expect(titles).toContain("Jekyll theme _layouts");
+    expect(titles).toContain("Jekyll theme _includes");
+    expect(titles).toContain("Jekyll theme _sass");
+    expect(titles).toContain("Jekyll content _posts/2021");
+    expect(titles).toContain("Jekyll content _posts/2022");
+    expect(titles).toContain("Jekyll content _topics");
+    expect(rubyProject?.entrypoints[0]?.symbol).toBeNull();
+    expect(siteConfig?.ownedFiles.map((ref) => ref.path)).toContain("index.md");
+  });
+
+  it("maps Rails app structure and skips common Rails binstubs", async () => {
+    const root = await fixtureRoot("clawpatch-map-rails-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "rails-webpacker-shell", dependencies: { "@rails/ujs": "1.0.0" } }),
+    );
+    await writeFixture(root, "Gemfile", "source 'https://rubygems.org'\ngem 'rails'\ngem 'pg'\n");
+    await writeFixture(root, "config/application.rb", "module FixtureRails\nend\n");
+    await writeFixture(root, "config/routes.rb", "Rails.application.routes.draw do\nend\n");
+    await writeFixture(root, "config/database.yml", "production:\n  password: secret\n");
+    await writeFixture(root, "config/secrets.yml", "redacted: placeholder\n");
+    await writeFixture(
+      root,
+      "config/environments/test.rb",
+      "Rails.application.configure do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "config/initializers/filter.rb",
+      "Rails.application.config.filter_parameters += [:password]\n",
+    );
+    for (let index = 0; index < 14; index += 1) {
+      await writeFixture(
+        root,
+        `config/initializers/initializer_${String(index).padStart(2, "0")}.rb`,
+        "Rails.application.configure {}\n",
+      );
+    }
+    await writeFixture(
+      root,
+      "config/initializers/secret_token.rb",
+      "Rails.application.config.secret_token = 'secret'\n",
+    );
+    await writeFixture(root, "db/schema.rb", "ActiveRecord::Schema.define do\nend\n");
+    await writeFixture(root, "db/structure.sql", "CREATE TABLE widgets (id bigint);\n");
+    await writeFixture(
+      root,
+      "db/migrate/20200101000000_create_widgets.rb",
+      "class CreateWidgets < ActiveRecord::Migration[6.1]\nend\n",
+    );
+    for (let index = 1; index < 14; index += 1) {
+      await writeFixture(
+        root,
+        `db/migrate/202001010000${String(index).padStart(2, "0")}_create_widgets_${index}.rb`,
+        "class CreateWidgets < ActiveRecord::Migration[6.1]\nend\n",
+      );
+    }
+    await writeFixture(
+      root,
+      "bin/rails",
+      "#!/usr/bin/env ruby\nAPP_PATH = '../config/application'\n",
+    );
+    await writeFixture(
+      root,
+      "app/controllers/widgets_controller.rb",
+      "class WidgetsController < ApplicationController\nend\n",
+    );
+    await writeFixture(root, "app/models/widget.rb", "class Widget < ApplicationRecord\nend\n");
+    await writeFixture(root, "app/views/widgets/index.html.haml", "%h1 Widgets\n");
+    await writeFixture(root, "app/views/widgets/index.json.jbuilder", "json.widgets []\n");
+    await writeFixture(root, "app/assets/javascripts/widgets.coffee", "console.log 'widgets'\n");
+    await writeFixture(root, "app/assets/javascripts/admin.tsx", "export function Admin() {}\n");
+    await writeFixture(root, "app/assets/builds/application.js", "console.log('built');\n");
+    await writeFixture(root, "app/assets/stylesheets/widgets.scss", ".widgets { color: black; }\n");
+    await writeFixture(
+      root,
+      "app/javascript/controllers/widgets_controller.js",
+      "export function connect() {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/javascript/stylesheets/application.scss",
+      ".widgets { display: grid; }\n",
+    );
+    await writeFixture(
+      root,
+      "app/components/widget_component.ts",
+      "export function wireWidgetComponent() {}\n",
+    );
+    await writeFixture(root, "src/client.ts", "export function client() {}\n");
+    await writeFixture(root, "lib/client.ts", "export function libClient() {}\n");
+    await writeFixture(root, "pages/home.tsx", "export function Home() { return null; }\n");
+    await writeFixture(
+      root,
+      "test/controllers/widgets_controller_test.rb",
+      "class WidgetsControllerTest\nend\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const referencedFiles = result.features.flatMap((feature) => [
+      ...feature.ownedFiles.map((ref) => ref.path),
+      ...feature.contextFiles.map((ref) => ref.path),
+    ]);
+    const rubyProject = result.features.find(
+      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+    );
+    const railsConfig = result.features.find(
+      (feature) => feature.title === "Rails application configuration",
+    );
+    const railsDatabaseFeatures = result.features.filter(
+      (feature) => feature.source === "rails-database",
+    );
+    const railsAssetRefs = result.features
+      .filter((feature) => feature.source === "rails-assets")
+      .flatMap((feature) => feature.ownedFiles.map((ref) => ref.path));
+
+    expect(project.detected.frameworks).toContain("rails");
+    expect(titles).not.toContain("Ruby CLI command rails");
+    expect(titles).not.toContain("Node source app/assets");
+    expect(titles).toContain("Node source app");
+    expect(titles).toContain("Node source app/javascript");
+    expect(titles).toContain("Node source src");
+    expect(titles).toContain("Node source lib");
+    expect(titles).toContain("Node source pages");
+    expect(titles).toContain("Rails application configuration");
+    expect(titles).toContain("Rails database schema and migrations");
+    expect(titles).toContain("Rails database schema and migrations db/migrate#2");
+    expect(titles).toContain("Rails views app/views");
+    expect(titles).toContain("Rails assets app/assets");
+    expect(railsDatabaseFeatures.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
+    expect(referencedFiles).toContain("db/structure.sql");
+    expect(referencedFiles).toContain("app/components/widget_component.ts");
+    expect(railsAssetRefs).toContain("app/assets/javascripts/admin.tsx");
+    expect(railsAssetRefs).toContain("app/javascript/stylesheets/application.scss");
+    expect(railsAssetRefs).not.toContain("app/javascript/controllers/widgets_controller.js");
+    expect(railsAssetRefs).not.toContain("app/assets/builds/application.js");
+    expect(rubyProject?.trustBoundaries).toEqual(
+      expect.arrayContaining(["database", "network", "serialization"]),
+    );
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).toContain("config/routes.rb");
+    expect(railsConfig?.ownedFiles.slice(0, 12).map((ref) => ref.path)).toContain(
+      "config/routes.rb",
+    );
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain("config/secrets.yml");
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain("config/database.yml");
+    expect(railsConfig?.ownedFiles.map((ref) => ref.path)).not.toContain(
+      "config/initializers/secret_token.rb",
+    );
+    expect(
+      result.features.filter((feature) =>
+        feature.ownedFiles.some(
+          (ref) => ref.path === "app/javascript/controllers/widgets_controller.js",
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(referencedFiles).not.toContain("config/database.yml");
+    expect(referencedFiles).not.toContain("config/secrets.yml");
+    expect(referencedFiles).not.toContain("config/initializers/secret_token.rb");
   });
 
   it("maps workspace packages and splits large Node source groups", async () => {
@@ -412,6 +1082,1253 @@ describe("mapFeatures", () => {
     ).toEqual([
       { path: "packages/core/src/index.test.ts", command: "pnpm --dir packages/core test" },
     ]);
+  });
+
+  it("uses package-local locks for fallback Node package roots", async () => {
+    const root = await fixtureRoot("clawpatch-node-fallback-package-lock-");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify({ name: "frontend", scripts: { test: "vitest run" } }, null, 2),
+    );
+    await writeFixture(root, "frontend/pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+    await writeFixture(root, "frontend/src/index.ts", "export const frontend = true;\n");
+    await writeFixture(root, "frontend/src/index.test.ts", "import './index';\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.find((feature) => feature.title === "Node source frontend/src")?.tests,
+    ).toEqual([{ path: "frontend/src/index.test.ts", command: "pnpm --dir frontend test" }]);
+  });
+
+  it("uses package-local pnpm workspace markers for fallback Node package roots", async () => {
+    const root = await fixtureRoot("clawpatch-node-fallback-package-workspace-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "root", scripts: { test: "node root.test.js" } }, null, 2),
+    );
+    await writeFixture(root, "package-lock.json", "{}\n");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify({ name: "frontend", scripts: { test: "vitest run" } }, null, 2),
+    );
+    await writeFixture(root, "frontend/pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+    await writeFixture(root, "frontend/src/index.ts", "export const frontend = true;\n");
+    await writeFixture(root, "frontend/src/index.test.ts", "import './index';\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.find((feature) => feature.title === "Node source frontend/src")?.tests,
+    ).toEqual([{ path: "frontend/src/index.test.ts", command: "pnpm --dir frontend test" }]);
+  });
+
+  it("maps React Router routes and components in a nested frontend app", async () => {
+    const root = await fixtureRoot("clawpatch-react-router-map-");
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - frontend\n");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify(
+        {
+          name: "fixture-frontend",
+          scripts: { test: "vitest run" },
+          dependencies: {
+            react: "1.0.0",
+            "react-dom": "1.0.0",
+            "react-router-dom": "1.0.0",
+          },
+          devDependencies: { vite: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/App.tsx",
+      [
+        "import React, { lazy, Suspense } from 'react';",
+        "import { Navigate, Route, Routes } from 'react-router-dom';",
+        "const CasesPage = lazy(() => import('./pages/CasesPage'));",
+        "const ReactLazyPage = React.lazy(() => import('./pages/ReactLazyPage'));",
+        "import HomePage, { loader } from './pages/HomePage';",
+        "import ReportsPage from './pages/ReportsPage';",
+        "import SettingsPage from './pages/SettingsPage';",
+        "import SuspensePage from './pages/SuspensePage';",
+        "import UserPage from './pages/UserPage';",
+        "import LinkedPage from './pages/LinkedPage';",
+        "import ErrorPage from './pages/ErrorPage';",
+        "import DashboardPage from './pages/DashboardPage';",
+        "import Icon from './pages/Icon';",
+        "import Widget from './pages/Widget';",
+        "import RequireAuth from './RequireAuth';",
+        "import EscapePage from '../../../outside';",
+        "export default function App() {",
+        "  return <Routes>",
+        '    {/* <Route path="/old" element={<OldPage />} /> */}',
+        '    // <Route path="/line-old" element={<OldPage />} />',
+        "    <Route index element={<HomePage />} />",
+        '    <Route path="/" element={<Navigate to="/cases" replace />} />',
+        '    <Route path="/cases" element={<CasesPage />} />',
+        '    <Route path="/react-lazy" element={<ReactLazyPage />} />',
+        '    <Route path="/users">',
+        '      <Route path=":id" element={<UserPage />} />',
+        "    </Route>",
+        "    <Route index={false} element={<ReportsPage />} />",
+        '    <Route path="/suspense" element={<Suspense><SuspensePage /></Suspense>} />',
+        '    <Route path="/with-error" element={<ReportsPage />} errorElement={<ErrorPage />} />',
+        '    <Route path="/dashboard" element={<DashboardPage icon={<Icon />} />} />',
+        '    <Route path="/nested-wrapper" element={<Suspense><RequireAuth><ReportsPage /></RequireAuth></Suspense>} />',
+        '    <Route path="/handle" handle={{ crumb: <Widget element={<HomePage />} /> }} element={<SettingsPage />} />',
+        '    <Route id="a > b" path="/quoted-id" element={<SettingsPage />} />',
+        "    <Route path={HOME} element={<ReportsPage />} />",
+        '    <Route path={"/quoted"} element={<ReportsPage />} />',
+        '    <Route element={<Widget path="/inner" />} />',
+        '    <Route element={<ReportsPage />} path="/reports" />',
+        '    <Route path="/settings" element={<SettingsPage />} />',
+        '    <Route path="/linked" element={<LinkedPage />} />',
+        '    <Route path="/escape" element={<EscapePage />} />',
+        '  </Routes>; // <Route path="/trailing-old" element={<OldPage />} />',
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "../outside.tsx",
+      "export default function EscapePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/App.test.tsx",
+      [
+        "import { MemoryRouter, Route, Routes } from 'react-router-dom';",
+        "function TestOnlyPage() { return null; }",
+        "test('fixture route', () => <MemoryRouter><Routes>",
+        '  <Route path="/test-only" element={<TestOnlyPage />} />',
+        "</Routes></MemoryRouter>);",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/CasesPage.tsx",
+      "export default function CasesPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/CasesPage.test.tsx",
+      "test('cases page', () => {});\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "frontend/src/shared/util.test.tsx", "test('util', () => {});\n");
+    await writeFixture(
+      root,
+      "frontend/src/pages/SettingsPage.tsx",
+      "export default function SettingsPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/SuspensePage.tsx",
+      "export default function SuspensePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/ReportsPage.tsx",
+      "export default function ReportsPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/ErrorPage.tsx",
+      "export default function ErrorPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/DashboardPage.tsx",
+      "export default function DashboardPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/Icon.tsx",
+      "export default function Icon() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/Widget.tsx",
+      "export default function Widget() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/RequireAuth.tsx",
+      "export default function RequireAuth({ children }: { children: unknown }) { return children; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/ReactLazyPage.tsx",
+      "export default function ReactLazyPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/UserPage.tsx",
+      "export default function UserPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "../outside-linked.tsx",
+      "export default function LinkedPage() { return null; }\n",
+    );
+    await symlink(
+      join(root, "../outside-linked.tsx"),
+      join(root, "frontend/src/pages/LinkedPage.tsx"),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/components/Dialog.tsx",
+      "export default function Dialog() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const home = result.features.find((feature) => feature.title === "React route /");
+    const cases = result.features.find((feature) => feature.title === "React route /cases");
+    const reactLazy = result.features.find(
+      (feature) => feature.title === "React route /react-lazy",
+    );
+    const reports = result.features.find((feature) => feature.title === "React route /reports");
+    const settings = result.features.find((feature) => feature.title === "React route /settings");
+    const suspense = result.features.find((feature) => feature.title === "React route /suspense");
+    const withError = result.features.find(
+      (feature) => feature.title === "React route /with-error",
+    );
+    const dashboard = result.features.find((feature) => feature.title === "React route /dashboard");
+    const nestedWrapper = result.features.find(
+      (feature) => feature.title === "React route /nested-wrapper",
+    );
+    const handle = result.features.find((feature) => feature.title === "React route /handle");
+    const quotedId = result.features.find((feature) => feature.title === "React route /quoted-id");
+    const quoted = result.features.find((feature) => feature.title === "React route /quoted");
+    const user = result.features.find((feature) => feature.title === "React route /users/:id");
+    const linked = result.features.find((feature) => feature.title === "React route /linked");
+    const escape = result.features.find((feature) => feature.title === "React route /escape");
+    const dialog = result.features.find((feature) => feature.title === "React component Dialog");
+
+    expect(titles).toContain("Node package fixture-frontend");
+    expect(home?.entrypoints[0]?.path).toBe("frontend/src/pages/HomePage.tsx");
+    expect(cases?.source).toBe("react-router-route");
+    expect(cases?.entrypoints[0]?.path).toBe("frontend/src/pages/CasesPage.tsx");
+    expect(cases?.contextFiles).toContainEqual({
+      path: "frontend/src/App.tsx",
+      reason: "route declaration",
+    });
+    expect(cases?.tests).toEqual([
+      {
+        path: "frontend/src/pages/CasesPage.test.tsx",
+        command: "pnpm --dir frontend test",
+      },
+    ]);
+    expect(reactLazy?.entrypoints[0]?.path).toBe("frontend/src/pages/ReactLazyPage.tsx");
+    expect(reports?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
+    expect(withError?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
+    expect(dashboard?.entrypoints[0]?.path).toBe("frontend/src/pages/DashboardPage.tsx");
+    expect(nestedWrapper?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
+    expect(handle?.entrypoints[0]?.path).toBe("frontend/src/pages/SettingsPage.tsx");
+    expect(quotedId?.entrypoints[0]?.path).toBe("frontend/src/pages/SettingsPage.tsx");
+    expect(quoted?.entrypoints[0]?.path).toBe("frontend/src/pages/ReportsPage.tsx");
+    expect(settings?.entrypoints[0]?.path).toBe("frontend/src/pages/SettingsPage.tsx");
+    expect(suspense?.entrypoints[0]?.path).toBe("frontend/src/pages/SuspensePage.tsx");
+    expect(user?.entrypoints[0]?.path).toBe("frontend/src/pages/UserPage.tsx");
+    expect(linked?.entrypoints[0]?.path).toBe("frontend/src/App.tsx");
+    expect(escape?.entrypoints[0]?.path).toBe("frontend/src/App.tsx");
+    expect(titles).not.toContain("React route /old");
+    expect(titles).not.toContain("React route /line-old");
+    expect(titles).not.toContain("React route /trailing-old");
+    expect(titles).not.toContain("React route /test-only");
+    expect(titles).not.toContain("React route /inner");
+    expect(titles).not.toContain("React route /HOME");
+    expect(titles.filter((title) => title === "React route /")).toHaveLength(1);
+    expect(dialog?.source).toBe("react-component");
+    expect(dialog?.ownedFiles).toEqual([
+      { path: "frontend/src/components/Dialog.tsx", reason: "component implementation" },
+    ]);
+  });
+
+  it("does not map custom React Route components as React Router routes", async () => {
+    const root = await fixtureRoot("clawpatch-react-custom-route-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "// import { Route } from 'react-router-dom';",
+        "const example = \"import { Route } from 'react-router-dom';\";",
+        "function Route(_props: { path: string }) { return null; }",
+        "function Page() { return null; }",
+        'export function App() { return <Route path="/custom" element={<Page />} />; }',
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).not.toContain("React route /custom");
+  });
+
+  it("maps React Router routes through aliased Route imports only", async () => {
+    const root = await fixtureRoot("clawpatch-react-aliased-route-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route as RouterRoute, Routes } from 'react-router-dom';",
+        "import RealPage from './RealPage';",
+        "function Route(_props: { path: string }) { return null; }",
+        "function FakePage() { return null; }",
+        "export function App() { return <Routes>",
+        '  <Route path="/custom"><FakePage /></Route>',
+        '  <RouterRoute path="/real" element={<RealPage />} />',
+        "</Routes>; }",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/RealPage.tsx",
+      "export default function RealPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("React route /real");
+    expect(titles).not.toContain("React route /custom");
+  });
+
+  it("does not map React Router children under unresolved parent paths", async () => {
+    const root = await fixtureRoot("clawpatch-react-unresolved-parent-route-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import AdminUsers from './AdminUsers';",
+        "import PublicPage from './PublicPage';",
+        "const ADMIN_BASE = '/admin';",
+        "export function App() {",
+        "  return <Routes>",
+        "    <Route path={ADMIN_BASE}>",
+        '      <Route path="users" element={<AdminUsers />} />',
+        "    </Route>",
+        "    <Route element={<PublicPage />}>",
+        '      <Route path="/public" element={<PublicPage />} />',
+        "    </Route>",
+        "  </Routes>;",
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/AdminUsers.tsx",
+      "export default function AdminUsers() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/PublicPage.tsx",
+      "export default function PublicPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("React route /users");
+    expect(titles).toContain("React route /public");
+  });
+
+  it("keeps React index tests scoped to their component directory", async () => {
+    const root = await fixtureRoot("clawpatch-react-index-tests-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import Home from './pages/Home';",
+        "export function App() {",
+        "  return <Routes>",
+        '    <Route path="/home" element={<Home />} />',
+        "  </Routes>;",
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/Home/index.tsx",
+      "export default function Home() { return null; }\n",
+    );
+    await writeFixture(root, "src/pages/Home/index.test.tsx", "test('home', () => {});\n");
+    await writeFixture(root, "src/pages/Other/index.test.tsx", "test('other', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.entrypoints[0]?.path).toBe("src/pages/Home/index.tsx");
+    expect(home?.tests).toEqual([
+      { path: "src/pages/Home/index.test.tsx", command: "npm run test" },
+    ]);
+  });
+
+  it("unwraps React Router fragment and member-expression route wrappers", async () => {
+    const root = await fixtureRoot("clawpatch-react-route-wrappers-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import React from 'react';",
+        "import { Route, Routes } from 'react-router-dom';",
+        "import FragmentPage from './pages/FragmentPage';",
+        "import SuspensePage from './pages/SuspensePage';",
+        "// import FragmentPage from './pages/WrongPage';",
+        "const example = '<Route path=\"/fake\" element={<FragmentPage />} />';",
+        "export function App() {",
+        "  return <Routes>",
+        '    <Route path="/fragment" element={<><FragmentPage /></>} />',
+        '    <Route path="/member" element={<React.Suspense><SuspensePage /></React.Suspense>} />',
+        "  </Routes>;",
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/FragmentPage.tsx",
+      "export default function FragmentPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/SuspensePage.tsx",
+      "export default function SuspensePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/WrongPage.tsx",
+      "export default function WrongPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const fragment = result.features.find((feature) => feature.title === "React route /fragment");
+    const member = result.features.find((feature) => feature.title === "React route /member");
+
+    expect(fragment?.entrypoints[0]?.path).toBe("src/pages/FragmentPage.tsx");
+    expect(member?.entrypoints[0]?.path).toBe("src/pages/SuspensePage.tsx");
+    expect(result.features.map((feature) => feature.title)).not.toContain("React route /fake");
+  });
+
+  it("preserves React Router wildcard paths while stripping block comments", async () => {
+    const root = await fixtureRoot("clawpatch-react-wildcard-comment-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import AdminPage from './AdminPage';",
+        "import FallbackPage from './FallbackPage';",
+        "export function App() {",
+        "  return <Routes>",
+        '    <Route path="/admin/*" element={<AdminPage />} />',
+        "    {/* old catch-all route */}",
+        '    <Route path="/*" element={<FallbackPage />} />',
+        "  </Routes>;",
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/AdminPage.tsx",
+      "export default function AdminPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/FallbackPage.tsx",
+      "export default function FallbackPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("React route /admin/*");
+    expect(titles).toContain("React route /*");
+  });
+
+  it("maps unambiguous React Router conditional route elements", async () => {
+    const root = await fixtureRoot("clawpatch-react-conditional-element-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Navigate, Route, Routes } from 'react-router-dom';",
+        "import AdminPage from './AdminPage';",
+        "import DashboardPage from './DashboardPage';",
+        "import LoginPage from './LoginPage';",
+        "export function App() {",
+        "  return <Routes>",
+        '    <Route path="/login" element={isAuthed ? <Navigate to="/" /> : <LoginPage />} />',
+        '    <Route path="/ambiguous" element={isAuthed ? <DashboardPage /> : <AdminPage />} />',
+        "  </Routes>;",
+        "}",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/AdminPage.tsx",
+      "export default function AdminPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/DashboardPage.tsx",
+      "export default function DashboardPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/LoginPage.tsx",
+      "export default function LoginPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const login = result.features.find((feature) => feature.title === "React route /login");
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(login?.entrypoints[0]?.path).toBe("src/LoginPage.tsx");
+    expect(titles).not.toContain("React route /ambiguous");
+  });
+
+  it("does not discover React packages through symlinked package roots", async () => {
+    const root = await fixtureRoot("clawpatch-react-symlink-package-");
+    const outside = join(root, "../outside-react-package");
+    const outsidePackages = join(root, "../outside-react-packages");
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
+    await writeFixture(
+      root,
+      "../outside-react-package/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "../outside-react-package/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "function OutsidePage() { return null; }",
+        'export function App() { return <Routes><Route path="/outside" element={<OutsidePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "../outside-react-packages/app/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "../outside-react-packages/app/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "function WorkspacePage() { return null; }",
+        'export function App() { return <Routes><Route path="/workspace-outside" element={<WorkspacePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await symlink(outside, join(root, "frontend"), "dir");
+    await symlink(outsidePackages, join(root, "packages"), "dir");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).not.toContain("React route /outside");
+    expect(result.features.map((feature) => feature.title)).not.toContain(
+      "React route /workspace-outside",
+    );
+  });
+
+  it("discovers React packages from workspace globs and honors excludes", async () => {
+    const root = await fixtureRoot("clawpatch-react-workspace-glob-");
+    await writeFixture(
+      root,
+      "pnpm-workspace.yaml",
+      "packages:\n  - libs/*\n  - libs/**/plugins/*\n  - packages/*\n  - '!./packages/legacy'\n",
+    );
+    await writeFixture(
+      root,
+      "libs/web/package.json",
+      JSON.stringify(
+        { peerDependencies: { react: "1.0.0" }, dependencies: { "react-router-dom": "1.0.0" } },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "libs/web/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "libs/web/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "libs/suite/plugins/admin/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/plugins/admin/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import PluginPage from './PluginPage';",
+        'export function App() { return <Routes><Route path="/plugin" element={<PluginPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/plugins/admin/src/PluginPage.tsx",
+      "export default function PluginPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import WebPage from './WebPage';",
+        'export function App() { return <Routes><Route path="/web" element={<WebPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/WebPage.tsx",
+      "export default function WebPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "packages/legacy/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "packages/legacy/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import LegacyPage from './LegacyPage';",
+        'export function App() { return <Routes><Route path="/legacy" element={<LegacyPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "packages/legacy/src/LegacyPage.tsx",
+      "export default function LegacyPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import IgnoredPage from './IgnoredPage';",
+        'export function App() { return <Routes><Route path="/ignored" element={<IgnoredPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "libs/suite/node_modules/bad/plugins/ignored/src/IgnoredPage.tsx",
+      "export default function IgnoredPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("React route /home");
+    expect(titles).toContain("React route /plugin");
+    expect(titles).toContain("React route /web");
+    expect(titles).not.toContain("React route /legacy");
+    expect(titles).not.toContain("React route /ignored");
+  });
+
+  it("uses nested React package manager lockfiles for test commands", async () => {
+    const root = await fixtureRoot("clawpatch-react-nested-pm-");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "frontend/pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+    await writeFixture(
+      root,
+      "frontend/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "frontend/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.tests).toEqual([
+      { path: "frontend/src/pages/HomePage.test.tsx", command: "pnpm --dir frontend test" },
+    ]);
+  });
+
+  it("honors package-local npm lockfiles in React packages", async () => {
+    const root = await fixtureRoot("clawpatch-react-nested-npm-");
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - frontend\n");
+    await writeFixture(
+      root,
+      "frontend/package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "frontend/package-lock.json", "{}\n");
+    await writeFixture(
+      root,
+      "frontend/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "frontend/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "frontend/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.tests).toEqual([
+      { path: "frontend/src/pages/HomePage.test.tsx", command: "npm --prefix frontend run test" },
+    ]);
+  });
+
+  it("keeps React routes after block comments with URL-looking text", async () => {
+    const root = await fixtureRoot("clawpatch-react-block-comment-url-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "/* see https://example.com */",
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("React route /home");
+  });
+
+  it("includes app-root React route tests", async () => {
+    const root = await fixtureRoot("clawpatch-react-app-tests-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './routes/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "app/routes/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "app/routes/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "app/routes/HomePage.test.tsx", command: "npm run test" },
+    ]);
+  });
+
+  it("uses bun run for root React package scripts", async () => {
+    const root = await fixtureRoot("clawpatch-react-root-bun-");
+    await writeFixture(root, "bun.lockb", "");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.tests).toEqual([{ path: "src/pages/HomePage.test.tsx", command: "bun run test" }]);
+  });
+
+  it("ignores import-like strings when resolving React route components", async () => {
+    const root = await fixtureRoot("clawpatch-react-string-import-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import Home from './Home';",
+        "const example = \"import Home from './Fake';\";",
+        'export function App() { return <Routes><Route path="/home" element={<Home />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(root, "src/Home.tsx", "export default function Home() { return null; }\n");
+    await writeFixture(root, "src/Fake.tsx", "export default function Fake() { return null; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const home = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(home?.entrypoints[0]?.path).toBe("src/Home.tsx");
+  });
+
+  it("ignores import-like strings when collecting React context files", async () => {
+    const root = await fixtureRoot("clawpatch-react-string-context-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          dependencies: { react: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/components/Dialog.tsx",
+      [
+        "const example = \"import Admin from '../Admin';\";",
+        "import './Dialog.css';",
+        "export default function Dialog() { return null; }",
+      ].join("\n"),
+    );
+    await writeFixture(root, "src/components/Dialog.css", ".dialog { color: red; }\n");
+    await writeFixture(root, "src/Admin.tsx", "export default function Admin() { return null; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const dialog = result.features.find((feature) => feature.title === "React component Dialog");
+
+    expect(dialog?.contextFiles).not.toContainEqual({
+      path: "src/Admin.tsx",
+      reason: "direct import",
+    });
+    expect(dialog?.contextFiles).toContainEqual({
+      path: "src/components/Dialog.css",
+      reason: "direct import",
+    });
+  });
+
+  it("keeps React routes after quoted JSX text", async () => {
+    const root = await fixtureRoot("clawpatch-react-jsx-text-quote-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        "function Copy() { return <p>Don't miss this</p>; }",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("React route /home");
+  });
+
+  it("does not add binary React imports as context files", async () => {
+    const root = await fixtureRoot("clawpatch-react-binary-import-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/components/Logo.tsx",
+      [
+        "import logo from './logo.png';",
+        "import './Logo.css';",
+        "export default function Logo() { return <img src={logo} />; }",
+      ].join("\n"),
+    );
+    await writeFixture(root, "src/components/logo.png", "not real png\n");
+    await writeFixture(root, "src/components/Logo.css", ".logo { display: block; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const logo = result.features.find((feature) => feature.title === "React component Logo");
+
+    expect(logo?.contextFiles).not.toContainEqual({
+      path: "src/components/logo.png",
+      reason: "direct import",
+    });
+    expect(logo?.contextFiles).toContainEqual({
+      path: "src/components/Logo.css",
+      reason: "direct import",
+    });
+  });
+
+  it("does not map React Storybook support files as route or component features", async () => {
+    const root = await fixtureRoot("clawpatch-react-storybook-support-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/HomePage.stories.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "function StoryOnlyPage() { return null; }",
+        'export default { title: "HomePage" };',
+        'export const Story = () => <Routes><Route path="/story" element={<StoryOnlyPage />} /></Routes>;',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/components/Button.stories.tsx",
+      "export default { title: 'Button' };\n",
+    );
+    await writeFixture(
+      root,
+      "src/stories/StoryPage.tsx",
+      "export default function StoryPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/components/fixtures/FakeRoute.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "function FakePage() { return null; }",
+        'export const Fake = () => <Routes><Route path="/fixture" element={<FakePage />} /></Routes>;',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/components/__fixtures__/FixturePage.tsx",
+      "export default function FixturePage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/testdata/TestDataPage.tsx",
+      "export default function TestDataPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).toContain("React route /home");
+    expect(titles).not.toContain("React route /story");
+    expect(titles).not.toContain("React route /fixture");
+    expect(titles).not.toContain("React component HomePage.stories");
+    expect(titles).not.toContain("React component Button.stories");
+    expect(titles).not.toContain("React component StoryPage");
+    expect(titles).not.toContain("React component FakeRoute");
+    expect(titles).not.toContain("React component FixturePage");
+    expect(titles).not.toContain("React component TestDataPage");
+  });
+
+  it("discovers nested React packages without recursive file walks", async () => {
+    const root = await fixtureRoot("clawpatch-react-nested-fallback-package-");
+    await writeFixture(
+      root,
+      "frontend/packages/admin/package.json",
+      JSON.stringify({ dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "frontend/packages/admin/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import AdminPage from './AdminPage';",
+        'export function App() { return <Routes><Route path="/admin" element={<AdminPage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "frontend/packages/admin/src/AdminPage.tsx",
+      "export default function AdminPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("React route /admin");
+  });
+
+  it("prioritizes exact React tests before same-directory fallback tests", async () => {
+    const root = await fixtureRoot("clawpatch-react-exact-tests-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import Foo from './pages/Foo';",
+        'export function App() { return <Routes><Route path="/foo" element={<Foo />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/Foo.tsx",
+      "export default function Foo() { return null; }\n",
+    );
+    for (let index = 0; index < 9; index += 1) {
+      await writeFixture(root, `src/pages/A${index}.test.tsx`, "test('nearby', () => {});\n");
+    }
+    await writeFixture(root, "src/pages/Foo.test.tsx", "test('foo', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const foo = result.features.find((feature) => feature.title === "React route /foo");
+
+    expect(foo?.tests[0]).toEqual({ path: "src/pages/Foo.test.tsx", command: "npm run test" });
+  });
+
+  it("refreshes React direct import context between map runs", async () => {
+    const root = await fixtureRoot("clawpatch-react-cache-refresh-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import Home from './pages/Home';",
+        'export function App() { return <Routes><Route path="/home" element={<Home />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/pages/Home.tsx",
+      ["import A from './A';", "export default function Home() { return <A />; }"].join("\n"),
+    );
+    await writeFixture(root, "src/pages/A.tsx", "export default function A() { return null; }\n");
+    await writeFixture(root, "src/pages/B.tsx", "export default function B() { return null; }\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    await writeFixture(
+      root,
+      "src/pages/Home.tsx",
+      ["import B from './B';", "export default function Home() { return <B />; }"].join("\n"),
+    );
+    const second = await mapFeatures(root, project, first.features);
+    const route = second.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.contextFiles).toContainEqual({
+      path: "src/pages/B.tsx",
+      reason: "direct import",
+    });
+    expect(route?.contextFiles).not.toContainEqual({
+      path: "src/pages/A.tsx",
+      reason: "direct import",
+    });
   });
 
   it("maps nested SwiftPM, Apple, and Android Gradle app surfaces", async () => {
@@ -2238,6 +4155,759 @@ add_executable(headerapp include/headers.hpp)
     );
   });
 
+  it("detects and maps Laravel application slices", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-map-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/wault",
+          type: "project",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "laravel/pint": "^1.0",
+            "phpunit/phpunit": "^12.0",
+          },
+          scripts: {
+            test: ["@php artisan config:clear --ansi", "@php artisan test"],
+            "deploy:production:manual": "bash deploy/bin/deploy.sh",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "artisan", "#!/usr/bin/env php\n");
+    await writeFixture(root, "phpunit.xml", "<phpunit />\n");
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\LandingPageController;\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/', LandingPageController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n" +
+        "Route::resource('catalog', TrackController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/TrackController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\n" +
+        "use App\\Http\\Requests\\StoreTrackRequest;\n" +
+        "use App\\Services\\TrackUploadService;\n" +
+        "final class TrackController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/LandingPageController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class LandingPageController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Requests/StoreTrackRequest.php",
+      "<?php\nnamespace App\\Http\\Requests;\nfinal class StoreTrackRequest {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Services/TrackUploadService.php",
+      "<?php\nnamespace App\\Services;\nfinal class TrackUploadService {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Jobs/RunSubmissionAnalysis.php",
+      "<?php\nnamespace App\\Jobs;\nfinal class RunSubmissionAnalysis {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Console/Commands/ReleaseCut.php",
+      "<?php\nnamespace App\\Console\\Commands;\nfinal class ReleaseCut { protected $signature = 'app:release-cut {version}'; }\n",
+    );
+    await writeFixture(
+      root,
+      "app/Console/Commands/ReportCatalogWatermarks.php",
+      "<?php\nnamespace App\\Console\\Commands;\nuse Illuminate\\Console\\Attributes\\Signature;\n#[Signature('app:report-catalog-watermarks\n    {--json : Output JSON}')] final class ReportCatalogWatermarks {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Models/Track.php",
+      "<?php\nnamespace App\\Models;\nfinal class Track {}\n",
+    );
+    await writeFixture(
+      root,
+      "database/migrations/2026_01_01_000000_create_tracks_table.php",
+      "<?php\nreturn new class {};\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Feature/TrackControllerTest.php",
+      "<?php\nit('stores tracks', function () {});\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Unit/TrackUploadServiceTest.php",
+      "<?php\nit('uploads tracks', function () {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const trackController = result.features.find(
+      (feature) => feature.title === "Laravel controller TrackController",
+    );
+    const service = result.features.find(
+      (feature) => feature.title === "Laravel service TrackUploadService",
+    );
+
+    expect(project.detected.languages).toContain("php");
+    expect(project.detected.frameworks).toContain("laravel");
+    expect(project.detected.packageManagers).toContain("composer");
+    expect(project.detected.commands.test).toBe("composer test");
+    expect(project.detected.commands.lint).toBe("vendor/bin/pint --test");
+    expect(titles).toContain("Laravel project wault");
+    expect(titles).toContain("Composer script test");
+    expect(titles).toContain("Composer script deploy:production:manual");
+    expect(titles).toContain("Laravel controller TrackController");
+    expect(titles).toContain("Laravel controller LandingPageController");
+    expect(titles).toContain("Laravel request StoreTrackRequest");
+    expect(titles).toContain("Laravel command app:release-cut");
+    expect(titles).toContain("Laravel command app:report-catalog-watermarks");
+    expect(titles).toContain("Laravel job RunSubmissionAnalysis");
+    expect(titles).toContain("Laravel service TrackUploadService");
+    expect(titles).toContain("Laravel model Track");
+    expect(titles).toContain("Laravel migrations database/migrations");
+    expect(titles).toContain("Laravel test suite tests/Feature");
+    expect(titles).toContain("Project config composer.json");
+    expect(trackController?.entrypoints[0]?.route).toBe("/tracks");
+    expect(trackController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+    expect(trackController?.contextFiles).toContainEqual({
+      path: "app/Http/Requests/StoreTrackRequest.php",
+      reason: "imported application class",
+    });
+    expect(trackController?.tests).toEqual([
+      { path: "tests/Feature/TrackControllerTest.php", command: "composer test" },
+    ]);
+    expect(service?.tests).toEqual([
+      { path: "tests/Unit/TrackUploadServiceTest.php", command: "composer test" },
+    ]);
+  });
+
+  it("keeps Laravel routes scoped to same-basename controller namespaces", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-controller-namespaces-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/namespaced-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/admin.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
+        "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "routes/api.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Api\\UserController;\n" +
+        "Route::get('/users', UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Admin/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Admin;\nfinal class UserController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const adminController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Admin/UserController.php",
+    );
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(adminController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(adminController?.contextFiles).toContainEqual({
+      path: "routes/admin.php",
+      reason: "route definition",
+    });
+    expect(adminController?.contextFiles).not.toContainEqual({
+      path: "routes/api.php",
+      reason: "route definition",
+    });
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+    expect(apiController?.contextFiles).toContainEqual({
+      path: "routes/api.php",
+      reason: "route definition",
+    });
+    expect(apiController?.contextFiles).not.toContainEqual({
+      path: "routes/admin.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps fully qualified Laravel controller route references", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-qualified-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/qualified-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
+        "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/QualifiedController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class QualifiedController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/ArrayQualifiedController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class ArrayQualifiedController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const qualifiedController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/QualifiedController.php",
+    );
+    const arrayQualifiedController = result.features.find(
+      (feature) =>
+        feature.entrypoints[0]?.path === "app/Http/Controllers/ArrayQualifiedController.php",
+    );
+
+    expect(qualifiedController?.entrypoints[0]?.route).toBe("/qualified");
+    expect(qualifiedController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+    expect(arrayQualifiedController?.entrypoints[0]?.route).toBe("/qualified-array");
+    expect(arrayQualifiedController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps aliased Laravel controller route imports", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-aliased-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/aliased-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
+        "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
+        "Route::get('/admin/users', AdminUserController::class);\n" +
+        "Route::get('/api/users', ApiUserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Admin/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Admin;\nfinal class UserController {}\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const adminController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Admin/UserController.php",
+    );
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(adminController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+  });
+
+  it("maps namespace-imported Laravel controller route references", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-namespace-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/namespace-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\Api;\n" +
+        "Route::get('/api/users', Api\\UserController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/Api/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers\\Api;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const apiController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/Api/UserController.php",
+    );
+
+    expect(apiController?.entrypoints[0]?.route).toBe("/api/users");
+    expect(apiController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps parameterized Laravel fluent route prefixes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-parameterized-prefix-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/parameterized-prefix",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\DashboardController;\n" +
+        "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/DashboardController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class DashboardController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const dashboard = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/DashboardController.php",
+    );
+
+    expect(dashboard?.entrypoints[0]?.route).toBe("/{tenant}/dashboard");
+  });
+
+  it("maps Laravel controller route groups", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-controller-groups-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/controller-groups",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::prefix('admin')->controller(UserController::class)->group(function () {\n" +
+        "    Route::get('/users', 'index');\n" +
+        "    Route::post('/users', 'store');\n" +
+        "});\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const userController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/UserController.php",
+    );
+
+    expect(userController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(userController?.summary).toContain("GET /admin/users#index");
+    expect(userController?.summary).toContain("POST /admin/users#store");
+    expect(userController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("keeps Laravel controller feature IDs stable when first route changes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-stable-controller-id-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/stable-controller-id",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/TrackController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class TrackController {}\n",
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+    );
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstController = first.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/TrackController.php",
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/catalog/tracks', TrackController::class);\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+    );
+
+    const second = await mapFeatures(root, project, []);
+    const secondController = second.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/TrackController.php",
+    );
+
+    expect(firstController?.featureId).toBeDefined();
+    expect(secondController?.featureId).toBe(firstController?.featureId);
+    expect(secondController?.entrypoints[0]?.route).toBe("/catalog/tracks");
+  });
+
+  it("ignores commented-out Laravel routes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-commented-routes-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/commented-routes",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\ArchiveController;\n" +
+        "// Route::get('/old', ArchiveController::class);\n" +
+        "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
+        "Route::get('/current', ArchiveController::class);\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/ArchiveController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class ArchiveController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const archiveController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/ArchiveController.php",
+    );
+
+    expect(archiveController?.entrypoints[0]?.route).toBe("/current");
+    expect(archiveController?.summary).toContain("GET /current");
+    expect(archiveController?.summary).not.toContain("/old");
+    expect(archiveController?.summary).not.toContain("/blocked");
+  });
+
+  it("ignores commented-out Laravel command signatures", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-commented-command-signature-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/commented-command-signature",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "artisan", "#!/usr/bin/env php\n");
+    await writeFixture(
+      root,
+      "app/Console/Commands/SyncCatalog.php",
+      "<?php\nnamespace App\\Console\\Commands;\n" +
+        "// protected $signature = 'app:old-sync';\n" +
+        "/* #[Signature('app:blocked-sync')] */\n" +
+        "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const command = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Console/Commands/SyncCatalog.php",
+    );
+
+    expect(titles).toContain("Laravel command app:sync-catalog");
+    expect(titles).not.toContain("Laravel command app:old-sync");
+    expect(titles).not.toContain("Laravel command app:blocked-sync");
+    expect(command?.entrypoints[0]?.command).toBe("app:sync-catalog");
+  });
+
+  it("uses Composer validation scripts for PHP projects", async () => {
+    const root = await fixtureRoot("clawpatch-php-composer-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/php-tool",
+          require: {
+            php: "^8.3",
+          },
+          scripts: {
+            typecheck: "vendor/bin/phpstan analyse --level=max",
+            analyse: "vendor/bin/phpstan analyse",
+            lint: "vendor/bin/phpcs",
+            format: "vendor/bin/php-cs-fixer fix --dry-run",
+            test: "vendor/bin/phpunit",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "app/Service.php", "<?php\nfinal class Service {}\n");
+    await writeFixture(root, "tests/LibTest.php", "<?php\nfinal class LibTest {}\n");
+    await writeFixture(root, "tests/OtherTest.php", "<?php\nfinal class OtherTest {}\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const phpTestSuite = result.features.find((feature) =>
+      feature.title.startsWith("PHP test suite tests"),
+    );
+
+    expect(project.detected.commands).toEqual({
+      typecheck: "composer typecheck",
+      lint: "composer lint",
+      format: "composer format",
+      test: "composer test",
+    });
+    expect(titles).toContain("Composer script test");
+    expect(titles).toContain("Composer script typecheck");
+    expect(phpTestSuite?.title).toBe("PHP test suite tests");
+    expect(phpTestSuite?.tags).toEqual(["php", "test"]);
+    expect(phpTestSuite?.tests.map((test) => test.path).toSorted()).toEqual([
+      "tests/LibTest.php",
+      "tests/OtherTest.php",
+    ]);
+    expect(titles).not.toContain("Laravel project php-tool");
+  });
+
+  it("uses PHPUnit for Laravel package projects without artisan", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-package-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/laravel-package",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "phpunit/phpunit": "^12.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "phpunit.xml", "<phpunit />\n");
+    await writeFixture(root, "src/PackageServiceProvider.php", "<?php\nfinal class Provider {}\n");
+
+    expect((await detectProject(root)).detected.commands.test).toBe("vendor/bin/phpunit");
+  });
+
+  it("uses Pest and PHPStan defaults for PHP packages", async () => {
+    const root = await fixtureRoot("clawpatch-php-quality-commands-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/php-quality",
+          require: {
+            php: "^8.3",
+          },
+          "require-dev": {
+            "pestphp/pest": "^3.0",
+            "phpstan/phpstan": "^2.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "src/PackageService.php", "<?php\nfinal class PackageService {}\n");
+    await writeFixture(
+      root,
+      "tests/PackageServiceTest.php",
+      "<?php\nit('works', function () {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const phpTestSuite = result.features.find((feature) =>
+      feature.title.startsWith("PHP test suite tests"),
+    );
+
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "vendor/bin/phpstan analyse",
+      test: "vendor/bin/pest",
+    });
+    expect(phpTestSuite?.tests).toEqual([
+      { path: "tests/PackageServiceTest.php", command: "vendor/bin/pest" },
+    ]);
+  });
+
+  it("uses PHPUnit dependency test commands for Laravel package features", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-package-feature-tests-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/laravel-package-features",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+          "require-dev": {
+            "phpunit/phpunit": "^12.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/PackageController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class PackageController {}\n",
+    );
+    await writeFixture(
+      root,
+      "tests/Feature/PackageControllerTest.php",
+      "<?php\nit('handles package routes', function () {});\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const controller = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/PackageController.php",
+    );
+
+    expect(project.detected.commands.test).toBe("vendor/bin/phpunit");
+    expect(controller?.tests).toEqual([
+      { path: "tests/Feature/PackageControllerTest.php", command: "vendor/bin/phpunit" },
+    ]);
+  });
+
   it("resolves Python console scripts and tests from non-src package roots", async () => {
     const root = await fixtureRoot("clawpatch-python-roots-");
     await writeFixture(
@@ -2340,6 +5010,21 @@ add_executable(headerapp include/headers.hpp)
         test: "uv run pytest",
       },
     });
+
+    const blackRoot = await fixtureRoot("clawpatch-python-black-");
+    await writeFixture(blackRoot, "requirements.txt", "black\n");
+    expect((await detectProject(blackRoot)).detected.commands.format).toBe("black --check .");
+
+    const uvBlackRoot = await fixtureRoot("clawpatch-python-uv-black-");
+    await writeFixture(
+      uvBlackRoot,
+      "pyproject.toml",
+      '[project]\nname = "uv-black"\ndependencies = ["black"]\n',
+    );
+    await writeFixture(uvBlackRoot, "uv.lock", "");
+    expect((await detectProject(uvBlackRoot)).detected.commands.format).toBe(
+      "uv run black --check .",
+    );
 
     const poetryRoot = await fixtureRoot("clawpatch-python-poetry-");
     await writeFixture(
@@ -2917,6 +5602,60 @@ add_executable(headerapp include/headers.hpp)
       { path: "setup.cfg", reason: "python project metadata" },
       { path: "requirements.txt", reason: "python project metadata" },
     ]);
+  });
+
+  it("maps setup.cfg Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-cfg-entry-points-");
+    await writeFixture(
+      root,
+      "setup.cfg",
+      [
+        "[metadata]",
+        "name = legacy-cli",
+        "",
+        "[options.entry_points]",
+        "console_scripts =",
+        "    legacy = legacy.cli:main",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "legacy/cli.py", "def main():\n    pass\n");
+    await writeFixture(root, "tests/test_cli.py", "def test_cli():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command legacy");
+
+    expect(titles).toContain("Python project legacy-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "legacy/cli.py", symbol: "main" });
+    expect(cli?.tests).toEqual([{ path: "tests/test_cli.py", command: "pytest" }]);
+  });
+
+  it("maps setup.py Python project names and console scripts", async () => {
+    const root = await fixtureRoot("clawpatch-python-setup-py-entry-points-");
+    await writeFixture(
+      root,
+      "setup.py",
+      [
+        "from setuptools import setup",
+        "",
+        "setup(",
+        "    name='setup-cli',",
+        "    entry_points={'console_scripts': ['setcli=setup_cli.cli:main']},",
+        ")",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, "setup_cli/cli.py", "def main():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const cli = result.features.find((feature) => feature.title === "Python CLI command setcli");
+
+    expect(titles).toContain("Python project setup-cli");
+    expect(cli?.entrypoints[0]).toMatchObject({ path: "setup_cli/cli.py", symbol: "main" });
   });
 
   it("keeps Python source group ids stable when a root gains files", async () => {

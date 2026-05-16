@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { access, mkdir, readFile, rm, symlink, unlink } from "node:fs/promises";
+import { access, mkdir, open, readFile, readdir, rm, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   fixCommand,
@@ -20,6 +20,8 @@ import { loadConfig } from "./config.js";
 import { runCommand } from "./exec.js";
 import { changedFilesSince } from "./git.js";
 import {
+  claimFeature,
+  releaseFeatureLock,
   readFeatures,
   readFinding,
   readFindings,
@@ -176,9 +178,12 @@ describe("workflow", () => {
   });
 
   it("parses review jobs and report filters", () => {
-    expect(parseArgs(["review", "--limit", "4", "--jobs", "3"]).flags).toMatchObject({
+    expect(
+      parseArgs(["review", "--limit", "4", "--jobs", "3", "--project", "apps/web"]).flags,
+    ).toMatchObject({
       limit: "4",
       jobs: "3",
+      project: "apps/web",
     });
     expect(parseArgs(["review", "--since", "HEAD~5"]).flags).toMatchObject({
       since: "HEAD~5",
@@ -186,9 +191,12 @@ describe("workflow", () => {
     expect(parseArgs(["revalidate", "--since", "origin/main"]).flags).toMatchObject({
       since: "origin/main",
     });
-    expect(parseArgs(["report", "--status", "open", "--severity", "high"]).flags).toMatchObject({
+    expect(
+      parseArgs(["report", "--status", "open", "--severity", "high", "--project", "web"]).flags,
+    ).toMatchObject({
       status: "open",
       severity: "high",
+      project: "web",
     });
     expect(
       parseArgs(["triage", "--finding", "f", "--status", "wont-fix", "--note", "ok"]).flags,
@@ -688,6 +696,126 @@ describe("workflow", () => {
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 
+  it("claims feature locks atomically", async () => {
+    const root = await fixtureRoot("clawpatch-atomic-lock-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "atomic-lock", bin: { atomic: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+
+    const first = {
+      lockedByRunId: "run-one",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
+    };
+    const second = {
+      lockedByRunId: "run-two",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 2,
+    };
+    const results = await Promise.allSettled([
+      claimFeature(paths, feature!.featureId, first),
+      claimFeature(paths, feature!.featureId, second),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      reason: { code: "lock-conflict" },
+    });
+    expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
+
+    await releaseFeatureLock(paths, feature!.featureId);
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
+  it("cleans up lock files when claim lock payload writes fail", async () => {
+    const root = await fixtureRoot("clawpatch-lock-write-fail-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "lock-write-fail", bin: { lock: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    const probe = await open(join(paths.locks, "probe.json"), "w");
+    const writeFileSpy = vi
+      .spyOn(Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile }, "writeFile")
+      .mockRejectedValueOnce(new Error("simulated lock write failure"));
+    await probe.close();
+    await unlink(join(paths.locks, "probe.json"));
+
+    await expect(
+      claimFeature(paths, feature!.featureId, {
+        lockedByRunId: "run",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      }),
+    ).rejects.toThrow("simulated lock write failure");
+    expect(await readdir(paths.locks)).toEqual([]);
+
+    writeFileSpy.mockRestore();
+  });
+
+  it("does not claim a stale feature after another run finishes it", async () => {
+    const root = await fixtureRoot("clawpatch-stale-lock-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "stale-lock", bin: { stale: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    await writeFeature(paths, {
+      ...feature!,
+      status: "reviewed",
+      lock: null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await expect(
+      claimFeature(paths, feature!.featureId, {
+        lockedByRunId: "run",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      }),
+    ).rejects.toMatchObject({ code: "lock-conflict" });
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
   it("does not consume features on dry-run review", async () => {
     const root = await fixtureRoot("clawpatch-dry-run-");
     await writeFixture(
@@ -704,6 +832,71 @@ describe("workflow", () => {
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
 
     expect(features[0]?.status).toBe("pending");
+  });
+
+  it("filters review dry-runs by project name or root", async () => {
+    const root = await fixtureRoot("clawpatch-project-filter-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "apps/admin/package.json",
+      JSON.stringify({ name: "admin", dependencies: { next: "1.0.0" } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/project.json",
+      JSON.stringify({ name: "admin", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/admin/src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const byRoot = (await reviewCommand(context, {
+      dryRun: true,
+      project: "apps/web",
+      limit: "20",
+    })) as { featureIds: string[]; wouldReview: number };
+    const byName = (await reviewCommand(context, {
+      dryRun: true,
+      project: "web",
+      limit: "20",
+    })) as { featureIds: string[]; wouldReview: number };
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const titleById = new Map(features.map((feature) => [feature.featureId, feature.title]));
+
+    expect(byRoot.wouldReview).toBeGreaterThan(0);
+    expect(byRoot.featureIds).toEqual(byName.featureIds);
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).toEqual(
+      expect.arrayContaining(["Node package web", "web route /dashboard"]),
+    );
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).not.toContain("Node package admin");
+    expect(byRoot.featureIds.map((id) => titleById.get(id))).not.toContain(
+      "admin route /dashboard",
+    );
   });
 
   it("does not mutate features on dry-run map", async () => {
@@ -899,6 +1092,7 @@ describe("workflow", () => {
 
     expect(features[0]?.status).toBe("error");
     expect(features[0]?.lock).toBeNull();
+    expect(await readdir(join(root, ".clawpatch/locks"))).toEqual([]);
     await rm(join(root, ".clawpatch"), { recursive: true, force: true });
   });
 
@@ -946,21 +1140,79 @@ describe("workflow", () => {
     await mapCommand(context);
     const feature = (await readFeatures(paths))[0];
     expect(feature).toBeDefined();
-    await writeFeature(paths, {
-      ...feature!,
-      status: "claimed",
-      lock: {
-        lockedByRunId: "run",
-        lockedAt: new Date().toISOString(),
-        hostname: "test",
-        pid: 1,
-      },
+    await claimFeature(paths, feature!.featureId, {
+      lockedByRunId: "run",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
     });
+    expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
     await cleanLocksCommand(context);
     const cleaned = (await readFeatures(paths))[0];
 
     expect(cleaned?.status).toBe("pending");
     expect(cleaned?.lock).toBeNull();
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
+  it("surfaces crash-window lock files in status", async () => {
+    const root = await fixtureRoot("clawpatch-file-lock-status-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "file-lock-status", bin: { clean: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths))[0];
+    expect(feature).toBeDefined();
+    await writeFixture(
+      root,
+      `.clawpatch/locks/${feature!.featureId}.json`,
+      `${JSON.stringify({
+        lockedByRunId: "interrupted",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      })}\n`,
+    );
+
+    expect(await statusCommand(context)).toMatchObject({ activeLocks: 1, lockFiles: 1 });
+  });
+
+  it("cleans interrupted review locks through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-clean-locks-cli-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "clean-locks-cli", bin: { clean: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+
+    await runCli(["--root", root, "init", "--json"]);
+    await runCli(["--root", root, "map", "--json"]);
+
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    expect(feature).toBeDefined();
+    await claimFeature(paths, feature!.featureId, {
+      lockedByRunId: "interrupted",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
+    });
+
+    const output = await runCli(["--root", root, "clean-locks", "--json"]);
+    const cleaned = (await readFeatures(paths))[0];
+
+    expect(JSON.parse(output.stdout)).toMatchObject({ cleared: 1, lockFilesCleared: 1 });
+    expect(cleaned?.status).toBe("pending");
+    expect(cleaned?.lock).toBeNull();
+    expect(await readdir(paths.locks)).toEqual([]);
   });
 
   it("filters state files from successful fix results", async () => {
@@ -992,6 +1244,132 @@ describe("workflow", () => {
     expect(fixed).toMatchObject({ status: "applied", filesChanged: 0 });
     expect(patches[0]?.filesChanged).toEqual([]);
     await expect(access(join(root, "SHOULD_NOT_RUN_PROVIDER_COMMANDS"))).rejects.toThrow();
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("includes feature-specific validation in fix dry-run output", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-dry-run-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(0)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [{ path: "src/index.test.ts", command: featureCommand }],
+    });
+    const fixed = await fixCommand(context, { finding, dryRun: true });
+    const patches = await readPatchAttempts(paths);
+
+    expect(fixed).toMatchObject({ dryRun: true, validation: featureCommand });
+    expect(patches).toEqual([]);
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("fails fix when feature-specific validation fails", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-fail-");
+    await runCommand(
+      "git init -q && git config user.email test@example.com && git config user.name Test",
+      root,
+    );
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    await runCommand(
+      "git add package.json src/index.ts && git -c commit.gpgsign=false commit -q -m init",
+      root,
+    );
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(7)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [{ path: "src/index.test.ts", command: featureCommand }],
+    });
+    await expect(fixCommand(context, { finding })).rejects.toMatchObject({ exitCode: 6 });
+    const [patches, updatedFinding] = await Promise.all([
+      readPatchAttempts(paths),
+      readFinding(paths, finding),
+    ]);
+
+    expect(patches[0]?.status).toBe("failed");
+    expect(patches[0]?.commandsRun).toHaveLength(1);
+    expect(patches[0]?.commandsRun[0]).toMatchObject({ command: featureCommand, exitCode: 7 });
+    expect(updatedFinding?.status).toBe("open");
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("deduplicates feature-specific and configured fix validation commands", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-dedupe-");
+    await runCommand(
+      "git init -q && git config user.email test@example.com && git config user.name Test",
+      root,
+    );
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {
+          format: 'node -e "process.exit(0)"',
+          test: 'node -e "process.exit(0)"',
+        },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    await runCommand(
+      "git add package.json src/index.ts && git -c commit.gpgsign=false commit -q -m init",
+      root,
+    );
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    const featureCommand = 'node -e "process.exit(0)"';
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [
+        { path: "src/index.test.ts", command: "" },
+        { path: "src/index.test.ts", command: featureCommand },
+        { path: "src/index.test.ts", command: "npm run test" },
+      ],
+    });
+    const fixed = await fixCommand(context, { finding });
+    const patches = await readPatchAttempts(paths);
+
+    expect(fixed).toMatchObject({ status: "applied", commands: 3 });
+    expect(patches[0]?.commandsRun.map((result) => result.command)).toEqual([
+      "npm run format",
+      featureCommand,
+      "npm run test",
+    ]);
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 

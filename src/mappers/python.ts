@@ -15,6 +15,7 @@ import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
 type PythonScript = {
   name: string;
   target: string;
+  metadataPath: string;
 };
 
 type FlaskRoute = {
@@ -76,53 +77,53 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   if (!(await isPythonProject(root))) {
     return [];
   }
-  const pyproject = await readPyproject(root);
+  const metadata = await readPythonProjectMetadata(root);
   const metadataFiles = await pythonMetadataFiles(root);
-  const testCommand = await pythonTestCommand(root, pyproject);
+  const testCommand = await pythonTestCommand(root, metadata);
   const testFiles = await pythonTestFiles(root);
   const seeds: FeatureSeed[] = [];
 
   if (metadataFiles.length > 0) {
     seeds.push({
-      title: `Python project ${pyproject.name ?? basename(root)}`,
+      title: `Python project ${metadata.name ?? basename(root)}`,
       summary: `Python project metadata in ${metadataFiles.join(", ")}.`,
-      kind: packageKind(pyproject.name ?? basename(root)),
+      kind: packageKind(metadata.name ?? basename(root)),
       source: "python-project",
       confidence: "medium",
       entryPath: metadataFiles[0] ?? "pyproject.toml",
-      symbol: pyproject.name,
+      symbol: metadata.name,
       route: null,
       command: null,
       ownedFiles: metadataFiles.map((path) => ({ path, reason: "python project metadata" })),
       contextFiles: await pythonProjectContextFiles(root, metadataFiles),
       tags: ["python", "package"],
-      trustBoundaries: packageTrustBoundaries(pyproject.name ?? basename(root)),
+      trustBoundaries: packageTrustBoundaries(metadata.name ?? basename(root)),
       skipNearbyTests: true,
     });
   }
 
-  for (const script of pyproject.scripts) {
-    const resolved = await resolvePythonScript(root, script.target);
+  for (const script of metadata.scripts) {
+    const resolved = await resolvePythonScript(root, script.target, script.metadataPath);
     const tests =
-      resolved.entryPath === "pyproject.toml"
+      resolved.entryPath === script.metadataPath
         ? []
         : associatedTests([resolved.entryPath], testFiles, testCommand);
     seeds.push({
       title: `Python CLI command ${script.name}`,
       summary:
-        resolved.entryPath === "pyproject.toml"
+        resolved.entryPath === script.metadataPath
           ? `Python console script '${script.name}' targets ${script.target}.`
           : `Python console script '${script.name}' targets ${script.target}, source ${resolved.entryPath}.`,
       kind: "cli-command",
       source: "python-console-script",
-      confidence: resolved.entryPath === "pyproject.toml" ? "medium" : "high",
+      confidence: resolved.entryPath === script.metadataPath ? "medium" : "high",
       entryPath: resolved.entryPath,
       symbol: resolved.symbol,
       route: null,
       command: script.name,
       ownedFiles:
-        resolved.entryPath === "pyproject.toml"
-          ? [{ path: "pyproject.toml", reason: "console script metadata" }]
+        resolved.entryPath === script.metadataPath
+          ? [{ path: script.metadataPath, reason: "console script metadata" }]
           : [{ path: resolved.entryPath, reason: "console script source" }],
       contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
       tests,
@@ -183,22 +184,32 @@ async function isPythonProject(root: string): Promise<boolean> {
   );
 }
 
-async function readPyproject(root: string): Promise<PyprojectInfo> {
-  if (!(await pathExists(join(root, "pyproject.toml")))) {
-    return { name: null, scripts: [], hasPytest: false };
-  }
-  const source = await readFile(join(root, "pyproject.toml"), "utf8");
-  return {
-    name:
+async function readPythonProjectMetadata(root: string): Promise<PyprojectInfo> {
+  const metadata: PyprojectInfo = { name: null, scripts: [], hasPytest: false };
+  if (await pathExists(join(root, "pyproject.toml"))) {
+    const source = await readFile(join(root, "pyproject.toml"), "utf8");
+    metadata.name =
       tomlStringValue(table(source, "project"), "name") ??
-      tomlStringValue(table(source, "tool.poetry"), "name"),
-    scripts: [
-      ...scriptsFromTable(table(source, "project.scripts")),
-      ...scriptsFromTable(table(source, "tool.poetry.scripts")),
-    ],
-    hasPytest:
-      table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest"),
-  };
+      tomlStringValue(table(source, "tool.poetry"), "name");
+    metadata.scripts.push(
+      ...scriptsFromTable(table(source, "project.scripts"), "pyproject.toml"),
+      ...scriptsFromTable(table(source, "tool.poetry.scripts"), "pyproject.toml"),
+    );
+    metadata.hasPytest =
+      table(source, "tool.pytest.ini_options").length > 0 || dependencyNames(source).has("pytest");
+  }
+  if (await pathExists(join(root, "setup.cfg"))) {
+    const source = await readFile(join(root, "setup.cfg"), "utf8");
+    metadata.name ??= setupCfgStringValue(source, "metadata", "name");
+    metadata.scripts.push(...setupCfgConsoleScripts(source));
+    metadata.hasPytest ||= /^\s*(?:\[tool:pytest\]|\[pytest\])\s*(?:#.*)?$/mu.test(source);
+  }
+  if (await pathExists(join(root, "setup.py"))) {
+    const source = await readFile(join(root, "setup.py"), "utf8");
+    metadata.name ??= setupPyStringValue(source, "name");
+    metadata.scripts.push(...setupPyConsoleScripts(source));
+  }
+  return metadata;
 }
 
 async function pythonMetadataFiles(root: string): Promise<string[]> {
@@ -346,10 +357,11 @@ async function pythonProjectContextFiles(
 async function resolvePythonScript(
   root: string,
   target: string,
+  metadataPath: string,
 ): Promise<{ entryPath: string; symbol: string | null }> {
   const [moduleName, symbol = null] = target.split(":");
   if (moduleName === undefined || moduleName.length === 0) {
-    return { entryPath: "pyproject.toml", symbol };
+    return { entryPath: metadataPath, symbol };
   }
   const modulePath = `${moduleName.replace(/\./gu, "/")}.py`;
   const packageInitPath = `${moduleName.replace(/\./gu, "/")}/__init__.py`;
@@ -363,7 +375,7 @@ async function resolvePythonScript(
       return { entryPath: candidate, symbol };
     }
   }
-  return { entryPath: "pyproject.toml", symbol };
+  return { entryPath: metadataPath, symbol };
 }
 
 async function fastApiRouteSeeds(
@@ -1043,15 +1055,101 @@ function tomlStringValue(source: string, key: string): string | null {
   return new RegExp(`^\\s*${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "mu").exec(source)?.[2] ?? null;
 }
 
-function scriptsFromTable(source: string): PythonScript[] {
+function scriptsFromTable(source: string, metadataPath: string): PythonScript[] {
   const scripts: PythonScript[] = [];
   for (const line of source.split("\n")) {
     const match = /^\s*["']?([^#"'=\s]+)["']?\s*=\s*(["'])([^"']+)\2/u.exec(line);
     if (match?.[1] !== undefined && match[3] !== undefined) {
-      scripts.push({ name: match[1], target: match[3] });
+      scripts.push({ name: match[1], target: match[3], metadataPath });
     }
   }
   return scripts;
+}
+
+function setupCfgStringValue(source: string, sectionName: string, keyName: string): string | null {
+  const section = iniSection(source, sectionName);
+  const escapedKey = keyName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return (
+    new RegExp(`^\\s*${escapedKey}\\s*=\\s*([^#;\\r\\n]+)`, "imu").exec(section)?.[1]?.trim() ??
+    null
+  );
+}
+
+function setupCfgConsoleScripts(source: string): PythonScript[] {
+  const scripts: PythonScript[] = [];
+  const section = iniSection(source, "options.entry_points");
+  let inConsoleScripts = false;
+  for (const rawLine of section.split("\n")) {
+    const line = rawLine.replace(/\r$/u, "");
+    if (/^\s*(?:#|;|$)/u.test(line)) {
+      continue;
+    }
+    const assignment = /^\s*([A-Za-z0-9_.-]+)\s*=\s*(.*)$/u.exec(line);
+    if (assignment !== null) {
+      if (!/^\s/u.test(line)) {
+        inConsoleScripts = assignment[1] === "console_scripts";
+        const inlineScript = inConsoleScripts ? consoleScriptFromEntry(assignment[2] ?? "") : null;
+        if (inlineScript !== null) {
+          scripts.push({ ...inlineScript, metadataPath: "setup.cfg" });
+        }
+        continue;
+      }
+      if (inConsoleScripts) {
+        scripts.push({
+          name: assignment[1] ?? "",
+          target: (assignment[2] ?? "").trim(),
+          metadataPath: "setup.cfg",
+        });
+      }
+      continue;
+    }
+    const script = inConsoleScripts ? consoleScriptFromEntry(line) : null;
+    if (script !== null) {
+      scripts.push({ ...script, metadataPath: "setup.cfg" });
+    }
+  }
+  return scripts.filter((script) => script.name.length > 0 && script.target.length > 0);
+}
+
+function setupPyStringValue(source: string, keyName: string): string | null {
+  const escapedKey = keyName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(`\\b${escapedKey}\\s*=\\s*(["'])([^"']+)\\1`, "su").exec(source)?.[2] ?? null;
+}
+
+function setupPyConsoleScripts(source: string): PythonScript[] {
+  const scripts: PythonScript[] = [];
+  for (const block of source.matchAll(/console_scripts["']?\s*[:=]\s*\[([\s\S]*?)\]/gu)) {
+    const entries = block[1] ?? "";
+    for (const match of entries.matchAll(/["']([^"']+)["']/gu)) {
+      const script = consoleScriptFromEntry(match[1] ?? "");
+      if (script !== null) {
+        scripts.push({ ...script, metadataPath: "setup.py" });
+      }
+    }
+  }
+  return scripts;
+}
+
+function consoleScriptFromEntry(source: string): Omit<PythonScript, "metadataPath"> | null {
+  const match =
+    /^\s*([A-Za-z0-9_.-]+)\s*=\s*([A-Za-z_][A-Za-z0-9_.]*(?::[A-Za-z_][A-Za-z0-9_]*)?)\s*$/u.exec(
+      source,
+    );
+  if (match?.[1] === undefined || match[2] === undefined) {
+    return null;
+  }
+  return { name: match[1], target: match[2] };
+}
+
+function iniSection(source: string, sectionName: string): string {
+  const escapedName = sectionName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const match = new RegExp(`^\\s*\\[${escapedName}\\]\\s*(?:[#;].*)?$`, "imu").exec(source);
+  if (match?.index === undefined) {
+    return "";
+  }
+  const rest = source.slice(match.index + match[0].length);
+  const next = /^\s*\[[^\]]+\]\s*(?:[#;].*)?$/mu.exec(rest);
+  return next?.index === undefined ? rest : rest.slice(0, next.index);
 }
 
 function dependencyNames(source: string): Set<string> {
