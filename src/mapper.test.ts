@@ -3383,6 +3383,26 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("CMake binary real");
   });
 
+  it("ignores CMake command text inside unquoted command arguments", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-nested-command-text-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "message(STATUS add_executable(fake src/fake.c))\nset(x add_library(fake_lib src/lib.c))\nadd_executable(real src/real.c)\n",
+    );
+    await writeFixture(root, "src/fake.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/lib.c", "int lib(void) { return 0; }\n");
+    await writeFixture(root, "src/real.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("CMake binary fake");
+    expect(titles).not.toContain("CMake library fake_lib");
+    expect(titles).toContain("CMake binary real");
+  });
+
   it("keeps CMake targets after bracket arguments containing hashes", async () => {
     const root = await fixtureRoot("clawpatch-cmake-bracket-hash-");
     await writeFixture(

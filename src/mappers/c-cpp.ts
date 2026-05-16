@@ -455,6 +455,7 @@ function cmakeCommandArgs(body: string, command: string): string[] {
   const args: string[] = [];
   const lower = body.toLowerCase();
   const needle = command.toLowerCase();
+  let depth = 0;
   for (let index = 0; index < body.length; ) {
     const skipped = cmakeQuotedOrBracketEnd(body, index);
     if (skipped !== null) {
@@ -462,6 +463,7 @@ function cmakeCommandArgs(body: string, command: string): string[] {
       continue;
     }
     if (
+      depth === 0 &&
       lower.startsWith(needle, index) &&
       !isIdentifierChar(body[index - 1] ?? "") &&
       !isIdentifierChar(body[index + needle.length] ?? "")
@@ -478,6 +480,11 @@ function cmakeCommandArgs(body: string, command: string): string[] {
           continue;
         }
       }
+    }
+    if (body[index] === "(") {
+      depth += 1;
+    } else if (body[index] === ")") {
+      depth = Math.max(0, depth - 1);
     }
     index += 1;
   }
