@@ -304,6 +304,53 @@ describe("mapFeatures", () => {
     ]);
   });
 
+  it("uses Nx target commands for React route tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-react-nx-test-command-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    await writeFixture(
+      root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web", sourceRoot: "apps/web/src", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify(
+        { name: "web", dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" } },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/src/pages/HomePage.test.tsx", command: "pnpm nx test web" },
+    ]);
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -1630,6 +1677,45 @@ describe("mapFeatures", () => {
     const result = await mapFeatures(root, project, []);
 
     expect(result.features.map((feature) => feature.title)).toContain("React route /home");
+  });
+
+  it("includes app-root React route tests", async () => {
+    const root = await fixtureRoot("clawpatch-react-app-tests-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "app/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './routes/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "app/routes/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "app/routes/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "app/routes/HomePage.test.tsx", command: "npm run test" },
+    ]);
   });
 
   it("uses bun run for root React package scripts", async () => {

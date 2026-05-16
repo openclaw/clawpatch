@@ -13,7 +13,9 @@ import {
   shouldSkip,
   walk,
 } from "./shared.js";
-import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
+import { projectTargetCommand } from "./projects.js";
+import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
+import type { NodeProjectInfo } from "./projects.js";
 
 type PackageJson = {
   name?: unknown;
@@ -29,6 +31,7 @@ type ReactPackage = {
   packageJsonPath: string;
   packageJson: PackageJson;
   packageManager: string;
+  testCommand: string | null;
 };
 
 type RouteMatch = {
@@ -51,11 +54,11 @@ const anyImportRe = /(?:import\s+["']([^"']+)["']|from\s+["']([^"']+)["'])/gu;
 const packageRootCandidates = ["", "frontend", "client", "web", "ui", "app", "apps", "packages"];
 const sourceRoots = ["src", "app"];
 const componentRoots = ["src/pages", "src/components"];
-const testRoots = ["src", "test", "tests", "__tests__", "e2e"];
+const testRoots = ["src", "app", "test", "tests", "__tests__", "e2e"];
 
-export async function reactSeeds(root: string): Promise<FeatureSeed[]> {
+export async function reactSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   syncFileCache.clear();
-  const packages = await discoverReactPackages(root);
+  const packages = await discoverReactPackages(root, context.projects);
   const seeds: FeatureSeed[] = [];
   for (const info of packages) {
     seeds.push(...(await routeSeeds(root, info)));
@@ -172,7 +175,10 @@ async function componentSeeds(
   });
 }
 
-async function discoverReactPackages(root: string): Promise<ReactPackage[]> {
+async function discoverReactPackages(
+  root: string,
+  projects: NodeProjectInfo[],
+): Promise<ReactPackage[]> {
   const packages: ReactPackage[] = [];
   const rootPackageManager = await detectNodePackageManager(root);
   for (const packageJsonPath of await packageJsonPaths(root)) {
@@ -181,11 +187,18 @@ async function discoverReactPackages(root: string): Promise<ReactPackage[]> {
       continue;
     }
     const packageRoot = dirname(packageJsonPath) === "." ? "." : dirname(packageJsonPath);
+    const project = projects.find((candidate) => candidate.root === packageRoot);
+    const packageManager =
+      project?.packageManager ??
+      (await packageManagerForReactPackage(root, packageRoot, rootPackageManager));
+    const projectTestCommand = project === undefined ? null : projectTargetCommand(project, "test");
     packages.push({
       root: packageRoot,
       packageJsonPath,
       packageJson,
-      packageManager: await packageManagerForReactPackage(root, packageRoot, rootPackageManager),
+      packageManager,
+      testCommand:
+        projectTestCommand ?? packageJsonTestCommand(packageJson, packageManager, packageRoot),
     });
   }
   return packages;
@@ -1233,10 +1246,18 @@ function isExactTestForFile(file: string, test: string): boolean {
 }
 
 function packageTestCommand(info: ReactPackage): string | null {
-  if (!packageScripts(info.packageJson).has("test")) {
+  return info.testCommand;
+}
+
+function packageJsonTestCommand(
+  packageJson: PackageJson,
+  packageManager: string,
+  packageRoot: string,
+): string | null {
+  if (!packageScripts(packageJson).has("test")) {
     return null;
   }
-  return nodeScriptCommand(info.packageManager, info.root, "test");
+  return nodeScriptCommand(packageManager, packageRoot, "test");
 }
 
 function packageScripts(pkg: PackageJson): Set<string> {
