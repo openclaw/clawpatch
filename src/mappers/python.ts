@@ -136,7 +136,7 @@ async function isPythonProject(root: string): Promise<boolean> {
     (await pathExists(join(root, "setup.py"))) ||
     (await pathExists(join(root, "setup.cfg"))) ||
     (await pathExists(join(root, "requirements.txt"))) ||
-    (await pythonSourceGroups(root)).length > 0
+    (await containsReviewablePythonSource(root))
   );
 }
 
@@ -400,6 +400,9 @@ function currentLabel(sourceRoot: string, files: string[], depth: number): strin
 
 function commonLabel(sourceRoot: string, files: string[], depth: number): string {
   if (depth === 0) {
+    if (sourceRoot === "tests") {
+      return sourceRoot;
+    }
     const first = files[0];
     return files.length === 1 && first !== undefined && !first.startsWith(`${sourceRoot}/`)
       ? first
@@ -465,6 +468,54 @@ function pythonShouldSkip(path: string): boolean {
     shouldSkip(path) ||
     /(^|\/)(\.venv|venv|__pycache__|\.mypy_cache|\.ruff_cache|\.pytest_cache)(\/|$)/u.test(path)
   );
+}
+
+async function containsReviewablePythonSource(root: string): Promise<boolean> {
+  for (const sourceRoot of sourceRoots) {
+    if (await containsPythonSourceInDirectory(root, sourceRoot, 4)) {
+      return true;
+    }
+  }
+  for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (
+      entry.isDirectory() &&
+      !pythonShouldSkip(entry.name) &&
+      (await pathExists(join(root, entry.name, "__init__.py")))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function containsPythonSourceInDirectory(
+  root: string,
+  prefix: string,
+  remainingDepth: number,
+): Promise<boolean> {
+  if (remainingDepth < 0 || pythonShouldSkip(prefix)) {
+    return false;
+  }
+  const dir = join(root, prefix);
+  if (!(await isSafeDirectory(root, dir))) {
+    return false;
+  }
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const rel = `${prefix}/${entry.name}`;
+    if (pythonShouldSkip(rel)) {
+      continue;
+    }
+    if (entry.isFile() && isReviewablePythonSourceFile(rel)) {
+      return true;
+    }
+    if (
+      entry.isDirectory() &&
+      (await containsPythonSourceInDirectory(root, rel, remainingDepth - 1))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function table(source: string, name: string): string {

@@ -1117,9 +1117,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
-    const suite = result.features.find(
-      (feature) => feature.title === "Python test suite test_app.py",
-    );
+    const suite = result.features.find((feature) => feature.title === "Python test suite tests");
 
     expect(project.detected.commands.test).toBe("pytest");
     expect(suite?.ownedFiles).toEqual([{ path: "test_app.py", reason: "pytest file" }]);
@@ -1202,6 +1200,41 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(firstSuite?.featureId).toBeDefined();
     expect(secondSuite?.featureId).toBe(firstSuite?.featureId);
     expect(second.stale).toBe(0);
+  });
+
+  it("keeps root-level Python pytest suite ids stable when tests are added", async () => {
+    const root = await fixtureRoot("clawpatch-python-stable-root-test-id-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname = "stable-root-tests"\n');
+    await writeFixture(root, "test_b.py", "def test_b():\n    pass\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstSuite = first.features.find(
+      (feature) => feature.title === "Python test suite tests",
+    );
+    await writeFixture(root, "test_a.py", "def test_a():\n    pass\n");
+    const second = await mapFeatures(root, project, first.features);
+    const secondSuite = second.features.find(
+      (feature) => feature.title === "Python test suite tests",
+    );
+
+    expect(firstSuite?.featureId).toBeDefined();
+    expect(secondSuite?.featureId).toBe(firstSuite?.featureId);
+    expect(second.stale).toBe(0);
+  });
+
+  it("maps Python source-only projects without a full source-group pre-scan", async () => {
+    const root = await fixtureRoot("clawpatch-python-source-only-");
+    await writeFixture(root, "src/source_only/app.py", "def app():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Python source src");
+
+    expect(project.detected.languages).toContain("python");
+    expect(source?.ownedFiles).toEqual([
+      { path: "src/source_only/app.py", reason: "source group src" },
+    ]);
   });
 
   it("keeps Node scripts and native defaults in mixed package repos", async () => {
