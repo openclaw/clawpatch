@@ -1405,6 +1405,26 @@ add_executable(headerapp include/headers.hpp)
     ).toEqual([{ path: "sub/src/main.c", reason: "target source" }]);
   });
 
+  it("attaches target_sources from CMake subdirectories", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-subdir-target-sources-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app)\nadd_subdirectory(src)\n");
+    await writeFixture(root, "src/CMakeLists.txt", "target_sources(app PRIVATE main.c util.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 1; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(app?.entrypoints[0]).toMatchObject({ path: "src/main.c", command: "app" });
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+    ]);
+    expect(titles).not.toContain("C binary main");
+  });
+
   it("detects header-only C++ CMake libraries as C++ projects", async () => {
     const root = await fixtureRoot("clawpatch-cmake-header-only-cpp-");
     await writeFixture(
