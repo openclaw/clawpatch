@@ -1204,14 +1204,32 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     await writeFixture(
       root,
       "CMakeLists.txt",
-      'add_executable(myapp src/main.cpp src/util.cpp)\nadd_executable(quoted "src/quoted.cpp")\nadd_library(core STATIC include/core.hpp src/core.c src/core_util.c)\nadd_library(headers INTERFACE include/headers.hpp)\nadd_library(vendored INTERFACE vendor/dep.hpp)\nadd_executable(varapp ${APP_SOURCES})\nadd_executable(headerapp include/headers.hpp)\n',
+      `add_executable(myapp src/main.cpp src/util.cpp)
+add_executable(quoted "src/quoted.cpp")
+ADD_EXECUTABLE(upper src/upper.c)
+add_executable(absin ${root}/src/absin.cpp)
+add_executable(absout /src/main.cpp)
+#[[
+add_executable(commented src/commented.c)
+]]
+add_library(core STATIC include/core.hpp src/core.c src/core_util.c)
+ADD_LIBRARY(upperlib STATIC src/upperlib.c)
+add_library(headers INTERFACE include/headers.hpp)
+add_library(vendored INTERFACE vendor/dep.hpp)
+add_executable(varapp \${APP_SOURCES})
+add_executable(headerapp include/headers.hpp)
+`,
     );
     await writeFixture(root, "src/main.cpp", "int main(int argc, char **argv) { return 0; }\n");
     await writeFixture(root, "src/quoted.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/upper.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/absin.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/commented.c", "int main(void) { return 0; }\n");
     await writeFixture(root, "src/util.cpp", "int util() { return 1; }\n");
     await writeFixture(root, "include/core.hpp", "int core(void);\n");
     await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
     await writeFixture(root, "src/core_util.c", "int core_util(void) { return 2; }\n");
+    await writeFixture(root, "src/upperlib.c", "int upperlib(void) { return 1; }\n");
     await writeFixture(root, "include/headers.hpp", "int header_only(void);\n");
     await writeFixture(root, "vendor/dep.hpp", "int dep(void);\n");
     await writeFixture(root, "tests/main_test.cpp", "int main() { return 0; }\n");
@@ -1231,7 +1249,12 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(project.detected.packageManagers).toContain("cmake");
     expect(titles).toContain("CMake binary myapp");
     expect(titles).toContain("CMake binary quoted");
+    expect(titles).toContain("CMake binary upper");
+    expect(titles).toContain("CMake binary absin");
+    expect(titles).not.toContain("CMake binary absout");
+    expect(titles).not.toContain("CMake binary commented");
     expect(titles).toContain("CMake library core");
+    expect(titles).toContain("CMake library upperlib");
     expect(titles).toContain("CMake library headers");
     expect(titles).not.toContain("CMake library vendored");
     expect(titles).not.toContain("CMake binary varapp");

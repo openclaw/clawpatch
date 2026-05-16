@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import {
   isSafeFile,
   isCOrCppTestPath,
@@ -133,14 +133,11 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
 async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const cmakeFiles = files.filter(isCMake);
-  const exePattern = /add_executable\s*\(\s*([A-Za-z_][\w-]*)\s+([^)]*)\)/gmsu;
+  const exePattern = /add_executable\s*\(\s*([A-Za-z_][\w-]*)\s+([^)]*)\)/gimsu;
   const libPattern =
-    /add_library\s*\(\s*([A-Za-z_][\w-]*)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gmsu;
+    /add_library\s*\(\s*([A-Za-z_][\w-]*)(?:\s+(?:SHARED|STATIC|MODULE|OBJECT|INTERFACE))?\s+([^)]*)\)/gimsu;
   for (const cmakeFile of cmakeFiles) {
-    const body = stripLineComments(
-      await readFile(join(root, cmakeFile), "utf8").catch(() => ""),
-      "#",
-    );
+    const body = stripCMakeComments(await readFile(join(root, cmakeFile), "utf8").catch(() => ""));
     const dir = parentDir(cmakeFile);
     for (const match of body.matchAll(exePattern)) {
       const target = match[1] ?? "";
@@ -264,6 +261,10 @@ function readTargetSources(body: string, target: string): string[] {
   return splitWords(raw);
 }
 
+function stripCMakeComments(source: string): string {
+  return stripLineComments(source.replace(/#\[(=*)\[[\s\S]*?\]\1\]/gu, " "), "#");
+}
+
 async function automakeTargetSources(
   root: string,
   dir: string,
@@ -347,7 +348,7 @@ function pickEntry(candidates: string[], targetName: string): string | null {
 async function targetSourcePaths(root: string, dir: string, sources: string[]): Promise<string[]> {
   const paths: string[] = [];
   for (const source of sources.filter(isCOrCppSource)) {
-    const full = join(root, prefixDir(dir, source));
+    const full = isAbsolute(source) ? source : join(root, prefixDir(dir, source));
     const rel = normalize(relative(root, full));
     if (!shouldSkip(rel) && (await isSafeFile(root, full))) {
       paths.push(rel);
@@ -367,10 +368,7 @@ function automakeVariableName(target: string): string {
 function prefixDir(dir: string, file: string): string {
   const normalizedFile = normalize(file).replace(/^\.\//u, "");
   if (dir.length === 0) {
-    return normalizedFile.replace(/^\/+/u, "");
-  }
-  if (normalizedFile.startsWith("/")) {
-    return `${dir}${normalizedFile.replace(/^\/+/u, "")}`;
+    return normalizedFile;
   }
   return `${dir}${normalizedFile}`;
 }
