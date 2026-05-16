@@ -450,7 +450,7 @@ function stripPhpComments(source: string): string {
       output += char;
       continue;
     }
-    if ((char === "/" && next === "/") || char === "#") {
+    if ((char === "/" && next === "/") || (char === "#" && next !== "[")) {
       while (index < source.length && source[index] !== "\n") {
         index += 1;
       }
@@ -560,7 +560,7 @@ function describeRoutes(routes: RouteRef[]): string {
 }
 
 async function artisanSignature(root: string, path: string): Promise<string | null> {
-  const source = await readFile(join(root, path), "utf8");
+  const source = stripPhpComments(await readFile(join(root, path), "utf8"));
   return (
     /\$signature\s*=\s*(['"])([^'"]+)\1/u.exec(source)?.[2]?.split(/\s+/u)[0] ??
     /Signature\s*\(\s*(['"])([^'"]+)\1/u.exec(source)?.[2]?.split(/\s+/u)[0] ??
@@ -662,7 +662,10 @@ function groupedTestFiles(testFiles: string[]): Map<string, string[]> {
 
 function testSuiteRoot(path: string): string {
   const parts = path.split("/");
-  if (parts.length >= 2 && parts[0] === "tests") {
+  if (parts[0] === "tests") {
+    if (parts.length === 2) {
+      return "tests";
+    }
     return `${parts[0]}/${parts[1]}`;
   }
   return dirname(path);

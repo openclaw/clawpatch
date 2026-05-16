@@ -3437,6 +3437,46 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(archiveController?.summary).not.toContain("/blocked");
   });
 
+  it("ignores commented-out Laravel command signatures", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-commented-command-signature-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/commented-command-signature",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "artisan", "#!/usr/bin/env php\n");
+    await writeFixture(
+      root,
+      "app/Console/Commands/SyncCatalog.php",
+      "<?php\nnamespace App\\Console\\Commands;\n" +
+        "// protected $signature = 'app:old-sync';\n" +
+        "/* #[Signature('app:blocked-sync')] */\n" +
+        "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const command = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Console/Commands/SyncCatalog.php",
+    );
+
+    expect(titles).toContain("Laravel command app:sync-catalog");
+    expect(titles).not.toContain("Laravel command app:old-sync");
+    expect(titles).not.toContain("Laravel command app:blocked-sync");
+    expect(command?.entrypoints[0]?.command).toBe("app:sync-catalog");
+  });
+
   it("uses Composer validation scripts for PHP projects", async () => {
     const root = await fixtureRoot("clawpatch-php-composer-commands-");
     await writeFixture(
@@ -3462,6 +3502,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
     await writeFixture(root, "app/Service.php", "<?php\nfinal class Service {}\n");
     await writeFixture(root, "tests/LibTest.php", "<?php\nfinal class LibTest {}\n");
+    await writeFixture(root, "tests/OtherTest.php", "<?php\nfinal class OtherTest {}\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -3478,7 +3519,12 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     });
     expect(titles).toContain("Composer script test");
     expect(titles).toContain("Composer script typecheck");
+    expect(phpTestSuite?.title).toBe("PHP test suite tests");
     expect(phpTestSuite?.tags).toEqual(["php", "test"]);
+    expect(phpTestSuite?.tests.map((test) => test.path).toSorted()).toEqual([
+      "tests/LibTest.php",
+      "tests/OtherTest.php",
+    ]);
     expect(titles).not.toContain("Laravel project php-tool");
   });
 

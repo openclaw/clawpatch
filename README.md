@@ -64,7 +64,6 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Python project metadata, console scripts, bounded source groups, pytest suites,
   and Flask/FastAPI routes
 - SwiftPM `Sources/*` targets and `Tests/*` suites
-- Python project metadata, console scripts, bounded source groups, and pytest suites
 - Laravel/PHP projects from `composer.json` and `artisan`, including routes,
   controllers, form requests, Artisan commands, jobs, services, models,
   migrations, seeders, Composer scripts, and PHP test suites
