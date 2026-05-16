@@ -185,6 +185,9 @@ async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promis
   if (await pathExists(join(root, "pdm.lock"))) {
     return "pdm run pytest";
   }
+  if (await pathExists(join(root, "hatch.toml"))) {
+    return "hatch run pytest";
+  }
   return "pytest";
 }
 

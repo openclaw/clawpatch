@@ -1022,6 +1022,18 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
       test: "hatch run pytest",
     });
 
+    const setupCfgRoot = await fixtureRoot("clawpatch-python-setup-cfg-tools-");
+    await writeFixture(
+      setupCfgRoot,
+      "setup.cfg",
+      "[mypy]\nstrict = True\n\n[ruff]\nline-length = 100\n",
+    );
+    expect((await detectProject(setupCfgRoot)).detected.commands).toMatchObject({
+      typecheck: "mypy .",
+      lint: "ruff check .",
+      format: "ruff format --check .",
+    });
+
     const markerRoot = await fixtureRoot("clawpatch-python-marker-deps-");
     await writeFixture(
       markerRoot,
@@ -1099,6 +1111,27 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(project.detected.commands.test).toBe("pytest");
     expect(suite?.ownedFiles).toEqual([{ path: "test_app.py", reason: "pytest file" }]);
     expect(suite?.tests).toEqual([{ path: "test_app.py", command: "pytest" }]);
+  });
+
+  it("uses Hatch pytest commands in mapped Python features", async () => {
+    const root = await fixtureRoot("clawpatch-python-hatch-map-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "hatch-map"\ndependencies = ["pytest"]\n',
+    );
+    await writeFixture(root, "hatch.toml", "");
+    await writeFixture(root, "src/hatch_map/app.py", "def app():\n    pass\n");
+    await writeFixture(root, "src/hatch_map/test_app.py", "def test_app():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) => feature.title === "Python source src");
+
+    expect(project.detected.commands.test).toBe("hatch run pytest");
+    expect(source?.tests).toEqual([
+      { path: "src/hatch_map/test_app.py", command: "hatch run pytest" },
+    ]);
   });
 
   it("maps Python metadata-only projects without pyproject", async () => {

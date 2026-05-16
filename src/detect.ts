@@ -316,9 +316,10 @@ async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
       if (/^\s*\[tool:pytest\]|\[pytest\]/mu.test(source)) {
         info.hasPytestConfig = true;
       }
-      const toolMatch = /^\s*\[(mypy|pyright|ruff)\]/mu.exec(source);
-      if (toolMatch?.[1] !== undefined) {
-        info.tools.add(toolMatch[1]);
+      for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff)\]/gmu)) {
+        if (toolMatch[1] !== undefined) {
+          info.tools.add(toolMatch[1]);
+        }
       }
     }
   }
