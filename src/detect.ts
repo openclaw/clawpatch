@@ -144,6 +144,12 @@ async function languageDefaultCommands(
   if (languages.includes("python")) {
     return pythonDefaultCommands(root);
   }
+  if (
+    (languages.includes("java") || languages.includes("kotlin")) &&
+    (await isRootGradleProject(root))
+  ) {
+    return gradleDefaultCommands(root);
+  }
 
   return {
     typecheck: null,
@@ -239,6 +245,25 @@ async function detectPackageManagers(root: string): Promise<string[]> {
 }
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
+
+async function isRootGradleProject(root: string): Promise<boolean> {
+  return (
+    (await pathExists(join(root, "settings.gradle"))) ||
+    (await pathExists(join(root, "settings.gradle.kts"))) ||
+    (await pathExists(join(root, "build.gradle"))) ||
+    (await pathExists(join(root, "build.gradle.kts")))
+  );
+}
+
+async function gradleDefaultCommands(root: string): Promise<ProjectCommands> {
+  const runner = (await pathExists(join(root, "gradlew"))) ? "./gradlew" : "gradle";
+  return {
+    typecheck: `${runner} build`,
+    lint: null,
+    format: null,
+    test: `${runner} test`,
+  };
+}
 
 async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
   const info = await pythonProjectInfo(root);
@@ -725,6 +750,9 @@ async function detectLanguages(root: string): Promise<string[]> {
   if (!languages.includes("python") && (await containsReviewablePythonFile(root))) {
     languages.push("python");
   }
+  if (!languages.includes("java") && (await containsReviewableJavaFile(root))) {
+    languages.push("java");
+  }
   if (
     !languages.includes("swift") &&
     ((await containsFileNamed(root, "Package.swift", 5)) ||
@@ -734,12 +762,32 @@ async function detectLanguages(root: string): Promise<string[]> {
   }
   if (
     !languages.includes("kotlin") &&
-    ((await containsFileWithExtension(root, ".kt", 5)) ||
+    ((await containsReviewableKotlinFile(root)) ||
+      (await containsFileWithExtension(root, ".kt", 5)) ||
       (await containsFileWithExtension(root, ".kts", 5)))
   ) {
     languages.push("kotlin");
   }
   return languages;
+}
+
+const jvmSourceSearchRoots = ["src", "app", "apps", "lib"] as const;
+
+async function containsReviewableJavaFile(root: string): Promise<boolean> {
+  return containsReviewableJvmFile(root, ".java");
+}
+
+async function containsReviewableKotlinFile(root: string): Promise<boolean> {
+  return containsReviewableJvmFile(root, ".kt");
+}
+
+async function containsReviewableJvmFile(root: string, extension: string): Promise<boolean> {
+  for (const prefix of jvmSourceSearchRoots) {
+    if (await containsFileWithExtension(join(root, prefix), extension, 8)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function isPythonProject(root: string): Promise<boolean> {

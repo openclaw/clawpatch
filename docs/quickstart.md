@@ -45,6 +45,7 @@ This discovers reviewable features:
 - npm package bins and scripts
 - Next.js routes
 - Go packages and commands
+- Java/Kotlin Gradle modules
 - Python packages, console scripts, Flask routes, and pytest suites
 - Rust crates and binaries
 - SwiftPM targets and tests

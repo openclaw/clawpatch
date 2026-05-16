@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Detected Java/Kotlin language and default Gradle build/test commands for root Gradle projects.
 - Added FastAPI route feature mapping and kept root/web Python project detection in sync.
 - Added Flask route feature mapping for Python projects, including `web/` source roots, common root entry files, non-list method literals, and Python framework detection.
 - Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.

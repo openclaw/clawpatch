@@ -493,6 +493,55 @@ describe("mapFeatures", () => {
     expect(titles).toContain("Gradle source src");
     expect(titles).toContain("Gradle test suite src");
     expect(titles.some((title) => title.includes("./src"))).toBe(false);
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Kotlin and Gradle commands for Groovy Gradle root projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-kotlin-gradle-detect-");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'org.jetbrains.kotlin.jvm' }\n");
+    await writeFixture(root, "src/main/kotlin/com/example/app/App.kt", "class App\n");
+    await writeFixture(root, "src/test/kotlin/com/example/app/AppTest.kt", "class AppTest\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("kotlin");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("detects Java and wrapper Gradle commands for root Gradle projects", async () => {
+    const root = await fixtureRoot("clawpatch-root-java-gradle-detect-");
+    await writeFixture(root, "gradlew", "#!/bin/sh\n");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'java' }\n");
+    await writeFixture(root, "src/main/java/com/example/App.java", "class App {}\n");
+    await writeFixture(root, "src/test/java/com/example/AppTest.java", "class AppTest {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("java");
+    expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "./gradlew build",
+      test: "./gradlew test",
+    });
+  });
+
+  it("does not detect Java from documentation-only Java files", async () => {
+    const root = await fixtureRoot("clawpatch-docs-java-detect-");
+    await writeFixture(root, "docs/Example.java", "class Example {}\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).not.toContain("java");
   });
 
   it("maps build.gradle-only roots without empty Gradle groups", async () => {
@@ -526,6 +575,8 @@ describe("mapFeatures", () => {
     const titles = result.features.map((feature) => feature.title);
 
     expect(project.detected.packageManagers).toContain("gradle");
+    expect(project.detected.commands.typecheck).toBeNull();
+    expect(project.detected.commands.test).toBeNull();
     expect(titles).toContain("Gradle module apps/android");
     expect(titles).toContain("Gradle source apps/android/src");
   });

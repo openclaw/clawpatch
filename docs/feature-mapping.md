@@ -39,7 +39,7 @@ Supported deterministic mappers today:
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
 - Apple/Xcode projects from `project.yml`, `.xcodeproj`, or `.xcworkspace`
-- Gradle/Android modules from `settings.gradle(.kts)` and `build.gradle(.kts)`
+- Java/Kotlin Gradle modules from `settings.gradle(.kts)` and `build.gradle(.kts)`
 - common config files
 
 The mapper does not call a model. It uses repo conventions and cheap filesystem
@@ -53,6 +53,7 @@ be found cheaply.
 Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
+Root Gradle projects get default `gradle`/`./gradlew` build and test commands.
 
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
 `[tool.poetry.scripts]` console scripts, root app files, source groups under
