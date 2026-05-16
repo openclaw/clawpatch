@@ -230,6 +230,45 @@ export function pathMatchesPrefix(path: string, prefix: string): boolean {
   return normalized === "" || path === normalized || path.startsWith(`${normalized}/`);
 }
 
+export async function detectNodePackageManager(root: string): Promise<string> {
+  if (
+    (await pathExists(join(root, "pnpm-lock.yaml"))) ||
+    (await pathExists(join(root, "pnpm-workspace.yaml")))
+  ) {
+    return "pnpm";
+  }
+  if (await pathExists(join(root, "yarn.lock"))) {
+    return "yarn";
+  }
+  if (await pathExists(join(root, "bun.lockb"))) {
+    return "bun";
+  }
+  return "npm";
+}
+
+export function nodeScriptCommand(
+  packageManager: string,
+  packageRoot: string,
+  script: string,
+): string {
+  if (packageRoot === ".") {
+    if (packageManager === "bun") {
+      return `bun run ${script}`;
+    }
+    return packageManager === "npm" ? `npm run ${script}` : `${packageManager} ${script}`;
+  }
+  if (packageManager === "pnpm") {
+    return `pnpm --dir ${packageRoot} ${script}`;
+  }
+  if (packageManager === "yarn") {
+    return `yarn --cwd ${packageRoot} ${script}`;
+  }
+  if (packageManager === "bun") {
+    return `bun --cwd ${packageRoot} run ${script}`;
+  }
+  return `npm --prefix ${packageRoot} run ${script}`;
+}
+
 function isTestPath(path: string): boolean {
   return (
     isJsTestPath(path) ||

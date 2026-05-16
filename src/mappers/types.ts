@@ -18,6 +18,7 @@ export type FeatureSeed = {
   source: string;
   confidence: FeatureRecord["confidence"];
   entryPath: string;
+  identityKey?: string;
   symbol: string | null;
   route: string | null;
   command: string | null;

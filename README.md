@@ -52,6 +52,7 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Nx project metadata from `project.json`, including project-scoped validation
   targets
 - Next.js `app/` and `pages/` routes, including routes inside monorepo apps
+- React Router routes and React components
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
 - Java/Kotlin Gradle source groups and root Gradle build/test commands
@@ -65,6 +66,9 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Python project metadata, console scripts, bounded source groups, pytest suites,
   and Flask/FastAPI routes
 - SwiftPM `Sources/*` targets and `Tests/*` suites
+- Laravel/PHP projects from `composer.json` and `artisan`, including routes,
+  controllers, form requests, Artisan commands, jobs, services, models,
+  migrations, seeders, Composer scripts, and PHP test suites
 - common project config files
 
 Deeper framework mappers and agent-assisted enrichment are next steps.
