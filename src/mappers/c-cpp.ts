@@ -470,7 +470,9 @@ function splitWords(value: string): string[] {
   return value
     .split(/\s+/u)
     .filter((word) => word.length > 0)
-    .map(unquoteWord);
+    .map(unquoteWord)
+    .flatMap((word) => word.split(";"))
+    .filter((word) => word.length > 0);
 }
 
 function unquoteWord(value: string): string {

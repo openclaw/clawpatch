@@ -1347,6 +1347,33 @@ add_executable(headerapp include/headers.hpp)
     expect(tool?.tests).toEqual([{ path: "tests/tool_test.cpp", command: null }]);
   });
 
+  it("maps semicolon-separated CMake source lists", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-semicolon-sources-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app src/main.c;src/util.c)\nadd_library(core)\ntarget_sources(core PRIVATE src/core.c;include/core.h)\n",
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/util.c", "int util(void) { return 1; }\n");
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+    await writeFixture(root, "include/core.h", "int core(void);\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+    const core = result.features.find((feature) => feature.title === "CMake library core");
+
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "src/util.c", reason: "target source" },
+    ]);
+    expect(core?.ownedFiles).toEqual([
+      { path: "src/core.c", reason: "target source" },
+      { path: "include/core.h", reason: "target source" },
+    ]);
+  });
+
   it("detects header-only C++ CMake libraries as C++ projects", async () => {
     const root = await fixtureRoot("clawpatch-cmake-header-only-cpp-");
     await writeFixture(
