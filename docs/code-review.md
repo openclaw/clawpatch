@@ -33,7 +33,9 @@ Current behavior:
 ### --since <ref>
 
 Restrict review to features whose owned or context files have changed in
-`git diff --name-only <ref>...HEAD`. Useful for CI:
+`git diff --name-only --relative <ref>...HEAD`. Paths are compared relative to
+the selected project root, so `--root` may point at a subdirectory inside a
+larger Git repository. Useful for CI:
 
 ```bash
 clawpatch review --since origin/main   # review what this branch changed

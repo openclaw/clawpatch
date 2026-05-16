@@ -5,6 +5,7 @@ export async function runCommand(
   command: string,
   cwd: string,
   input?: string,
+  options: { trimOutput?: boolean } = {},
 ): Promise<CommandResult> {
   const started = Date.now();
   const child = spawn(command, {
@@ -35,8 +36,8 @@ export async function runCommand(
     cwd,
     exitCode,
     durationMs: Date.now() - started,
-    stdout: trimOutput(stdout),
-    stderr: trimOutput(stderr),
+    stdout: options.trimOutput === false ? stdout : trimOutput(stdout),
+    stderr: options.trimOutput === false ? stderr : trimOutput(stderr),
   };
 }
 

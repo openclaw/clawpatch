@@ -65,7 +65,12 @@ export function projectNameFromRoot(root: string, remoteUrl: string | null): str
 }
 
 export async function changedFilesSince(root: string, ref: string): Promise<Set<string>> {
-  const result = await runCommand(`git diff --name-only ${shellQuoteRef(ref)}...HEAD`, root);
+  const result = await runCommand(
+    `git diff --name-only --relative ${shellQuoteRef(ref)}...HEAD`,
+    root,
+    undefined,
+    { trimOutput: false },
+  );
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
       `git diff --since ${ref} failed: ${result.stderr || result.stdout}`,

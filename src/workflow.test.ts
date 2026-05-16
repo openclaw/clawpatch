@@ -18,6 +18,7 @@ import {
 import { main as cliMain, packageVersion, parseArgs } from "./cli.js";
 import { loadConfig } from "./config.js";
 import { runCommand } from "./exec.js";
+import { changedFilesSince } from "./git.js";
 import {
   readFeatures,
   readFinding,
@@ -403,6 +404,88 @@ describe("workflow", () => {
       featureIds: expectedFeatureIds(features, new Set(["src/two.ts"]), true),
     });
     expect(reviewed.stderr).toBe("");
+  });
+
+  it("keeps the full changed file list for large --since diffs", async () => {
+    const root = await fixtureRoot("clawpatch-since-large-");
+    const files = Array.from(
+      { length: 220 },
+      (_value, index) =>
+        `src/file-${String(index + 1).padStart(3, "0")}-abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.ts`,
+    );
+    const targetPath = files[109]!;
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "since-large",
+        bin: { target: targetPath },
+        scripts: { test: "vitest run" },
+      }),
+    );
+    for (const file of files) {
+      await writeFixture(root, file, "export const value = 'base';\n");
+    }
+    await writeFixture(root, "tests/target.test.ts", "expect('target').toBe('target');\n");
+    await initGit(root);
+    await commitAll(root, "base");
+    await checkCommand(root, "git tag --no-sign base");
+    for (const file of files) {
+      await writeFixture(root, file, "export const value = 'changed';\n");
+    }
+    await commitAll(root, "change many files");
+    const changed = await changedFilesSince(root, "base");
+
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    await mapCommand(context);
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const targetFeature = features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === targetPath),
+    );
+    const reviewed = (await reviewCommand(context, {
+      since: "base",
+      limit: "250",
+      dryRun: true,
+    })) as { featureIds: string[] };
+
+    expect(changed.size).toBe(files.length);
+    expect(changed).toContain(targetPath);
+    expect(targetFeature).toBeDefined();
+    expect(reviewed.featureIds).toContain(targetFeature!.featureId);
+  });
+
+  it("matches --since paths relative to an explicit subdirectory root", async () => {
+    const repoRoot = await fixtureRoot("clawpatch-since-subdir-repo-");
+    const root = join(repoRoot, "packages", "app");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "subdir", bin: { app: "src/app.ts" } }),
+    );
+    await writeFixture(root, "src/app.ts", "export const value = 'base';\n");
+    await initGit(repoRoot);
+    await checkCommand(repoRoot, "git add packages");
+    await checkCommand(repoRoot, 'git -c commit.gpgsign=false commit -q -m "base"');
+    await checkCommand(repoRoot, "git tag --no-sign base");
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    await mapCommand(context);
+    await writeFixture(root, "src/app.ts", "export const value = 'changed';\n");
+    await checkCommand(repoRoot, "git add packages/app/src/app.ts");
+    await checkCommand(repoRoot, 'git -c commit.gpgsign=false commit -q -m "change app"');
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const targetFeature = features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "src/app.ts"),
+    );
+    const reviewed = (await reviewCommand(context, {
+      since: "base",
+      limit: "20",
+      dryRun: true,
+    })) as { featureIds: string[] };
+
+    expect(targetFeature).toBeDefined();
+    expect(reviewed.featureIds).toContain(targetFeature!.featureId);
   });
 
   it("revalidates only findings whose feature owned files overlap --since", async () => {
