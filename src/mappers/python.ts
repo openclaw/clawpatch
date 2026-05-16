@@ -387,32 +387,27 @@ async function fastApiRouteSeeds(
     ...(await rootPythonSourceFiles(root)),
     ...(await walk(root, await pythonSourceRoots(root))).filter(isReviewablePythonSourceFile),
   ]);
-  const sources = new Map<string, string>();
-  for (const filePath of routeFiles) {
-    sources.set(filePath, await readFile(join(root, filePath), "utf8"));
-  }
-  const prefixes = fastApiRoutePrefixes(sources);
   const seeds: FeatureSeed[] = [];
-  for (const [filePath, source] of sources) {
+  for (const filePath of routeFiles) {
+    const source = await readFile(join(root, filePath), "utf8");
     if (!sourceLooksFastApi(source)) {
       continue;
     }
     const routes = parseFastApiRoutes(filePath, source);
     for (const route of routes) {
       const methodLabel = route.methods.join(",");
-      const routePath = joinRoutePaths(prefixes.get(route.filePath) ?? "", route.routePath);
       const tests = associatedTests([route.filePath], testFiles, testCommand);
       seeds.push({
-        title: `FastAPI route ${methodLabel} ${routePath}`,
+        title: `FastAPI route ${methodLabel} ${route.routePath}`,
         summary:
-          `FastAPI route ${methodLabel} ${routePath} handled by ` +
+          `FastAPI route ${methodLabel} ${route.routePath} handled by ` +
           `${route.functionName} in ${route.filePath}.`,
         kind: "route",
         source: "python-fastapi-route",
         confidence: "high",
         entryPath: route.filePath,
         symbol: route.functionName,
-        route: `${methodLabel} ${routePath}`,
+        route: `${methodLabel} ${route.routePath}`,
         command: null,
         ownedFiles: [
           { path: route.filePath, reason: `FastAPI route handler ${route.functionName}` },
@@ -517,94 +512,6 @@ function parseFastApiPath(args: string): string | null {
     return positional;
   }
   return /\bpath\s*=\s*(["'])(.*?)\1/u.exec(args)?.[2] ?? null;
-}
-
-function fastApiRoutePrefixes(sources: Map<string, string>): Map<string, string> {
-  const exportedRouterPrefixes = new Map<string, string>();
-  const prefixes = new Map<string, string>();
-  for (const [filePath, source] of sources) {
-    const aliases = pythonImportAliases(filePath, source);
-    for (const include of includeRouterCalls(source)) {
-      const parentPrefix =
-        include.receiver === "app" ? "" : (exportedRouterPrefixes.get(include.receiver) ?? "");
-      const fullPrefix = joinRoutePaths(parentPrefix, include.prefix);
-      if (!include.target.includes(".")) {
-        exportedRouterPrefixes.set(include.target, fullPrefix);
-      }
-      const moduleFile = aliases.get(include.target.split(".")[0] ?? "");
-      if (moduleFile !== undefined) {
-        prefixes.set(moduleFile, fullPrefix);
-      }
-    }
-  }
-  return prefixes;
-}
-
-function includeRouterCalls(
-  source: string,
-): Array<{ receiver: string; target: string; prefix: string }> {
-  const calls: Array<{ receiver: string; target: string; prefix: string }> = [];
-  for (const match of source.matchAll(
-    /([A-Za-z_][A-Za-z0-9_]*)\.include_router\(\s*([A-Za-z_][A-Za-z0-9_]*(?:\.router)?)\s*,[^)]*?\bprefix\s*=\s*(["'])([^"']*)\3/gsu,
-  )) {
-    if (match[1] !== undefined && match[2] !== undefined && match[4] !== undefined) {
-      calls.push({ receiver: match[1], target: match[2], prefix: match[4] });
-    }
-  }
-  return calls;
-}
-
-function pythonImportAliases(currentFile: string, source: string): Map<string, string> {
-  const aliases = new Map<string, string>();
-  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+\(([\s\S]*?)\)/gmu)) {
-    const moduleName = match[1];
-    const imports = match[2];
-    if (moduleName !== undefined && imports !== undefined) {
-      addPythonImportAliases(aliases, currentFile, moduleName, imports);
-    }
-  }
-  for (const match of source.matchAll(/^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+)$/gmu)) {
-    const moduleName = match[1];
-    const imports = match[2];
-    if (moduleName !== undefined && imports !== undefined) {
-      addPythonImportAliases(aliases, currentFile, moduleName, imports);
-    }
-  }
-  return aliases;
-}
-
-function addPythonImportAliases(
-  aliases: Map<string, string>,
-  currentFile: string,
-  moduleName: string,
-  imports: string,
-): void {
-  for (const imported of imports.replace(/[()]/gu, "").split(",")) {
-    const item = imported.trim();
-    if (item.length === 0) {
-      continue;
-    }
-    const match = /^([A-Za-z_][A-Za-z0-9_]*)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?$/u.exec(item);
-    const importedName = match?.[1];
-    const alias = match?.[2] ?? importedName;
-    if (importedName === undefined || alias === undefined) {
-      continue;
-    }
-    const importedFile =
-      importedName === "router" || importedName.endsWith("_router")
-        ? moduleToPath(moduleName)
-        : (moduleToPath(`${moduleName}.${importedName}`) ?? moduleToPath(moduleName));
-    aliases.set(alias, importedFile ?? currentFile);
-  }
-}
-
-function moduleToPath(moduleName: string): string | null {
-  return `${moduleName.replace(/\./gu, "/")}.py`;
-}
-
-function joinRoutePaths(prefix: string, path: string): string {
-  const joined = `${prefix.replace(/\/$/u, "")}/${path.replace(/^\//u, "")}`.replace(/\/+/gu, "/");
-  return joined === "" ? "/" : joined;
 }
 
 async function flaskRouteSeeds(

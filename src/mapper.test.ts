@@ -3271,47 +3271,6 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(admin?.trustBoundaries).toContain("auth");
   });
 
-  it("applies FastAPI prefixes to top-level imported routers", async () => {
-    const root = await fixtureRoot("clawpatch-python-fastapi-root-router-");
-    await writeFixture(root, "requirements.txt", "fastapi\n");
-    await writeFixture(
-      root,
-      "app.py",
-      [
-        "from fastapi import FastAPI",
-        "from api import router",
-        "",
-        "app = FastAPI()",
-        'app.include_router(router, prefix="/api")',
-      ].join("\n"),
-    );
-    await writeFixture(
-      root,
-      "api.py",
-      [
-        "from fastapi import APIRouter",
-        "",
-        "router = APIRouter()",
-        "",
-        '@router.get("/items")',
-        "def items():",
-        "    return []",
-      ].join("\n"),
-    );
-
-    const project = await detectProject(root);
-    const result = await mapFeatures(root, project, []);
-    const route = result.features.find(
-      (feature) => feature.title === "FastAPI route GET /api/items",
-    );
-
-    expect(route?.entrypoints[0]).toMatchObject({
-      path: "api.py",
-      symbol: "items",
-      route: "GET /api/items",
-    });
-  });
-
   it("detects metadata-free root and web Python sources", async () => {
     const root = await fixtureRoot("clawpatch-python-root-web-detect-");
     await writeFixture(root, "app.py", "def app():\n    pass\n");
