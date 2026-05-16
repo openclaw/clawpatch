@@ -388,8 +388,11 @@ async function mainFunctionTargets(
 
 function definesMain(source: string): boolean {
   const stripped = stripCOrCppComments(stripCOrCppLiterals(source));
+  if (!stripped.includes("main")) {
+    return false;
+  }
   const pattern =
-    /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/gmu;
+    /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&]+[ \t\r\n]+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&]+(?:[ \t\r\n]+[\w:<>~*&]+)*)?\s*\{/gmu;
   for (const match of stripped.matchAll(pattern)) {
     if (braceDepthBefore(stripped, match.index) === 0) {
       return true;

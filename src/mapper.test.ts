@@ -2021,6 +2021,16 @@ add_executable(headerapp include/headers.hpp)
     expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
   });
 
+  it("ignores comment-only C and C++ sources", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-comment-only-");
+    await writeFixture(root, "src/placeholder.cpp", `// ${"x".repeat(200)}\n`);
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).not.toContain("C++ binary placeholder");
+  });
+
   it("does not attach dependency C and C++ tests from skipped paths", async () => {
     const root = await fixtureRoot("clawpatch-cpp-skipped-nearby-tests-");
     await writeFixture(root, "app.c", "int main(void) { return 0; }\n");
