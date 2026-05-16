@@ -10,7 +10,7 @@ This guide walks through a complete review workflow from initialization to fixin
 ## Prerequisites
 
 - [Install clawpatch](install.md)
-- Install Codex CLI: `brew install codex`
+- Install Codex CLI (`brew install codex`) **or** the Grok Build CLI (`curl -fsSL https://x.ai/cli/install.sh | bash`)
 - Have a project with code to review
 
 ## 1. Initialize
@@ -77,7 +77,7 @@ This:
 
 - Selects 3 pending features
 - Reviews them in parallel with 3 workers
-- Calls the provider (Codex CLI) for each
+- Calls the selected provider (Codex or Grok CLI) for each
 - Persists findings under `.clawpatch/findings/`
 - Updates feature status
 

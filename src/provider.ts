@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommandArgs } from "./exec.js";
@@ -23,6 +23,9 @@ export type Provider = {
 export function providerByName(name: string): Provider {
   if (name === "codex") {
     return codexProvider;
+  }
+  if (name === "grok") {
+    return grokProvider;
   }
   if (name === "mock") {
     return mockProvider;
@@ -52,6 +55,29 @@ const codexProvider: Provider = {
   },
   async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
     const output = await runCodexJson(root, prompt, model, revalidateJsonSchema);
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+const grokProvider: Provider = {
+  name: "grok",
+  async check(root: string): Promise<string> {
+    const result = await runCommandArgs("grok", ["--version"], root);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError("grok CLI not available", 4, "provider-auth");
+    }
+    return result.stdout.trim();
+  },
+  async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
+    const output = await runGrokJson(root, prompt, model, reviewJsonSchema, true);
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
+    const output = await runGrokJson(root, prompt, model, fixPlanJsonSchema, false);
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
+    const output = await runGrokJson(root, prompt, model, revalidateJsonSchema, true);
     return revalidateOutputSchema.parse(output);
   },
 };
@@ -176,6 +202,123 @@ async function runCodexJson(
     throw new ClawpatchError("codex provider produced no JSON output", 8, "malformed-output");
   }
   return JSON.parse(raw) as unknown;
+}
+
+async function runGrokJson(
+  root: string,
+  prompt: string,
+  model: string | null,
+  schema: object,
+  readOnly: boolean,
+): Promise<unknown> {
+  const dir = await mkdtemp(join(tmpdir(), "clawpatch-grok-"));
+  const promptPath = join(dir, "prompt.txt");
+  await writeFile(promptPath, prompt, "utf8");
+
+  try {
+    const args = [
+      "--prompt-file",
+      promptPath,
+      "--output-format",
+      "json",
+      "--always-approve",
+      "--verbatim",
+      "--cwd",
+      root,
+    ];
+    if (model !== null) {
+      args.push("-m", model);
+    }
+    if (readOnly) {
+      args.push("--disallowed-tools", "search_replace,run_terminal_cmd,Agent");
+    }
+    const result = await runCommandArgs("grok", args, root, undefined, { trimOutput: false });
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        `grok provider failed: ${result.stderr || result.stdout}`,
+        providerExitCode(result.stderr),
+        "provider-failure",
+      );
+    }
+    let envelope: { text?: string };
+    try {
+      envelope = JSON.parse(result.stdout) as { text?: string };
+    } catch {
+      const preview = result.stdout.slice(0, 200).replace(/\s+/gu, " ");
+      throw new ClawpatchError(
+        `grok provider produced no JSON envelope (stdout preview: ${preview})`,
+        8,
+        "malformed-output",
+      );
+    }
+    const text = typeof envelope.text === "string" ? envelope.text : "";
+    if (text.trim().length === 0) {
+      throw new ClawpatchError("grok provider produced empty response", 8, "malformed-output");
+    }
+    const parsed = extractJson(text);
+    if (parsed === null) {
+      throw new ClawpatchError("grok provider produced unparsable JSON", 8, "malformed-output");
+    }
+    return parsed;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+export function extractJson(text: string): unknown | null {
+  // 1. Direct parse (ideal path when model follows "strict JSON only")
+  try {
+    return JSON.parse(text);
+  } catch {
+    // continue to fallbacks
+  }
+  // 2. Extract from markdown code fence ```json ... ``` or ``` ... ```
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/u);
+  if (fenceMatch && fenceMatch[1]) {
+    const candidate = fenceMatch[1].trim();
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // continue
+    }
+  }
+  // 3. Heuristic: find the first balanced top-level JSON object
+  const firstBrace = text.indexOf("{");
+  if (firstBrace !== -1) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = firstBrace; i < text.length; i += 1) {
+      const ch = text[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            const candidate = text.slice(firstBrace, i + 1);
+            try {
+              return JSON.parse(candidate);
+            } catch {
+              return null;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function providerExitCode(stderr: string): number {

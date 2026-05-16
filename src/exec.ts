@@ -57,6 +57,7 @@ export async function runCommandArgs(
   args: string[],
   cwd: string,
   input?: string,
+  options: { trimOutput?: boolean } = {},
 ): Promise<CommandResult> {
   const started = Date.now();
   const spawnSpec = commandSpawnSpec(program, args);
@@ -98,8 +99,8 @@ export async function runCommandArgs(
     cwd,
     exitCode,
     durationMs: Date.now() - started,
-    stdout: trimOutput(stdout),
-    stderr: trimOutput(stderr),
+    stdout: options.trimOutput === false ? stdout : trimOutput(stdout),
+    stderr: options.trimOutput === false ? stderr : trimOutput(stderr),
   };
 }
 
