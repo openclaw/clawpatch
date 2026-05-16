@@ -222,6 +222,12 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("gradle");
   }
+  if (!found.includes("cmake") && (await containsFileNamed(root, "CMakeLists.txt", 5))) {
+    found.push("cmake");
+  }
+  if (!found.includes("autotools") && (await containsFileNamed(root, "Makefile.am", 5))) {
+    found.push("autotools");
+  }
   const pythonManagers: Array<[string, string]> = [
     ["uv", "uv.lock"],
     ["poetry", "poetry.lock"],
@@ -768,7 +774,25 @@ async function detectLanguages(root: string): Promise<string[]> {
   ) {
     languages.push("kotlin");
   }
+  if (!languages.includes("c") && (await containsCFile(root))) {
+    languages.push("c");
+  }
+  if (!languages.includes("cpp") && (await containsCppFile(root))) {
+    languages.push("cpp");
+  }
   return languages;
+}
+
+async function containsCFile(root: string): Promise<boolean> {
+  return containsFileWithExtension(root, ".c", 5);
+}
+
+async function containsCppFile(root: string): Promise<boolean> {
+  return (
+    (await containsFileWithExtension(root, ".cpp", 5)) ||
+    (await containsFileWithExtension(root, ".cc", 5)) ||
+    (await containsFileWithExtension(root, ".cxx", 5))
+  );
 }
 
 const jvmSourceSearchRoots = ["src", "app", "apps", "lib"] as const;

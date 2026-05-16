@@ -49,6 +49,7 @@ This discovers reviewable features:
 - Python packages, console scripts, Flask routes, and pytest suites
 - JVM semantic role groups
 - Rust crates and binaries
+- C/C++ standalone binaries and CMake/autotools targets
 - SwiftPM targets and tests
 - Config files
 

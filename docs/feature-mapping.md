@@ -37,6 +37,7 @@ Supported deterministic mappers today:
   pytest suites, and Flask/FastAPI routes
 - JVM semantic role groups from Java annotations, imports, inheritance, interfaces, and method signatures
 - Rust Cargo commands, libraries, workspace crates, and integration tests
+- C/C++ standalone `main()` files, CMake targets, and autotools targets
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
 - Apple/Xcode projects from `project.yml`, `.xcodeproj`, or `.xcworkspace`
@@ -60,6 +61,11 @@ Root Gradle projects get default `gradle`/`./gradlew` build and test commands.
 Java files in Gradle modules also get role-oriented review slices when code
 evidence identifies web entrypoints, services, persistence boundaries, external
 clients, configuration, framework components, or extension boundaries.
+
+C/C++ mapping covers generic project shapes only: standalone source files with
+`main()`, CMake `add_executable` / `add_library`, and autotools `bin_PROGRAMS` /
+`lib_LTLIBRARIES`. It deliberately avoids project-specific C dialects such as
+php-src extension metadata.
 
 Python mapping covers `pyproject.toml` metadata, `[project.scripts]` and
 `[tool.poetry.scripts]` console scripts, root app files, source groups under

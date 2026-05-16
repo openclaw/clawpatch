@@ -36,11 +36,13 @@ export async function nearbyTests(
   const swiftTestPrefixes = seedTestPrefixes.length > 0 ? [] : swiftTestPrefixesForEntry(entryPath);
   const isRustEntry = entryPath.endsWith(".rs");
   const isSwiftEntry = entryPath.endsWith(".swift");
+  const isCOrCppEntry = isCOrCppPath(entryPath);
   const tests = all
     .filter((path) => path !== entryPath)
     .filter(
       (path) =>
         (isRustEntry && path.endsWith(".rs") && isTestPath(path)) ||
+        (isCOrCppEntry && isCOrCppPath(path) && isCOrCppTestPath(path)) ||
         (isSwiftEntry &&
           path.endsWith(".swift") &&
           (isTestPath(path) ||
@@ -53,6 +55,8 @@ export async function nearbyTests(
         path.includes(stem) ||
         (path.endsWith(".rs") &&
           rustTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
+        (isCOrCppPath(path) &&
+          seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (path.endsWith(".swift") &&
           seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (path.endsWith(".swift") &&
@@ -242,6 +246,20 @@ function isTestPath(path: string): boolean {
 
 function isJsTestPath(path: string): boolean {
   return /\.(test|spec)\.(ts|tsx|js|jsx)$/u.test(path);
+}
+
+export function isCOrCppPath(path: string): boolean {
+  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/u.test(path);
+}
+
+export function isCOrCppTestPath(path: string): boolean {
+  const base = path.split("/").at(-1) ?? path;
+  return (
+    /(^|\/)(test|tests|__tests__)\//u.test(path) ||
+    /^test[_-]/u.test(base) ||
+    /[_-]test\./u.test(base) ||
+    /Test\./u.test(base)
+  );
 }
 
 function swiftTestPrefixesForEntry(entryPath: string): string[] {

@@ -1199,6 +1199,111 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     ]);
   });
 
+  it("maps CMake C and C++ targets without duplicating main files", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-cpp-map-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(myapp src/main.cpp src/util.cpp)\nadd_library(core STATIC src/core.c src/core_util.c)\n",
+    );
+    await writeFixture(root, "src/main.cpp", "int main(int argc, char **argv) { return 0; }\n");
+    await writeFixture(root, "src/util.cpp", "int util() { return 1; }\n");
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+    await writeFixture(root, "src/core_util.c", "int core_util(void) { return 2; }\n");
+    await writeFixture(root, "tests/main_test.cpp", "int main() { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const myapp = result.features.find((feature) => feature.title === "CMake binary myapp");
+    const core = result.features.find((feature) => feature.title === "CMake library core");
+    const mainFeatures = result.features.filter(
+      (feature) =>
+        feature.kind === "cli-command" && feature.entrypoints[0]?.path === "src/main.cpp",
+    );
+
+    expect(project.detected.languages).toEqual(expect.arrayContaining(["c", "cpp"]));
+    expect(project.detected.packageManagers).toContain("cmake");
+    expect(titles).toContain("CMake binary myapp");
+    expect(titles).toContain("CMake library core");
+    expect(titles).not.toContain("C++ binary main_test");
+    expect(mainFeatures).toHaveLength(1);
+    expect(myapp?.source).toBe("cmake-bin");
+    expect(myapp?.ownedFiles).toEqual([
+      { path: "src/main.cpp", reason: "target source" },
+      { path: "src/util.cpp", reason: "target source" },
+    ]);
+    expect(myapp?.contextFiles).toEqual([
+      { path: "CMakeLists.txt", reason: "CMake target declaration" },
+      { path: "tests/main_test.cpp", reason: "nearby test" },
+    ]);
+    expect(myapp?.tests).toEqual([{ path: "tests/main_test.cpp", command: null }]);
+    expect(core?.ownedFiles).toEqual([
+      { path: "src/core.c", reason: "target source" },
+      { path: "src/core_util.c", reason: "target source" },
+    ]);
+  });
+
+  it("maps autotools C and C++ binary and library targets", async () => {
+    const root = await fixtureRoot("clawpatch-autotools-cpp-map-");
+    await writeFixture(
+      root,
+      "Makefile.am",
+      "bin_PROGRAMS = thing\nthing_SOURCES = thing.c \\\n  util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = core.cc core_util.cc\n",
+    );
+    await writeFixture(root, "thing.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "util.c", "int util(void) { return 1; }\n");
+    await writeFixture(root, "core.cc", "int core() { return 1; }\n");
+    await writeFixture(root, "core_util.cc", "int coreUtil() { return 2; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const thing = result.features.find((feature) => feature.title === "Autotools binary thing");
+    const core = result.features.find((feature) => feature.title === "Autotools library libcore");
+
+    expect(project.detected.packageManagers).toContain("autotools");
+    expect(thing?.entrypoints[0]).toMatchObject({
+      path: "thing.c",
+      symbol: "main",
+      command: "thing",
+    });
+    expect(thing?.ownedFiles).toEqual([
+      { path: "thing.c", reason: "target source" },
+      { path: "util.c", reason: "target source" },
+    ]);
+    expect(core?.entrypoints[0]?.path).toBe("core.cc");
+    expect(core?.ownedFiles).toEqual([
+      { path: "core.cc", reason: "target source" },
+      { path: "core_util.cc", reason: "target source" },
+    ]);
+  });
+
+  it("maps standalone C main files without php-src extension semantics", async () => {
+    const root = await fixtureRoot("clawpatch-c-main-map-");
+    await writeFixture(root, "src/tool.c", "int main(void) { return 0; }\n");
+    await writeFixture(
+      root,
+      "ext/iconv/config.m4",
+      "PHP_NEW_EXTENSION(iconv, iconv.c, $ext_shared)\n",
+    );
+    await writeFixture(root, "ext/iconv/iconv.c", "int iconv_helper(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const tool = result.features.find((feature) => feature.title === "C binary tool");
+
+    expect(project.detected.languages).toContain("c");
+    expect(tool?.entrypoints[0]).toMatchObject({
+      path: "src/tool.c",
+      symbol: "main",
+      command: "tool",
+    });
+    expect(result.features.some((feature) => feature.source === "php-ext")).toBe(false);
+    expect(
+      result.features.some((feature) => feature.entrypoints[0]?.path === "ext/iconv/config.m4"),
+    ).toBe(false);
+  });
+
   it("maps Python project metadata, console scripts, source groups, and tests", async () => {
     const root = await fixtureRoot("clawpatch-python-map-");
     await writeFixture(
