@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults.
+- Added Next.js route mapping for `src/app` and `src/pages` layouts, thanks @obatried.
+- Added first-pass Python mapping for project metadata, console scripts, source groups, pytest suites, and conservative validation defaults, thanks @xiamx.
 - Improved Node/TypeScript mapping for large workspaces by splitting package source trees into bounded review groups with package-local tests.
 - Added generic nested SwiftPM, Apple/Xcode, and Gradle/Android app mapping.
 

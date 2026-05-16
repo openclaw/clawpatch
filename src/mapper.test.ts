@@ -62,6 +62,104 @@ describe("mapFeatures", () => {
     ]);
   });
 
+  it("maps Next routes under src/app and src/pages", async () => {
+    const root = await fixtureRoot("clawpatch-map-next-src-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "fixture-app",
+          scripts: { build: "next build" },
+          dependencies: { next: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(
+      root,
+      "src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/app/api/health/route.ts",
+      "export function GET() { return new Response('ok'); }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/about.tsx",
+      "export default function About() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/docs/page.tsx",
+      "export default function DocsPage() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/docs/route.tsx",
+      "export default function DocsRoute() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/_app.tsx",
+      "export default function App() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/_document.tsx",
+      "export default function Document() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/_error.tsx",
+      "export default function ErrorPage() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const bySource = (route: string) =>
+      result.features.find((feature) => feature.title === `Route ${route}`)?.source;
+
+    expect(titles).toContain("Route /dashboard");
+    expect(titles).toContain("Route /api/health");
+    expect(titles).toContain("Route /about");
+    expect(titles).toContain("Route /docs/page");
+    expect(titles).toContain("Route /docs/route");
+    expect(bySource("/dashboard")).toBe("next-app-route");
+    expect(bySource("/api/health")).toBe("next-app-route");
+    expect(bySource("/about")).toBe("next-pages-route");
+    expect(titles).not.toContain("Route /_app");
+    expect(titles).not.toContain("Route /_document");
+    expect(titles).not.toContain("Route /_error");
+  });
+
+  it("does not map src app-shaped routes without a Next project signal", async () => {
+    const root = await fixtureRoot("clawpatch-map-src-non-next-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
+    await writeFixture(
+      root,
+      "src/app/dashboard/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(
+      root,
+      "src/pages/about.tsx",
+      "export default function About() { return null; }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("Route /dashboard");
+    expect(titles).not.toContain("Route /about");
+  });
+
   it("maps generated package bins back to source entries", async () => {
     const root = await fixtureRoot("clawpatch-map-bin-source-");
     await writeFixture(
