@@ -1761,6 +1761,34 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("C++ binary latest");
   });
 
+  it("attaches capitalized C and C++ test directories without mapping them as binaries", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-capitalized-tests-");
+    await writeFixture(root, "src/parser.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "Tests/parser.cpp", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const parser = result.features.find((feature) => feature.title === "C++ binary parser");
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(parser?.tests).toEqual([{ path: "Tests/parser.cpp", command: null }]);
+    expect(titles.filter((title) => title === "C++ binary parser")).toHaveLength(1);
+  });
+
+  it("detects C and C++ main functions after literals containing braces", async () => {
+    const root = await fixtureRoot("clawpatch-cpp-literal-braces-");
+    await writeFixture(
+      root,
+      "src/app.cpp",
+      'const char *json = "{\\"ok\\": true}";\nconst char *raw = R"tag({raw})tag";\nint main(void) { return 0; }\n',
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).toContain("C++ binary app");
+  });
+
   it("skips dependency trees during C and C++ discovery", async () => {
     const root = await fixtureRoot("clawpatch-cpp-dependency-paths-");
     await writeFixture(root, "src/app.c", "int main(void) { return 0; }\n");

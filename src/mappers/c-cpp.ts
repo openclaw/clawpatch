@@ -310,7 +310,7 @@ async function mainFunctionTargets(
 }
 
 function definesMain(source: string): boolean {
-  const stripped = stripBlockComments(stripLineComments(source, "//"));
+  const stripped = stripCOrCppLiterals(stripBlockComments(stripLineComments(source, "//")));
   const pattern =
     /(?:^|[;\n])\s*(?:extern\s+"C"\s*)?(?:[\w:<>~*&\s]+\s+)+main\s*\([^;{}]*\)\s*(?:noexcept\s*)?(?:->\s*[\w:<>~*&\s]+)?\s*\{/gmu;
   for (const match of stripped.matchAll(pattern)) {
@@ -323,6 +323,84 @@ function definesMain(source: string): boolean {
 
 function stripBlockComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//gu, " ");
+}
+
+function stripCOrCppLiterals(source: string): string {
+  let stripped = "";
+  for (let index = 0; index < source.length; ) {
+    const raw = rawStringLiteralEnd(source, index);
+    if (raw !== null) {
+      stripped += blankLiteral(source.slice(index, raw));
+      index = raw;
+      continue;
+    }
+    const quote = stringOrCharQuote(source, index);
+    if (quote !== null) {
+      const start = index;
+      index = quote.start + 1;
+      while (index < source.length) {
+        const char = source[index];
+        if (char === "\\") {
+          index += 2;
+          continue;
+        }
+        index += 1;
+        if (char === quote.char) {
+          break;
+        }
+      }
+      stripped += blankLiteral(source.slice(start, index));
+      continue;
+    }
+    stripped += source[index];
+    index += 1;
+  }
+  return stripped;
+}
+
+function rawStringLiteralEnd(source: string, index: number): number | null {
+  if (isIdentifierChar(source[index - 1] ?? "")) {
+    return null;
+  }
+  const match = /^(?:u8|u|U|L)?R"([^\s()\\]{0,16})\(/u.exec(source.slice(index));
+  if (match === null) {
+    return null;
+  }
+  const delimiter = match[1] ?? "";
+  const terminator = `)${delimiter}"`;
+  const contentStart = index + match[0].length;
+  const end = source.indexOf(terminator, contentStart);
+  return end === -1 ? source.length : end + terminator.length;
+}
+
+type LiteralQuote = {
+  char: '"' | "'";
+  start: number;
+};
+
+function stringOrCharQuote(source: string, index: number): LiteralQuote | null {
+  if (isIdentifierChar(source[index - 1] ?? "")) {
+    return null;
+  }
+  const prefixes = ["u8", "u", "U", "L"] as const;
+  for (const prefix of prefixes) {
+    if (source.startsWith(prefix, index)) {
+      const char = source[index + prefix.length];
+      if (char === '"' || char === "'") {
+        return { char, start: index + prefix.length };
+      }
+    }
+  }
+  const char = source[index];
+  return char === '"' || char === "'" ? { char, start: index } : null;
+}
+
+function isIdentifierChar(char: string): boolean {
+  return /[A-Za-z0-9_]/u.test(char);
+}
+
+function blankLiteral(literal: string): string {
+  return literal.replace(/[^\n]/gu, " ");
 }
 
 function braceDepthBefore(source: string, end: number): number {

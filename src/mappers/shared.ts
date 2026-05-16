@@ -260,7 +260,7 @@ export function isCOrCppPath(path: string): boolean {
 export function isCOrCppTestPath(path: string): boolean {
   const base = path.split("/").at(-1) ?? path;
   return (
-    /(^|\/)(test|tests|__tests__)\//u.test(path) ||
+    /(^|\/)(test|tests|__tests__)\//iu.test(path) ||
     /^test[_-]/iu.test(base) ||
     /(?:^|[_-])tests?\./iu.test(base) ||
     /Tests?\.[^.]+$/u.test(base)
