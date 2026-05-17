@@ -30,12 +30,12 @@ stderr so pipes stay parseable.
 
 ## What clawpatch does
 
-- **Semantic feature mapping.** Detects npm bins, Next.js routes, Python packages and Flask routes, Go packages, Rust crates, SwiftPM targets, and common config files as reviewable slices.
+- **Semantic feature mapping.** Detects npm bins, Next.js routes, React Router routes, Python packages and Flask/FastAPI routes, Ruby/Rails slices, Laravel/PHP slices, Java/Kotlin Gradle modules, Go packages, Rust crates, SwiftPM targets, and common config files as reviewable units.
 - **Automated code review.** Reviews features with AI providers (Codex CLI today), persists findings with severity, category, and line locations.
 - **Explicit fix workflow.** `clawpatch fix` runs validated patches for one finding at a time, never commits or pushes automatically.
 - **Stable state model.** All features, findings, patches live in `.clawpatch/` as JSON, resumable across runs.
 - **Safety first.** Review is read-only, fix refuses dirty worktrees, never auto-commits, validates before accepting patches.
-- **Multi-language.** JavaScript/TypeScript, Python, Go, Rust, Swift today; more mappers planned.
+- **Multi-language.** JavaScript/TypeScript, Python, Ruby, PHP/Laravel, Java/Kotlin, Go, Rust, and Swift today; more mappers planned.
 
 ## Pick your path
 

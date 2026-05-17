@@ -51,6 +51,7 @@ This discovers reviewable features:
 - Ruby packages, Rails apps, executables, and tests
 - Rust crates and binaries
 - SwiftPM targets and tests
+- Laravel controllers, requests, jobs, commands, services, models, migrations, and tests
 - Config files
 
 Preview mapping without writing:
