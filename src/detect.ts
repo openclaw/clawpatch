@@ -1032,7 +1032,7 @@ async function containsReviewableKotlinFile(root: string): Promise<boolean> {
 
 async function containsReviewableJvmFile(root: string, extension: string): Promise<boolean> {
   for (const prefix of jvmSourceSearchRoots) {
-    if (await containsFileWithExtension(join(root, prefix), extension, 8)) {
+    if (await containsFileWithExtension(join(root, prefix), extension, 8, undefined, prefix)) {
       return true;
     }
   }
@@ -1067,7 +1067,15 @@ async function containsReviewablePythonFile(root: string): Promise<boolean> {
     return true;
   }
   for (const prefix of pythonSourceSearchRoots) {
-    if (await containsFileMatching(join(root, prefix), 4, isReviewablePythonFileName)) {
+    if (
+      await containsFileMatching(
+        join(root, prefix),
+        4,
+        isReviewablePythonFileName,
+        undefined,
+        prefix,
+      )
+    ) {
       return true;
     }
   }
@@ -1076,7 +1084,7 @@ async function containsReviewablePythonFile(root: string): Promise<boolean> {
 
 async function containsReviewablePhpFile(root: string): Promise<boolean> {
   for (const prefix of ["app", "routes", "config", "database", "tests"]) {
-    if (await containsFileWithExtension(join(root, prefix), ".php", 4)) {
+    if (await containsFileWithExtension(join(root, prefix), ".php", 4, undefined, prefix)) {
       return true;
     }
   }
@@ -1125,7 +1133,7 @@ async function pythonFrameworkScanFiles(root: string): Promise<string[]> {
     }
   }
   for (const prefix of pythonSourceSearchRoots) {
-    await collectPythonFrameworkScanFiles(join(root, prefix), 4, files);
+    await collectPythonFrameworkScanFiles(join(root, prefix), 4, files, prefix);
   }
   return [...new Set(files)].slice(0, 200);
 }
@@ -1134,6 +1142,7 @@ async function collectPythonFrameworkScanFiles(
   dir: string,
   remainingDepth: number,
   files: string[],
+  relativeDir = "",
 ): Promise<void> {
   if (remainingDepth < 0 || !(await pathExists(dir))) {
     return;
@@ -1143,7 +1152,8 @@ async function collectPythonFrameworkScanFiles(
     return;
   }
   for (const entry of await readdir(dir, { withFileTypes: true })) {
-    if (shouldSkipSearchEntry(entry.name)) {
+    const path = relativeDir === "" ? entry.name : `${relativeDir}/${entry.name}`;
+    if (shouldSkipSearchEntry(entry.name, path)) {
       continue;
     }
     const full = join(dir, entry.name);
@@ -1153,7 +1163,7 @@ async function collectPythonFrameworkScanFiles(
     if (entry.isFile() && isReviewablePythonFileName(entry.name)) {
       files.push(full);
     } else if (entry.isDirectory()) {
-      await collectPythonFrameworkScanFiles(full, remainingDepth - 1, files);
+      await collectPythonFrameworkScanFiles(full, remainingDepth - 1, files, path);
     }
   }
 }
@@ -1163,12 +1173,14 @@ async function containsReviewableRubyFile(root: string): Promise<boolean> {
     return true;
   }
   for (const prefix of ["app", "lib"]) {
-    if (await containsFileMatching(join(root, prefix), 4, isReviewableRubyFileName)) {
+    if (
+      await containsFileMatching(join(root, prefix), 4, isReviewableRubyFileName, undefined, prefix)
+    ) {
       return true;
     }
   }
   for (const prefix of ["scripts", "script", "exe", "bin"]) {
-    if (await containsRubyExecutableSource(join(root, prefix), 4)) {
+    if (await containsRubyExecutableSource(join(root, prefix), 4, prefix)) {
       return true;
     }
   }
@@ -1188,7 +1200,11 @@ function isRootReviewableRubyFileName(entry: string): boolean {
   return isReviewableRubyFileName(entry) && !entry.startsWith("test_");
 }
 
-async function containsRubyExecutableSource(dir: string, remainingDepth: number): Promise<boolean> {
+async function containsRubyExecutableSource(
+  dir: string,
+  remainingDepth: number,
+  relativeDir = "",
+): Promise<boolean> {
   if (remainingDepth < 0 || !(await pathExists(dir))) {
     return false;
   }
@@ -1197,7 +1213,8 @@ async function containsRubyExecutableSource(dir: string, remainingDepth: number)
     return false;
   }
   for (const entry of await readdir(dir)) {
-    if (shouldSkipSearchEntry(entry)) {
+    const path = relativeDir === "" ? entry : `${relativeDir}/${entry}`;
+    if (shouldSkipSearchEntry(entry, path)) {
       continue;
     }
     const full = join(dir, entry);
@@ -1212,7 +1229,10 @@ async function containsRubyExecutableSource(dir: string, remainingDepth: number)
     ) {
       return true;
     }
-    if (info.isDirectory() && (await containsRubyExecutableSource(full, remainingDepth - 1))) {
+    if (
+      info.isDirectory() &&
+      (await containsRubyExecutableSource(full, remainingDepth - 1, path))
+    ) {
       return true;
     }
   }
@@ -1291,8 +1311,15 @@ async function containsFileWithExtension(
   extension: string,
   maxDepth: number,
   skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
 ): Promise<boolean> {
-  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension), skipEntry);
+  return containsFileMatching(
+    root,
+    maxDepth,
+    (entry) => entry.endsWith(extension),
+    skipEntry,
+    relativeDir,
+  );
 }
 
 async function containsFileWithExtensionIgnoringCase(
@@ -1300,6 +1327,7 @@ async function containsFileWithExtensionIgnoringCase(
   extension: string,
   maxDepth: number,
   skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
 ): Promise<boolean> {
   const lowercaseExtension = extension.toLowerCase();
   return containsFileMatching(
@@ -1307,6 +1335,7 @@ async function containsFileWithExtensionIgnoringCase(
     maxDepth,
     (entry) => entry.toLowerCase().endsWith(lowercaseExtension),
     skipEntry,
+    relativeDir,
   );
 }
 

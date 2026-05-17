@@ -3403,6 +3403,26 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("CMake binary real");
   });
 
+  it("ignores CMake commands inside uncalled function and macro bodies", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-uncalled-function-body-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "function(make_fake)\nadd_executable(fake src/fake.c)\nendfunction()\nmacro(make_fake_lib)\nadd_library(fake_lib src/lib.c)\nendmacro()\nadd_executable(real src/real.c)\n",
+    );
+    await writeFixture(root, "src/fake.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/lib.c", "int lib(void) { return 0; }\n");
+    await writeFixture(root, "src/real.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(titles).not.toContain("CMake binary fake");
+    expect(titles).not.toContain("CMake library fake_lib");
+    expect(titles).toContain("CMake binary real");
+  });
+
   it("keeps CMake targets after bracket arguments containing hashes", async () => {
     const root = await fixtureRoot("clawpatch-cmake-bracket-hash-");
     await writeFixture(
@@ -4315,6 +4335,7 @@ add_executable(headerapp include/headers.hpp)
 
   it("detects non-C and C++ languages under vendor path components", async () => {
     const root = await fixtureRoot("clawpatch-vendor-language-detect-");
+    await writeFixture(root, "src/vendor/worker.py", "def main():\n    pass\n");
     await writeFixture(root, "src/pkg/vendor/app.py", "def main():\n    pass\n");
     await writeFixture(root, "src/main/vendor/App.java", "class App {}\n");
 

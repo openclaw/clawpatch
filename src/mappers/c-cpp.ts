@@ -521,33 +521,38 @@ function cmakeSubdirectories(body: string): string[] {
 
 function cmakeCommandArgs(body: string, command: string): string[] {
   const args: string[] = [];
-  const lower = body.toLowerCase();
   const needle = command.toLowerCase();
   let depth = 0;
+  let blockDepth = 0;
   for (let index = 0; index < body.length; ) {
     const skipped = cmakeQuotedOrBracketEnd(body, index);
     if (skipped !== null) {
       index = skipped;
       continue;
     }
-    if (
-      depth === 0 &&
-      lower.startsWith(needle, index) &&
-      !isIdentifierChar(body[index - 1] ?? "") &&
-      !isIdentifierChar(body[index + needle.length] ?? "")
-    ) {
-      let open = index + needle.length;
-      while (/\s/u.test(body[open] ?? "")) {
-        open += 1;
-      }
-      if (body[open] === "(") {
-        const close = cmakeCommandClose(body, open);
-        if (close !== null) {
-          args.push(body.slice(open + 1, close));
-          index = close + 1;
-          continue;
+    const parsed = depth === 0 ? cmakeCommandAt(body, index) : null;
+    if (parsed !== null) {
+      if (blockDepth > 0) {
+        if (parsed.name === "function" || parsed.name === "macro") {
+          blockDepth += 1;
+        } else if (parsed.name === "endfunction" || parsed.name === "endmacro") {
+          blockDepth = Math.max(0, blockDepth - 1);
         }
+        index = parsed.close + 1;
+        continue;
       }
+      if (parsed.name === "function" || parsed.name === "macro") {
+        blockDepth = 1;
+        index = parsed.close + 1;
+        continue;
+      }
+      if (parsed.name === needle) {
+        args.push(body.slice(parsed.open + 1, parsed.close));
+        index = parsed.close + 1;
+        continue;
+      }
+      index = parsed.close + 1;
+      continue;
     }
     if (body[index] === "(") {
       depth += 1;
@@ -557,6 +562,32 @@ function cmakeCommandArgs(body: string, command: string): string[] {
     index += 1;
   }
   return args;
+}
+
+type CMakeCommandCall = {
+  name: string;
+  open: number;
+  close: number;
+};
+
+function cmakeCommandAt(body: string, index: number): CMakeCommandCall | null {
+  if (isIdentifierChar(body[index - 1] ?? "")) {
+    return null;
+  }
+  const match = /^[A-Za-z_][A-Za-z0-9_]*/u.exec(body.slice(index));
+  if (match === null) {
+    return null;
+  }
+  const name = match[0].toLowerCase();
+  let open = index + match[0].length;
+  while (/\s/u.test(body[open] ?? "")) {
+    open += 1;
+  }
+  if (body[open] !== "(") {
+    return null;
+  }
+  const close = cmakeCommandClose(body, open);
+  return close === null ? null : { name, open, close };
 }
 
 function cmakeCommandClose(body: string, open: number): number | null {
