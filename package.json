@@ -19,14 +19,15 @@
     "lint": "oxlint . --config oxlint.json",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "pack:smoke": "node scripts/package-smoke.mjs"
   },
   "dependencies": {
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
-    "oxfmt": "^0.49.0",
+    "@types/node": "^25.8.0",
+    "oxfmt": "^0.50.0",
     "oxlint": "^1.64.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"

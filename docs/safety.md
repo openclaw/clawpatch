@@ -12,10 +12,14 @@ Current safety rules:
 - `fix` requires explicit `--finding <id>`.
 - `fix` refuses a dirty source worktree by default.
 - `.clawpatch/` state changes are allowed during runs.
-- review and revalidate provider calls use a read-only sandbox.
+- review and revalidate provider calls use a read-only sandbox for the `codex`
+  provider. The `acpx` provider relies on `acpx --approve-reads` plus an explicit
+  read-only prompt directive; underlying agents that bypass ACP permissions (e.g.
+  agents running in their own full-access mode) may not be strictly sandboxed.
+  See docs/providers.md.
 - provider output must pass runtime schema validation.
-- feature locks are stored in feature records and can be cleared with
-  `clawpatch clean-locks`.
+- feature locks are stored in feature records and `.clawpatch/locks/`; `status`
+  surfaces both, and `clean-locks` clears both.
 - the mapper skips symlinked directories and common generated directories.
 
 Not implemented today:

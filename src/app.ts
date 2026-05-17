@@ -6,14 +6,18 @@ import { detectProject } from "./detect.js";
 import { ClawpatchError, assertDefined } from "./errors.js";
 import { runCommand } from "./exec.js";
 import { nowIso, writeJson } from "./fs.js";
-import { discoverGit, findProjectRoot } from "./git.js";
+import { changedFilesSince, discoverGit, findProjectRoot } from "./git.js";
 import { stableId, runId } from "./id.js";
 import { mapFeatures } from "./mapper.js";
+import { suppressedTestCommandTag } from "./mappers/types.js";
 import { providerByName } from "./provider.js";
 import { buildFixPrompt, buildReviewPrompt, buildRevalidatePrompt } from "./prompt.js";
 import {
+  claimFeature,
+  clearFeatureLockFiles,
   ensureStateDirs,
   readFeatures,
+  readFeatureLockIds,
   readFinding,
   readFindings,
   readPatchAttempts,
@@ -25,6 +29,7 @@ import {
   writePatchAttempt,
   writeProject,
   writeRun,
+  releaseFeatureLock,
 } from "./state.js";
 import {
   CommandResult,
@@ -113,12 +118,19 @@ export async function mapCommand(
 
 export async function statusCommand(context: AppContext): Promise<unknown> {
   const loaded = await loadProjectState(context);
-  const [features, findings, runs, git] = await Promise.all([
+  const [features, findings, runs, git, lockFileIds] = await Promise.all([
     readFeatures(loaded.paths),
     readFindings(loaded.paths),
     readRuns(loaded.paths),
     discoverGit(loaded.root),
+    readFeatureLockIds(loaded.paths),
   ]);
+  const activeLockIds = new Set(
+    features.flatMap((feature) => (feature.lock === null ? [] : [feature.featureId])),
+  );
+  for (const id of lockFileIds) {
+    activeLockIds.add(id);
+  }
   return {
     project: loaded.project.name,
     branch: git.currentBranch,
@@ -126,7 +138,8 @@ export async function statusCommand(context: AppContext): Promise<unknown> {
     features: features.length,
     findings: findings.length,
     openFindings: findings.filter((finding) => finding.status === "open").length,
-    activeLocks: features.filter((feature) => feature.lock !== null).length,
+    activeLocks: activeLockIds.size,
+    lockFiles: lockFileIds.length,
     lastRun: runs.at(-1)?.runId ?? null,
   };
 }
@@ -138,7 +151,10 @@ export async function reviewCommand(
   const loaded = await loadProjectState(context);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
-  const features = selectFeatures(await readFeatures(loaded.paths), flags);
+  const features = await selectReviewFeatures(loaded, flags);
+  if (features.length === 0 && typeof flags["since"] === "string") {
+    return { next: "no features touched by diff" };
+  }
   if (flags["dryRun"] === true) {
     return {
       dryRun: true,
@@ -180,6 +196,7 @@ export async function reviewCommand(
             currentRunId,
             index,
             total: features.length,
+            allowNonPendingFeatureReview: stringFlag(flags, "feature") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
         } catch (error: unknown) {
@@ -240,8 +257,14 @@ export async function reportCommand(
     readFindings(loaded.paths),
     readFeatures(loaded.paths),
   ]);
-  const filtered = filterFindings(findings, flags);
-  const output = renderReport(filtered, features, {
+  const projectFilter = stringFlag(flags, "project");
+  const scopedFeatures = filterFeaturesByProject(features, projectFilter);
+  const filtered = filterFindingsByFeatures(
+    filterFindings(findings, flags),
+    scopedFeatures,
+    projectFilter,
+  );
+  const output = renderReport(filtered, scopedFeatures, {
     includeNext: stringFlag(flags, "status") !== undefined,
   });
   const outputPath = typeof flags["output"] === "string" ? resolve(flags["output"]) : null;
@@ -252,7 +275,7 @@ export async function reportCommand(
     return {
       findings: filtered.length,
       output: outputPath,
-      items: findingSummaries(filtered, features),
+      items: findingSummaries(filtered, scopedFeatures),
     };
   }
   return {
@@ -302,7 +325,15 @@ export async function nextCommand(
     readFeatures(loaded.paths),
   ]);
   const status = stringFlag(flags, "status") ?? "open";
-  const selected = nextFinding(findings.filter((finding) => finding.status === status));
+  const projectFilter = stringFlag(flags, "project");
+  const scopedFeatures = filterFeaturesByProject(features, projectFilter);
+  const selected = nextFinding(
+    filterFindingsByFeatures(
+      findings.filter((finding) => finding.status === status),
+      scopedFeatures,
+      projectFilter,
+    ),
+  );
   if (selected === null) {
     return { finding: null, status, next: "clawpatch report --status open" };
   }
@@ -372,10 +403,21 @@ type ReviewFeatureOptions = {
   currentRunId: string;
   index: number;
   total: number;
+  allowNonPendingFeatureReview: boolean;
 };
 
 async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingIds: string[] }> {
-  const { context, loaded, config, provider, feature, currentRunId, index, total } = options;
+  const {
+    context,
+    loaded,
+    config,
+    provider,
+    feature,
+    currentRunId,
+    index,
+    total,
+    allowNonPendingFeatureReview,
+  } = options;
   const started = Date.now();
   let locked: FeatureRecord | null = null;
   emitReviewProgress(context, "feature-start", {
@@ -385,9 +427,15 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
     title: feature.title,
   });
   try {
-    const lockedFeature = lockFeature(feature, currentRunId);
+    const lockedFeature = await claimFeature(
+      loaded.paths,
+      feature.featureId,
+      featureLock(currentRunId),
+      {
+        allowNonPending: allowNonPendingFeatureReview,
+      },
+    );
     locked = lockedFeature;
-    await writeFeature(loaded.paths, lockedFeature);
     const prompt = await buildReviewPrompt(loaded.root, loaded.project, lockedFeature, config);
     const output = await provider.review(loaded.root, prompt, config.provider.model);
     const records = output.findings
@@ -421,6 +469,8 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
       updatedAt: nowIso(),
     };
     await writeFeature(loaded.paths, updated);
+    await releaseFeatureLock(loaded.paths, lockedFeature.featureId);
+    locked = null;
     emitReviewProgress(context, "feature-done", {
       index: index + 1,
       total,
@@ -432,23 +482,27 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (locked !== null) {
-      await writeFeature(loaded.paths, {
-        ...locked,
-        status: "error",
-        lock: null,
-        analysisHistory: [
-          ...locked.analysisHistory,
-          {
-            runId: currentRunId,
-            kind: "review-error",
-            summary: message,
-            provider: provider.name,
-            model: config.provider.model,
-            createdAt: nowIso(),
-          },
-        ],
-        updatedAt: nowIso(),
-      });
+      try {
+        await writeFeature(loaded.paths, {
+          ...locked,
+          status: "error",
+          lock: null,
+          analysisHistory: [
+            ...locked.analysisHistory,
+            {
+              runId: currentRunId,
+              kind: "review-error",
+              summary: message,
+              provider: provider.name,
+              model: config.provider.model,
+              createdAt: nowIso(),
+            },
+          ],
+          updatedAt: nowIso(),
+        });
+      } finally {
+        await releaseFeatureLock(loaded.paths, locked.featureId);
+      }
     }
     emitReviewProgress(context, "feature-error", {
       index: index + 1,
@@ -468,7 +522,7 @@ export async function revalidateCommand(
   const loaded = await loadProjectState(context);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
-  const findings = await selectRevalidationFindings(loaded.paths, flags);
+  const findings = await selectRevalidationFindings(loaded, flags);
   const currentRunId = runId();
   const currentGit = await discoverGit(loaded.root);
   const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
@@ -551,7 +605,7 @@ export async function revalidateCommand(
     });
     throw error;
   }
-  if (flags["all"] === true) {
+  if (flags["all"] === true || typeof flags["since"] === "string") {
     return {
       revalidated: results.length,
       open: results.filter((result) => result.outcome === "open").length,
@@ -615,7 +669,7 @@ export async function fixCommand(
   };
   const prompt = await buildFixPrompt(loaded.root, finding, feature);
   if (flags["dryRun"] === true) {
-    const validationCommands = collectValidationCommands(config.commands);
+    const validationCommands = validationCommandsForFeature(feature, config.commands);
     return {
       finding: finding.findingId,
       dryRun: true,
@@ -654,7 +708,7 @@ export async function fixCommand(
     });
     throw error;
   }
-  const validationCommands = collectValidationCommands(config.commands);
+  const validationCommands = validationCommandsForFeature(feature, config.commands);
   const commandsRun: CommandResult[] = [];
   for (const command of validationCommands) {
     commandsRun.push(await runCommand(command, loaded.root));
@@ -724,16 +778,29 @@ function mergeFinding(existing: FindingRecord | null, incoming: FindingRecord): 
   };
 }
 
-export async function doctorCommand(context: AppContext): Promise<unknown> {
+export async function doctorCommand(
+  context: AppContext,
+  flags: Record<string, string | boolean> = {},
+): Promise<unknown> {
   const loaded = await loadProjectState(context).catch(() => null);
   const root = loaded?.root ?? context.root;
-  const providerName = loaded?.config.provider.name ?? "codex";
+  const providerName =
+    stringFlag(flags, "provider") ??
+    process.env["CLAWPATCH_PROVIDER"] ??
+    loaded?.config.provider.name ??
+    "codex";
+  const model =
+    stringFlag(flags, "model") ??
+    process.env["CLAWPATCH_MODEL"] ??
+    loaded?.config.provider.model ??
+    null;
   const provider = providerByName(providerName);
   const providerVersion = await provider.check(root);
   return {
     root,
     state: loaded === null ? "missing" : "ok",
     provider: providerName,
+    model,
     providerVersion,
     secrets: "redacted",
   };
@@ -755,7 +822,8 @@ export async function cleanLocksCommand(context: AppContext): Promise<unknown> {
     });
     cleared += 1;
   }
-  return { cleared };
+  const lockFilesCleared = await clearFeatureLockFiles(loaded.paths);
+  return { cleared, lockFilesCleared };
 }
 
 async function loadProjectState(context: AppContext) {
@@ -785,18 +853,6 @@ function applyProviderFlags(
   };
 }
 
-function collectValidationCommands(commands: {
-  typecheck: string | null;
-  lint: string | null;
-  format: string | null;
-  test: string | null;
-}): string[] {
-  const ordered = [commands.format, commands.typecheck, commands.lint, commands.test].filter(
-    (command): command is string => command !== null && command.length > 0,
-  );
-  return Array.from(new Set(ordered));
-}
-
 function validationCommandsForFeature(
   feature: FeatureRecord | null,
   commands: {
@@ -806,28 +862,43 @@ function validationCommandsForFeature(
     test: string | null;
   },
 ): string[] {
-  return Array.from(
-    new Set([
-      ...(feature?.tests ?? []).flatMap((test) => (test.command === null ? [] : [test.command])),
-      ...collectValidationCommands(commands),
-    ]),
+  const featureCommands = (feature?.tests ?? []).flatMap((test) =>
+    test.command === null || test.command.length === 0 ? [] : [test.command],
   );
+  const configuredTest =
+    feature?.tags.includes(suppressedTestCommandTag) === true ? null : commands.test;
+  const ordered = [
+    commands.format,
+    ...featureCommands,
+    commands.typecheck,
+    commands.lint,
+    configuredTest,
+  ].filter((command): command is string => command !== null && command.length > 0);
+  return Array.from(new Set(ordered));
 }
 
 async function selectRevalidationFindings(
-  paths: ReturnType<typeof statePaths>,
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
   flags: Record<string, string | boolean>,
 ): Promise<FindingRecord[]> {
-  if (flags["all"] === true) {
-    const filtered = filterFindings(await readFindings(paths), {
+  const findingId = stringFlag(flags, "finding");
+  if (flags["all"] === true || findingId === undefined) {
+    const filtered = filterFindings(await readFindings(loaded.paths), {
       ...flags,
       status: stringFlag(flags, "status") ?? "open",
     });
-    const limit = Number(stringFlag(flags, "limit") ?? String(filtered.length));
-    return filtered.slice(0, Number.isFinite(limit) && limit > 0 ? limit : filtered.length);
+    const sinceFiltered = await filterFindingsByOwnedFilesSince(loaded, filtered, flags);
+    const limit = Number(stringFlag(flags, "limit") ?? String(sinceFiltered.length));
+    return sinceFiltered.slice(
+      0,
+      Number.isFinite(limit) && limit > 0 ? limit : sinceFiltered.length,
+    );
   }
-  const findingId = assertDefined(stringFlag(flags, "finding"), "missing --finding");
-  return [assertDefined(await readFinding(paths, findingId), `finding not found: ${findingId}`)];
+  return filterFindingsByOwnedFilesSince(
+    loaded,
+    [assertDefined(await readFinding(loaded.paths, findingId), `finding not found: ${findingId}`)],
+    flags,
+  );
 }
 
 async function refreshFeatureStatus(
@@ -900,17 +971,169 @@ function normalizePath(path: string): string {
   return path.replace(/\\/gu, "/").replace(/\/$/u, "");
 }
 
-function selectFeatures(
+async function selectReviewFeatures(
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
+  flags: Record<string, string | boolean>,
+): Promise<FeatureRecord[]> {
+  const candidates = selectReviewCandidates(await readFeatures(loaded.paths), flags);
+  const sinceFiltered = await filterFeaturesByFilesSince(loaded.root, candidates, flags);
+  return limitFeatures(sinceFiltered, flags);
+}
+
+function selectReviewCandidates(
   features: FeatureRecord[],
   flags: Record<string, string | boolean>,
 ): FeatureRecord[] {
   const featureId = stringFlag(flags, "feature");
-  const limit = Number(stringFlag(flags, "limit") ?? "1");
+  const projectFilter = stringFlag(flags, "project");
+  const projectFeatures = filterFeaturesByProject(features, projectFilter);
   const selected =
     featureId === undefined
-      ? features.filter((feature) => ["pending", "error"].includes(feature.status))
-      : features.filter((feature) => feature.featureId === featureId);
-  return selected.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 1);
+      ? projectFeatures.filter((feature) => ["pending", "error"].includes(feature.status))
+      : projectFeatures.filter((feature) => feature.featureId === featureId);
+  return projectFilter === undefined ? selected : selected.toSorted(featureReviewRank);
+}
+
+async function filterFeaturesByFilesSince(
+  root: string,
+  features: FeatureRecord[],
+  flags: Record<string, string | boolean>,
+): Promise<FeatureRecord[]> {
+  const since = stringFlag(flags, "since");
+  if (since === undefined) {
+    return features;
+  }
+  const changed = await changedFilesSince(root, since);
+  return features.filter((feature) => featureTouchesFiles(feature, changed, true));
+}
+
+async function filterFindingsByOwnedFilesSince(
+  loaded: Awaited<ReturnType<typeof loadProjectState>>,
+  findings: FindingRecord[],
+  flags: Record<string, string | boolean>,
+): Promise<FindingRecord[]> {
+  const since = stringFlag(flags, "since");
+  if (since === undefined) {
+    return findings;
+  }
+  const changed = await changedFilesSince(loaded.root, since);
+  const features = await readFeatures(loaded.paths);
+  const featuresById = new Map(features.map((feature) => [feature.featureId, feature]));
+  return findings.filter((finding) => {
+    const feature = featuresById.get(finding.featureId);
+    return feature !== undefined && featureTouchesFiles(feature, changed, false);
+  });
+}
+
+function featureTouchesFiles(
+  feature: FeatureRecord,
+  changed: Set<string>,
+  includeContext: boolean,
+): boolean {
+  const featureFiles = new Set([
+    ...feature.ownedFiles.map((file) => file.path),
+    ...(includeContext ? feature.contextFiles.map((file) => file.path) : []),
+  ]);
+  for (const file of changed) {
+    if (featureFiles.has(file)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function limitFeatures(
+  features: FeatureRecord[],
+  flags: Record<string, string | boolean>,
+): FeatureRecord[] {
+  const limit = Number(stringFlag(flags, "limit") ?? "1");
+  return features.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 1);
+}
+
+function filterFeaturesByProject(
+  features: FeatureRecord[],
+  project: string | undefined,
+): FeatureRecord[] {
+  if (project === undefined) {
+    return features;
+  }
+  const normalized = normalizeProjectFilter(project);
+  return features.filter((feature) => featureMatchesProject(feature, project, normalized));
+}
+
+function filterFindingsByFeatures(
+  findings: FindingRecord[],
+  features: FeatureRecord[],
+  project: string | undefined,
+): FindingRecord[] {
+  if (project === undefined) {
+    return findings;
+  }
+  const featureIds = new Set(features.map((feature) => feature.featureId));
+  return findings.filter((finding) => featureIds.has(finding.featureId));
+}
+
+function featureMatchesProject(
+  feature: FeatureRecord,
+  rawProject: string,
+  normalizedProject: string,
+): boolean {
+  if (
+    feature.tags.includes(`project:${rawProject}`) ||
+    feature.tags.includes(`project:${normalizedProject}`) ||
+    feature.tags.includes(`project-root:${normalizedProject}`)
+  ) {
+    return true;
+  }
+  if (normalizedProject === ".") {
+    return feature.tags.includes("project-root:.");
+  }
+  return featurePaths(feature).some(
+    (path) => path === normalizedProject || path.startsWith(`${normalizedProject}/`),
+  );
+}
+
+function featurePaths(feature: FeatureRecord): string[] {
+  return [
+    ...feature.entrypoints.map((entrypoint) => entrypoint.path),
+    ...feature.ownedFiles.map((file) => file.path),
+    ...feature.contextFiles.map((file) => file.path),
+    ...feature.tests.map((test) => test.path),
+  ].map(normalizePath);
+}
+
+function normalizeProjectFilter(project: string): string {
+  const normalized = normalizePath(project).replace(/^\.\//u, "");
+  return normalized.length === 0 ? "." : normalized;
+}
+
+function featureReviewRank(left: FeatureRecord, right: FeatureRecord): number {
+  return (
+    featureStatusRank(left) - featureStatusRank(right) ||
+    featureSourceRank(left) - featureSourceRank(right) ||
+    left.title.localeCompare(right.title) ||
+    left.featureId.localeCompare(right.featureId)
+  );
+}
+
+function featureStatusRank(feature: FeatureRecord): number {
+  return feature.status === "error" ? 0 : 1;
+}
+
+function featureSourceRank(feature: FeatureRecord): number {
+  if (feature.source.startsWith("next-")) {
+    return 0;
+  }
+  if (feature.source === "package-json-bin") {
+    return 1;
+  }
+  if (feature.source === "node-source-group") {
+    return 2;
+  }
+  if (feature.source === "node-package") {
+    return 3;
+  }
+  return 4;
 }
 
 function reviewJobs(flags: Record<string, string | boolean>): number {
@@ -949,20 +1172,12 @@ function emitRevalidateProgress(
   process.stderr.write(`clawpatch revalidate ${event}${values.length > 0 ? ` ${values}` : ""}\n`);
 }
 
-function lockFeature(feature: FeatureRecord, currentRunId: string): FeatureRecord {
-  if (feature.lock !== null) {
-    throw new ClawpatchError(`feature locked: ${feature.featureId}`, 7, "lock-conflict");
-  }
+function featureLock(currentRunId: string): NonNullable<FeatureRecord["lock"]> {
   return {
-    ...feature,
-    status: "claimed",
-    lock: {
-      lockedByRunId: currentRunId,
-      lockedAt: nowIso(),
-      hostname: hostname(),
-      pid: process.pid,
-    },
-    updatedAt: nowIso(),
+    lockedByRunId: currentRunId,
+    lockedAt: nowIso(),
+    hostname: hostname(),
+    pid: process.pid,
   };
 }
 

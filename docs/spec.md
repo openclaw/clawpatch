@@ -698,11 +698,13 @@ Mappers:
 
 - Node package bins from `package.json`.
 - Node scripts from `package.json`.
+- Node workspace and Nx project metadata as project roots for framework mappers.
 - TypeScript/JavaScript CLI command registries when cheap to detect.
-- Next.js `app/**/page.*`, `app/**/route.*`, `pages/**`.
+- Next.js `app/**/page.*`, `app/**/route.*`, `pages/**` at the repo root or inside discovered project roots.
 - Express/Fastify/Hono route registrations.
 - Go `cmd/*` commands and `internal/*` packages.
 - Rust Cargo commands, libraries, workspace crates, and integration tests.
+- C/C++ standalone `main()` files, CMake targets, and autotools targets.
 - SwiftPM executable targets, library targets, and test suites.
 - Test suites from common test file globs.
 - Config/release features from package/build/release files.

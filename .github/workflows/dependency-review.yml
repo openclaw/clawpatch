@@ -1,0 +1,40 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/dependency-review.yml"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    name: Review dependency changes
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Check dependency review API support
+        id: dependency-review-api
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}" >/dev/null 2>&1; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Dependency Review API is unavailable for this repository; skipping dependency-review-action."
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        if: ${{ steps.dependency-review-api.outputs.supported == 'true' }}
+        with:
+          fail-on-severity: high

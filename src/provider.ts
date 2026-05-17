@@ -1,8 +1,7 @@
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawn } from "node:child_process";
-import { runCommand } from "./exec.js";
+import { runCommandArgs } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
 import {
   FixPlanOutput,
@@ -28,6 +27,12 @@ export function providerByName(name: string): Provider {
   if (name === "opencode") {
     return opencodeProvider;
   }
+  if (name === "acpx") {
+    return acpxProvider;
+  }
+  if (name === "grok") {
+    return grokProvider;
+  }
   if (name === "mock") {
     return mockProvider;
   }
@@ -40,7 +45,7 @@ export function providerByName(name: string): Provider {
 const codexProvider: Provider = {
   name: "codex",
   async check(root: string): Promise<string> {
-    const result = await runCommand("codex --version", root);
+    const result = await runCommandArgs("codex", ["--version"], root);
     if (result.exitCode !== 0) {
       throw new ClawpatchError("codex CLI not available", 4, "provider-auth");
     }
@@ -63,22 +68,75 @@ const codexProvider: Provider = {
 const opencodeProvider: Provider = {
   name: "opencode",
   async check(root: string): Promise<string> {
-    const result = await runCommand("opencode --version", root);
+    const result = await runCommandArgs("opencode", ["--version"], root);
     if (result.exitCode !== 0) {
       throw new ClawpatchError("opencode CLI not available", 4, "provider-auth");
     }
     return result.stdout.trim();
   },
   async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
-    const output = await runOpencodeJson(root, prompt, model);
+    const output = await runOpencodeJson(root, prompt, model, reviewJsonSchema, true);
     return reviewOutputSchema.parse(output);
   },
   async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
-    const output = await runOpencodeJson(root, prompt, model, true);
+    const output = await runOpencodeJson(root, prompt, model, fixPlanJsonSchema, false);
     return fixPlanOutputSchema.parse(output);
   },
   async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
-    const output = await runOpencodeJson(root, prompt, model);
+    const output = await runOpencodeJson(root, prompt, model, revalidateJsonSchema, true);
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+const ACPX_TESTED_VERSIONS = "^0.8.0";
+
+const acpxProvider: Provider = {
+  name: "acpx",
+  async check(root: string): Promise<string> {
+    const result = await runCommandArgs("acpx", ["--version"], root);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        "acpx CLI not available. Install: npm install -g acpx@latest",
+        4,
+        "provider-auth",
+      );
+    }
+    const version = result.stdout.trim();
+    return `${version} (tested against ${ACPX_TESTED_VERSIONS})`;
+  },
+  async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
+    const output = await runAcpxJson(root, prompt, model, reviewJsonSchema, "read");
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
+    const output = await runAcpxJson(root, prompt, model, fixPlanJsonSchema, "approve");
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
+    const output = await runAcpxJson(root, prompt, model, revalidateJsonSchema, "read");
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+const grokProvider: Provider = {
+  name: "grok",
+  async check(root: string): Promise<string> {
+    const result = await runCommandArgs("grok", ["--version"], root);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError("grok CLI not available", 4, "provider-auth");
+    }
+    return result.stdout.trim();
+  },
+  async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
+    const output = await runGrokJson(root, prompt, model, reviewJsonSchema, true);
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
+    const output = await runGrokJson(root, prompt, model, fixPlanJsonSchema, false);
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
+    const output = await runGrokJson(root, prompt, model, revalidateJsonSchema, true);
     return revalidateOutputSchema.parse(output);
   },
 };
@@ -175,9 +233,22 @@ async function runCodexJson(
   const schemaPath = join(dir, "schema.json");
   const outputPath = join(dir, "output.json");
   await writeFile(schemaPath, JSON.stringify(schema), "utf8");
-  const modelArg = model === null ? "" : ` --model ${shellQuote(model)}`;
-  const command = `codex exec --cd ${shellQuote(root)} --sandbox ${sandbox} --output-schema ${shellQuote(schemaPath)} --output-last-message ${shellQuote(outputPath)}${modelArg} -`;
-  const result = await runCommand(command, root, prompt);
+  const args = [
+    "exec",
+    "--cd",
+    root,
+    "--sandbox",
+    sandbox,
+    "--output-schema",
+    schemaPath,
+    "--output-last-message",
+    outputPath,
+  ];
+  if (model !== null) {
+    args.push("--model", model);
+  }
+  args.push("-");
+  const result = await runCommandArgs("codex", args, root, prompt);
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
       `codex provider failed: ${result.stderr || result.stdout}`,
@@ -192,78 +263,427 @@ async function runCodexJson(
   return JSON.parse(raw) as unknown;
 }
 
+const OPENCODE_READ_ONLY_PERMISSION = JSON.stringify({
+  bash: "deny",
+  edit: "deny",
+  task: "deny",
+  webfetch: "deny",
+  websearch: "deny",
+});
+
 async function runOpencodeJson(
   root: string,
   prompt: string,
   model: string | null,
-  allowEdits = false,
+  schema: object,
+  readOnly: boolean,
 ): Promise<unknown> {
-  const modelArg = model === null ? "" : ` -m ${shellQuote(model)}`;
-  const editFlag = allowEdits ? " --dangerously-skip-permissions" : "";
-  const command = `opencode run --format json${modelArg}${editFlag} -`;
-  const child = spawn(command, { cwd: root, shell: true, stdio: ["pipe", "pipe", "pipe"] });
-  if (prompt !== undefined) {
-    child.stdin.end(prompt);
-  } else {
-    child.stdin.end();
+  const dir = await mkdtemp(join(tmpdir(), "clawpatch-opencode-"));
+  const promptPath = join(dir, "prompt.txt");
+  await writeFile(promptPath, opencodePrompt(prompt, schema, readOnly), "utf8");
+
+  try {
+    const args = ["run", "--format", "json", "--dir", root, "--file", promptPath];
+    if (model !== null) {
+      args.push("--model", model);
+    }
+    if (!readOnly) {
+      args.push("--dangerously-skip-permissions");
+    }
+    args.push("Follow the attached clawpatch prompt. Return only the requested JSON object.");
+    const result = await runCommandArgs(
+      "opencode",
+      args,
+      root,
+      undefined,
+      readOnly
+        ? { trimOutput: false, env: { OPENCODE_PERMISSION: OPENCODE_READ_ONLY_PERMISSION } }
+        : { trimOutput: false },
+    );
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        opencodeFailureMessage(result.stdout, result.stderr),
+        providerExitCode(result.stderr),
+        "provider-failure",
+      );
+    }
+    return extractOpencodeJson(result.stdout);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
-  let stdout = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => { stdout += chunk; });
-  child.stderr.on("data", (chunk: string) => { stderr += chunk; });
-  const exitCode = await new Promise<number | null>((resolve) => {
-    child.on("close", resolve);
-  });
-  if (exitCode !== 0) {
+}
+
+function opencodePrompt(prompt: string, schema: object, readOnly: boolean): string {
+  const promptBody = readOnly
+    ? "READ-ONLY REVIEW MODE.\n" +
+      "Do not modify, create, or delete any files.\n" +
+      "Do not run shell commands or launch subagents.\n\n" +
+      prompt
+    : prompt;
+  return `${promptBody}
+
+Provider output schema:
+${JSON.stringify(schema, null, 2)}
+
+Return only one JSON object matching the schema.`;
+}
+
+export function extractOpencodeJson(stdout: string): unknown {
+  const textParts: string[] = [];
+  const observedKinds = new Set<string>();
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let event: {
+      type?: string;
+      part?: { text?: unknown };
+      error?: { data?: { message?: unknown }; name?: unknown; message?: unknown };
+    };
+    try {
+      event = JSON.parse(trimmed) as typeof event;
+    } catch {
+      continue;
+    }
+    if (typeof event.type === "string") {
+      observedKinds.add(event.type);
+    }
+    if (event.type === "text" && typeof event.part?.text === "string") {
+      textParts.push(event.part.text);
+    }
+    if (event.type === "error") {
+      const message =
+        typeof event.error?.data?.message === "string"
+          ? event.error.data.message
+          : typeof event.error?.message === "string"
+            ? event.error.message
+            : typeof event.error?.name === "string"
+              ? event.error.name
+              : "unknown";
+      throw new ClawpatchError(`opencode provider error: ${message}`, 1, "provider-failure");
+    }
+  }
+  const combined = textParts.join("").trim();
+  if (combined.length === 0) {
     throw new ClawpatchError(
-      `opencode provider failed: ${stderr || stdout}`,
-      providerExitCode(stderr),
+      `opencode provider produced no extractable text. Observed event kinds: ` +
+        `[${[...observedKinds].join(", ")}].`,
+      8,
+      "malformed-output",
+    );
+  }
+  const parsed = extractJson(combined);
+  if (parsed === null) {
+    throw new ClawpatchError("opencode provider produced unparsable JSON", 8, "malformed-output");
+  }
+  return parsed;
+}
+
+function opencodeFailureMessage(stdout: string, stderr: string): string {
+  if (stderr.trim().length > 0) {
+    return `opencode provider failed: ${stderr}`;
+  }
+  const preview = stdout.slice(0, 800).replace(/\s+/gu, " ");
+  return preview.length === 0
+    ? "opencode provider failed"
+    : `opencode provider failed (stdout preview: ${preview})`;
+}
+
+export function parseAcpxAgent(model: string | null): {
+  agent: string;
+  agentModel: string | null;
+} {
+  if (model === null) {
+    return { agent: "codex", agentModel: null };
+  }
+  const idx = model.indexOf(":");
+  if (idx === -1) {
+    return { agent: model, agentModel: null };
+  }
+  return { agent: model.slice(0, idx), agentModel: model.slice(idx + 1) };
+}
+
+async function runAcpxJson(
+  root: string,
+  prompt: string,
+  model: string | null,
+  schema: object,
+  permission: "read" | "approve",
+): Promise<unknown> {
+  const { agent, agentModel } = parseAcpxAgent(model);
+  const permFlag = permission === "read" ? "--approve-reads" : "--approve-all";
+  const args = ["--cwd", root, permFlag, "--format", "json", "--json-strict", "--suppress-reads"];
+  if (agentModel !== null) {
+    args.push("--model", agentModel);
+  }
+  args.push(agent, "exec", "--file", "-");
+  const result = await runCommandArgs(
+    "acpx",
+    args,
+    root,
+    buildAcpxPrompt(prompt, schema, permission),
+    { trimOutput: false },
+  );
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      acpxFailureMessage(result.stdout, result.stderr, result.exitCode),
+      acpxExitCode(result.stdout, result.stderr, result.exitCode),
       "provider-failure",
     );
   }
-  const lines = stdout.trim().split("\n");
-  const textParts: string[] = [];
-  for (const line of lines) {
+  return extractAcpxJson(result.stdout);
+}
+
+function buildAcpxPrompt(prompt: string, schema: object, permission: "read" | "approve"): string {
+  const promptBody =
+    permission === "read"
+      ? "READ-ONLY REVIEW MODE.\n" +
+        "Do not modify, create, or delete any files.\n" +
+        "Do not make any tool calls that write to the workspace.\n" +
+        "Only read files and report findings in the JSON output below.\n\n" +
+        prompt
+      : prompt;
+
+  return (
+    `${promptBody}\n\n` +
+    "Return ONLY a JSON object matching this schema. No prose preamble, no markdown fences, " +
+    "no thinking-out-loud text before the JSON. " +
+    `Schema:\n${JSON.stringify(schema)}\n`
+  );
+}
+
+export function extractAcpxJson(stdout: string): unknown {
+  const toolCandidates: string[] = [];
+  const messageChunks: string[] = [];
+  const thoughtChunks: string[] = [];
+  const observedKinds = new Set<string>();
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let env: {
+      method?: string;
+      params?: {
+        update?: {
+          sessionUpdate?: string;
+          content?: { type?: string; text?: string };
+          output?: unknown;
+        };
+      };
+    };
     try {
-      const event = JSON.parse(line) as any;
-      if (event.type === "text" && event.part?.text) {
-        textParts.push(event.part.text);
-      }
-      if (event.type === "error") {
-        throw new ClawpatchError(
-          `opencode provider error: ${event.error?.data?.message || event.error?.name || "unknown"}`,
-          1,
-          "provider-failure",
-        );
-      }
-    } catch (e) {
-      if (e instanceof ClawpatchError) throw e;
+      env = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (env.method !== "session/update") {
+      continue;
+    }
+    const update = env.params?.update;
+    if (update?.sessionUpdate === undefined) {
+      continue;
+    }
+    observedKinds.add(update.sessionUpdate);
+    if (
+      update.sessionUpdate === "agent_message_chunk" &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string"
+    ) {
+      messageChunks.push(update.content.text);
+    } else if (
+      update.sessionUpdate === "agent_thought_chunk" &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string"
+    ) {
+      thoughtChunks.push(update.content.text);
+    } else if (update.sessionUpdate === "tool_call_result" && typeof update.output === "string") {
+      toolCandidates.push(update.output);
     }
   }
-  const combined = textParts.join("");
-  if (!combined) {
-    throw new ClawpatchError("opencode provider produced no output", 8, "malformed-output");
+  const candidates = [
+    ...(messageChunks.length > 0 ? [messageChunks.join("")] : []),
+    ...toolCandidates.toReversed(),
+    ...(thoughtChunks.length > 0 ? [thoughtChunks.join("")] : []),
+  ];
+  if (candidates.length === 0) {
+    throw new ClawpatchError(
+      `acpx provider produced no extractable text. Observed envelope kinds: ` +
+        `[${[...observedKinds].join(", ")}]. ` +
+        `acpx envelope shape may have changed since clawpatch was tested ` +
+        `against ${ACPX_TESTED_VERSIONS}. Check the installed acpx version.`,
+      8,
+      "malformed-output",
+    );
   }
-  return JSON.parse(extractJson(combined)) as unknown;
+
+  let lastErr: unknown;
+  for (const candidate of candidates) {
+    const text = candidate.trim();
+    try {
+      const parsed = extractJson(text);
+      if (parsed !== null) {
+        return parsed;
+      }
+      throw new Error("no JSON object found");
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw new ClawpatchError(
+    `acpx provider produced unparseable JSON: ${(lastErr as Error).message}. ` +
+      `Observed envelope kinds: [${[...observedKinds].join(", ")}]. ` +
+      `acpx envelope shape may have changed since clawpatch was tested ` +
+      `against ${ACPX_TESTED_VERSIONS}. Check the installed acpx version.`,
+    8,
+    "malformed-output",
+  );
 }
 
-function extractJson(text: string): string {
-  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence?.[1]) return fence[1].trim();
+async function runGrokJson(
+  root: string,
+  prompt: string,
+  model: string | null,
+  schema: object,
+  readOnly: boolean,
+): Promise<unknown> {
+  const dir = await mkdtemp(join(tmpdir(), "clawpatch-grok-"));
+  const promptPath = join(dir, "prompt.txt");
+  await writeFile(promptPath, grokPrompt(prompt, schema), "utf8");
+
   try {
-    JSON.parse(text);
-    return text;
-  } catch {
-    const topLevel = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (topLevel) return topLevel[0];
+    const args = [
+      "--prompt-file",
+      promptPath,
+      "--output-format",
+      "json",
+      "--always-approve",
+      "--verbatim",
+      "--cwd",
+      root,
+    ];
+    if (model !== null) {
+      args.push("-m", model);
+    }
+    if (readOnly) {
+      args.push("--disallowed-tools", "search_replace,run_terminal_cmd,Agent");
+    }
+    const result = await runCommandArgs("grok", args, root, undefined, { trimOutput: false });
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        `grok provider failed: ${result.stderr || result.stdout}`,
+        providerExitCode(result.stderr),
+        "provider-failure",
+      );
+    }
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(result.stdout) as unknown;
+    } catch {
+      const preview = result.stdout.slice(0, 200).replace(/\s+/gu, " ");
+      throw new ClawpatchError(
+        `grok provider produced no JSON envelope (stdout preview: ${preview})`,
+        8,
+        "malformed-output",
+      );
+    }
+    const text = grokEnvelopeText(envelope);
+    const parsed = text === null ? envelope : extractJson(text);
+    if (parsed === null) {
+      throw new ClawpatchError("grok provider produced unparsable JSON", 8, "malformed-output");
+    }
+    return parsed;
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
-  throw new ClawpatchError("opencode provider produced no JSON output", 8, "malformed-output");
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/gu, "'\\''")}'`;
+function grokPrompt(prompt: string, schema: object): string {
+  return `${prompt}
+
+Provider output schema:
+${JSON.stringify(schema, null, 2)}
+
+Return only one JSON object matching the schema.`;
+}
+
+function grokEnvelopeText(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  for (const key of ["text", "response", "output", "content"]) {
+    const item = (value as Record<string, unknown>)[key];
+    if (typeof item === "string") {
+      return item;
+    }
+  }
+  const choices = (value as Record<string, unknown>)["choices"];
+  if (Array.isArray(choices)) {
+    const first = choices[0] as unknown;
+    if (typeof first === "object" && first !== null) {
+      const message = (first as Record<string, unknown>)["message"];
+      if (typeof message === "object" && message !== null) {
+        const content = (message as Record<string, unknown>)["content"];
+        if (typeof content === "string") {
+          return content;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function extractJson(text: string): unknown | null {
+  try {
+    return JSON.parse(text);
+  } catch {}
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/u);
+  if (fenceMatch && fenceMatch[1]) {
+    const candidate = fenceMatch[1].trim();
+    try {
+      return JSON.parse(candidate);
+    } catch {}
+  }
+  const firstBrace = text.indexOf("{");
+  if (firstBrace !== -1) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = firstBrace; i < text.length; i += 1) {
+      const ch = text[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (ch === "{") depth += 1;
+        else if (ch === "}") {
+          depth -= 1;
+          if (depth === 0) {
+            const candidate = text.slice(firstBrace, i + 1);
+            try {
+              return JSON.parse(candidate);
+            } catch {
+              return null;
+            }
+          }
+        }
+      }
+    }
+  }
+  return null;
 }
 
 function providerExitCode(stderr: string): number {
@@ -275,6 +695,92 @@ function providerExitCode(stderr: string): number {
   }
   return 1;
 }
+
+function acpxFailureMessage(stdout: string, stderr: string, exitCode: number | null): string {
+  const error = extractAcpxError(stdout);
+  if (error !== null) {
+    return `acpx provider failed: ${error}`;
+  }
+  const stderrPreview = safeProviderPreview(stderr);
+  if (stderrPreview.length > 0) {
+    return `acpx provider failed: ${stderrPreview}`;
+  }
+  return `acpx provider failed with exit code ${exitCode ?? "unknown"}`;
+}
+
+function extractAcpxError(stdout: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let env: unknown;
+    try {
+      env = JSON.parse(trimmed) as unknown;
+    } catch {
+      continue;
+    }
+    if (typeof env !== "object" || env === null) {
+      continue;
+    }
+    const error = (env as Record<string, unknown>)["error"];
+    if (typeof error !== "object" || error === null) {
+      continue;
+    }
+    const errorRecord = error as Record<string, unknown>;
+    const data = errorRecord["data"];
+    const dataRecord =
+      typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
+    const parts = [
+      stringPart("code", errorRecord["code"]),
+      stringPart("acpxCode", dataRecord["acpxCode"]),
+      stringPart("detail", dataRecord["detailCode"]),
+      stringPart("origin", dataRecord["origin"]),
+      stringPart("message", errorRecord["message"], 160),
+    ].filter((part) => part.length > 0);
+    if (parts.length > 0) {
+      return parts.join("; ");
+    }
+  }
+  return null;
+}
+
+function stringPart(label: string, value: unknown, maxLength = 80): string {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return "";
+  }
+  const preview = safeProviderPreview(String(value), maxLength);
+  return preview.length === 0 ? "" : `${label}=${preview}`;
+}
+
+function safeProviderPreview(value: string, maxLength = 200): string {
+  return value.replace(/\s+/gu, " ").trim().slice(0, maxLength);
+}
+
+function acpxExitCode(stdout: string, stderr: string, exitCode: number | null): number {
+  const combined = `${stderr}\n${extractAcpxError(stdout) ?? ""}`;
+  if (/auth|login|api key|not authenticated|AUTH_REQUIRED/iu.test(combined)) {
+    return 4;
+  }
+  if (/quota|rate.?limit/iu.test(combined)) {
+    return 5;
+  }
+  if (/acpx: command not found|spawn acpx ENOENT/iu.test(combined)) {
+    return 4;
+  }
+  if (exitCode === 3 || /TIMEOUT/iu.test(combined)) {
+    return 1;
+  }
+  return 1;
+}
+
+// eslint-disable-next-line no-underscore-dangle
+export const __testing = {
+  acpxFailureMessage,
+  extractAcpxJson,
+  extractOpencodeJson,
+  parseAcpxAgent,
+};
 
 const reviewJsonSchema = {
   type: "object",
