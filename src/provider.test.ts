@@ -407,6 +407,7 @@ describe("providerByName", () => {
     expect(providerByName("acpx").name).toBe("acpx");
     expect(providerByName("grok").name).toBe("grok");
     expect(providerByName("opencode").name).toBe("opencode");
+    expect(providerByName("pi").name).toBe("pi");
   });
 
   it("still supports codex, mock, and mock-fail", () => {

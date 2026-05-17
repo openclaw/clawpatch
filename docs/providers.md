@@ -17,6 +17,7 @@ Provider names today:
 - `acpx`: routes through any ACP-compatible coding agent via `acpx`
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `opencode`: shells out to `opencode run --format json`
+- `pi`: shells out to `pi -p` (non-interactive print mode)
 - `mock`: deterministic provider for tests and fixtures
 - `mock-fail`: failure provider for tests
 
@@ -134,7 +135,67 @@ How the Grok provider works:
 - Structured output: validates the returned JSON against the same Zod schemas used for Codex
 - Large prompts: always uses `--prompt-file` instead of passing prompt text on the command line
 
+## Pi
+
+The `pi` provider shells out to the local [pi coding agent](https://pi.dev)
+in non-interactive print mode (`pi -p`).
+
+Install pi:
+
+```bash
+curl -fsSL https://pi.dev/install.sh | sh
+```
+
+Authenticate with an API key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Or use a subscription:
+
+```bash
+pi
+/login
+```
+
+Then verify:
+
+```bash
+pi --version
+```
+
+Provider selection:
+
+```bash
+clawpatch review --provider pi
+CLAWPATCH_PROVIDER=pi clawpatch review
+clawpatch fix --finding <id> --provider pi --model anthropic/claude-sonnet-4
+clawpatch doctor --provider pi
+```
+
+How the pi provider works:
+
+- Non-interactive mode: `pi -p --no-session` with all discovery flags disabled
+  (`--no-context-files --no-skills --no-extensions --no-prompt-templates --no-themes`)
+  to isolate the agent from project and user configuration
+- Prompt delivery: written to a temp file and passed via `@<path>` file reference
+- Read-only operations (map, review, revalidate): `--tools read` restricts the
+  agent to the read tool only
+- Write operations (fix): uses the default tool set (read, bash, edit, write)
+- Model selection: `--model <pattern>` supports provider-prefixed IDs like
+  `anthropic/claude-sonnet-4` and thinking-level shorthands like `sonnet:high`
+- Reasoning effort: `--thinking <level>` maps from clawpatch's reasoning effort
+- Output: parsed from stdout text using the shared `extractJson` helper
+- Timeout: 180 seconds by default, override with `CLAWPATCH_PI_TIMEOUT_MS` or
+  `CLAWPATCH_PROVIDER_TIMEOUT_MS`
+
+Permission caveat: pi's `--tools read` restricts the agent to the read tool for
+review and revalidate, but enforcement depends on pi honoring the tool allowlist.
+For write operations during `fix`, the agent has full filesystem and shell access.
+For untrusted code, run `clawpatch fix --provider pi` inside an isolated checkout.
+
 Direct OpenAI API, local-model, and multi-model panel providers are not
 implemented yet. The `acpx` provider is the generic route for ACP-compatible
-agents; the `grok` and `opencode` providers are direct integrations for local
-CLIs.
+agents; the `grok`, `opencode`, and `pi` providers are direct integrations
+for local CLIs.
