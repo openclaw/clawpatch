@@ -12792,4 +12792,245 @@ let package = Package(
 
     expect(core?.entrypoints[0]?.path).toBe("Sources/Core.swift");
   });
+
+  it("maps .NET C# console app, library, and tests from solution", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-sln-");
+    await writeFixture(
+      root,
+      "App.sln",
+      [
+        "Microsoft Visual Studio Solution File, Format Version 12.00",
+        "# Visual Studio Version 17",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyApp", "src/MyApp/MyApp.csproj", "{AAA11111-1111-1111-1111-111111111111}"',
+        "EndProject",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyLib", "src/MyLib/MyLib.csproj", "{BBB22222-2222-2222-2222-222222222222}"',
+        "EndProject",
+        'Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MyLib.Tests", "tests/MyLib.Tests/MyLib.Tests.csproj", "{CCC33333-3333-3333-3333-333333333333}"',
+        "EndProject",
+        "Global",
+        "EndGlobal",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/MyApp/MyApp.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "src/MyApp/Program.cs", 'Console.WriteLine("Hello");\n');
+    await writeFixture(root, "src/MyApp/Helper.cs", "static class Helper { }\n");
+    await writeFixture(
+      root,
+      "src/MyLib/MyLib.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "src/MyLib/Calculator.cs", "public class Calculator { }\n");
+    await writeFixture(
+      root,
+      "tests/MyLib.Tests/MyLib.Tests.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n<ItemGroup><PackageReference Include="xunit" Version="2.4.2" /></ItemGroup>\n</Project>',
+    );
+    await writeFixture(
+      root,
+      "tests/MyLib.Tests/CalculatorTests.cs",
+      "public class CalculatorTests { [Fact] void Test1() {} }\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const consoleApp = result.features.find(
+      (feature) => feature.title === ".NET console app MyApp",
+    );
+    const library = result.features.find((feature) => feature.title === ".NET library MyLib");
+    const testSuite = result.features.find(
+      (feature) => feature.title === ".NET test suite MyLib.Tests",
+    );
+
+    expect(project.detected.languages).toContain("csharp");
+    expect(project.detected.packageManagers).toContain("dotnet");
+    expect(project.detected.commands.typecheck).toBe("dotnet build");
+    expect(project.detected.commands.lint).toBe("dotnet format --verify-no-changes");
+    expect(project.detected.commands.format).toBe("dotnet format");
+    expect(project.detected.commands.test).toBe("dotnet test");
+    expect(titles).toContain(".NET console app MyApp");
+    expect(titles).toContain(".NET library MyLib");
+    expect(titles).toContain(".NET test suite MyLib.Tests");
+    expect(consoleApp?.entrypoints[0]?.path).toBe("src/MyApp/Program.cs");
+    expect(consoleApp?.entrypoints[0]?.symbol).toBe("Main");
+    expect(consoleApp?.tags).toEqual(expect.arrayContaining(["dotnet", "csharp", "cli"]));
+    expect(consoleApp?.ownedFiles.map((f) => f.path)).toContain("src/MyApp/Helper.cs");
+    expect(consoleApp?.contextFiles).toContainEqual({
+      path: "src/MyApp/MyApp.csproj",
+      reason: "project file",
+    });
+    expect(library?.entrypoints[0]?.path).toBe("src/MyLib/Calculator.cs");
+    expect(library?.tags).toEqual(expect.arrayContaining(["dotnet", "csharp", "library"]));
+    expect(library?.tests).toEqual([
+      { path: "tests/MyLib.Tests/CalculatorTests.cs", command: "dotnet test" },
+    ]);
+    expect(testSuite?.ownedFiles.map((f) => f.path)).toContain(
+      "tests/MyLib.Tests/CalculatorTests.cs",
+    );
+  });
+
+  it("maps .NET web app with ASP.NET Core", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-web-");
+    await writeFixture(
+      root,
+      "WebApp/WebApp.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk.Web">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "WebApp/Program.cs", "var app = WebApplication.Create();\n");
+    await writeFixture(root, "WebApp/WeatherForecast.cs", "public class WeatherForecast { }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const webApp = result.features.find((feature) => feature.title === ".NET web app WebApp");
+
+    expect(project.detected.languages).toContain("csharp");
+    expect(webApp?.kind).toBe("service");
+    expect(webApp?.source).toBe("dotnet-web");
+    expect(webApp?.tags).toEqual(expect.arrayContaining(["dotnet", "csharp", "web"]));
+    expect(webApp?.trustBoundaries).toEqual(
+      expect.arrayContaining(["user-input", "network", "filesystem", "process-exec"]),
+    );
+    expect(webApp?.entrypoints[0]?.path).toBe("WebApp/Program.cs");
+  });
+
+  it("maps .NET F# library and tests", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-fsharp-");
+    await writeFixture(
+      root,
+      "src/Lib/Lib.fsproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "src/Lib/Library.fs", 'module Library\nlet hello () = "world"\n');
+    await writeFixture(
+      root,
+      "tests/Lib.Tests/Lib.Tests.fsproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n<ItemGroup><PackageReference Include="xunit" Version="2.4.2" /></ItemGroup>\n</Project>',
+    );
+    await writeFixture(root, "tests/Lib.Tests/Tests.fs", "module Tests\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const lib = result.features.find((feature) => feature.title === ".NET library Lib");
+    const testSuite = result.features.find(
+      (feature) => feature.title === ".NET test suite Lib.Tests",
+    );
+
+    expect(project.detected.languages).toContain("fsharp");
+    expect(lib?.tags).toEqual(expect.arrayContaining(["dotnet", "fsharp", "library"]));
+    expect(lib?.entrypoints[0]?.path).toBe("src/Lib/Library.fs");
+    expect(testSuite?.tags).toEqual(expect.arrayContaining(["dotnet", "fsharp", "test"]));
+  });
+
+  it("maps .NET Visual Basic console app", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-vb-");
+    await writeFixture(
+      root,
+      "VbApp/VbApp.vbproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(
+      root,
+      "VbApp/Program.vb",
+      "Module Program\nSub Main()\nEnd Sub\nEnd Module\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === ".NET console app VbApp");
+
+    expect(project.detected.languages).toContain("visual-basic");
+    expect(app?.tags).toEqual(expect.arrayContaining(["dotnet", "visual-basic", "cli"]));
+    expect(app?.entrypoints[0]?.path).toBe("VbApp/Program.vb");
+  });
+
+  it("maps .NET projects from .slnx solution file", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-slnx-");
+    await writeFixture(
+      root,
+      "App.slnx",
+      '<Solution Config="Debug|Any CPU">\n<Project Path="src/App/App.csproj" />\n</Solution>',
+    );
+    await writeFixture(
+      root,
+      "src/App/App.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "src/App/Program.cs", 'Console.WriteLine("Hello");\n');
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === ".NET console app App");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/App/Program.cs");
+  });
+
+  it("maps standalone .NET projects without solution file", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-standalone-");
+    await writeFixture(
+      root,
+      "MyTool.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "Program.cs", 'Console.WriteLine("Hello");\n');
+    await writeFixture(root, "Util.cs", "static class Util { }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === ".NET console app MyTool");
+
+    expect(project.detected.languages).toContain("csharp");
+    expect(app?.entrypoints[0]?.path).toBe("Program.cs");
+    expect(app?.ownedFiles.map((f) => f.path)).toContain("Util.cs");
+  });
+
+  it("detects .NET test projects by naming convention and TUnit package", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-tunit-");
+    await writeFixture(
+      root,
+      "src/Core/Core.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "src/Core/Engine.cs", "public class Engine { }\n");
+    await writeFixture(
+      root,
+      "tests/Core.Tests/Core.Tests.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Library</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n<ItemGroup><PackageReference Include="TUnit" Version="0.1.0" /></ItemGroup>\n</Project>',
+    );
+    await writeFixture(root, "tests/Core.Tests/EngineTests.cs", "public class EngineTests { }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const lib = result.features.find((feature) => feature.title === ".NET library Core");
+    const testSuite = result.features.find(
+      (feature) => feature.title === ".NET test suite Core.Tests",
+    );
+
+    expect(lib?.tests).toEqual([
+      { path: "tests/Core.Tests/EngineTests.cs", command: "dotnet test" },
+    ]);
+    expect(testSuite?.kind).toBe("test-suite");
+  });
+
+  it("skips dotnet bin and obj directories", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-skip-");
+    await writeFixture(
+      root,
+      "App.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk">\n<PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>\n</Project>',
+    );
+    await writeFixture(root, "Program.cs", 'Console.WriteLine("Hello");\n');
+    await writeFixture(root, "bin/Debug/net9.0/built.dll", "fake-binary");
+    await writeFixture(root, "obj/Debug/net9.0/temp.cs", "// generated");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const owned = result.features.flatMap((feature) => feature.ownedFiles.map((ref) => ref.path));
+
+    expect(owned).not.toContain("bin/Debug/net9.0/built.dll");
+    expect(owned).not.toContain("obj/Debug/net9.0/temp.cs");
+  });
 });

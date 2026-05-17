@@ -57,6 +57,8 @@ Supported deterministic mappers today:
 - Laravel/PHP projects from `composer.json` and `artisan`, including controllers
   referenced by routes, form requests, Artisan commands, jobs, services, models,
   migrations, seeders, Composer scripts, and grouped PHP test suites
+- .NET C#, F#, and Visual Basic console apps, web apps, libraries, and test suites
+  discovered from `.sln`/`.slnx` solution files or standalone project files
 - common config files
 
 The default mapper does not call a model. It uses repo conventions and cheap
@@ -147,6 +149,19 @@ Ruby mapping covers project metadata, executables, source groups, RSpec and
 Minitest suites, and Rails app structure. Rails legacy `config/secrets.yml`,
 `config/database.yml`, and `config/initializers/secret_token.rb` are not mapped
 as reviewable config because they can contain provider-sensitive secrets.
+
+.NET mapping covers C# (`.csproj`), F# (`.fsproj`), and Visual Basic (`.vbproj`)
+projects. Projects are discovered from `.sln` and `.slnx` solution files when
+present, falling back to standalone project file discovery when no solution
+exists. Console executables and ASP.NET Core web apps are mapped as top-level
+features with `Program.cs` as the preferred entrypoint. Library projects are
+mapped with their first source file. Test projects are detected by naming
+convention (`.Tests`/`.Specs` suffix) or by test framework package references
+(xUnit, NUnit, MSTest, TUnit). Associated test files are linked to their
+corresponding library features when names match. Default commands are
+`dotnet build` (typecheck), `dotnet format --verify-no-changes` (lint),
+`dotnet format` (format), and `dotnet test` (test). `bin/` and `obj/`
+directories are excluded from source walks.
 
 Known gaps:
 

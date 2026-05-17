@@ -229,6 +229,9 @@ async function languageDefaultCommands(
   ) {
     return gradleDefaultCommands(root);
   }
+  if (languages.some((lang) => dotnetLanguages.has(lang))) {
+    return dotnetDefaultCommands();
+  }
   if (languages.includes("ruby")) {
     return rubyDefaultCommands(root);
   }
@@ -342,11 +345,20 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   if ((await isRubyProject(root)) && !found.some((name) => rubyPackageManagers.has(name))) {
     found.push((await hasBundlerConfig(root)) ? "bundler" : "ruby");
   }
+  if (
+    !found.includes("dotnet") &&
+    ((await containsFileWithExtension(root, ".csproj", 5)) ||
+      (await containsFileWithExtension(root, ".fsproj", 5)) ||
+      (await containsFileWithExtension(root, ".vbproj", 5)))
+  ) {
+    found.push("dotnet");
+  }
   return found;
 }
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
 const rubyPackageManagers = new Set(["bundler", "ruby"]);
+const dotnetLanguages = new Set(["csharp", "fsharp", "visual-basic"]);
 
 async function isRootGradleProject(root: string): Promise<boolean> {
   return (
@@ -497,6 +509,15 @@ function hasRubocopDependency(dependencies: Set<string>): boolean {
   return [...dependencies].some(
     (dependency) => dependency === "rubocop" || dependency.startsWith("rubocop-"),
   );
+}
+
+function dotnetDefaultCommands(): ProjectCommands {
+  return {
+    typecheck: "dotnet build",
+    lint: "dotnet format --verify-no-changes",
+    format: "dotnet format",
+    test: "dotnet test",
+  };
 }
 
 async function hasBundlerConfig(root: string): Promise<boolean> {
@@ -999,6 +1020,18 @@ async function detectLanguages(root: string): Promise<string[]> {
   }
   if (!languages.includes("php") && (await containsReviewablePhpFile(root))) {
     languages.push("php");
+  }
+  if (!languages.includes("csharp") && (await containsFileWithExtension(root, ".csproj", 5))) {
+    languages.push("csharp");
+  }
+  if (!languages.includes("fsharp") && (await containsFileWithExtension(root, ".fsproj", 5))) {
+    languages.push("fsharp");
+  }
+  if (
+    !languages.includes("visual-basic") &&
+    (await containsFileWithExtension(root, ".vbproj", 5))
+  ) {
+    languages.push("visual-basic");
   }
   return languages;
 }

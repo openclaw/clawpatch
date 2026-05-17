@@ -18,6 +18,9 @@ export async function configSeeds(root: string): Promise<FeatureSeed[]> {
     "composer.lock",
     "phpunit.xml",
     "Makefile",
+    "global.json",
+    "Directory.Build.props",
+    "Directory.Packages.props",
   ];
   const seeds: FeatureSeed[] = [];
   for (const file of candidates) {

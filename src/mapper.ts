@@ -2,6 +2,7 @@ import { nowIso } from "./fs.js";
 import { stableId } from "./id.js";
 import { cCppSeeds } from "./mappers/c-cpp.js";
 import { configSeeds } from "./mappers/config.js";
+import { dotnetSeeds } from "./mappers/dotnet.js";
 import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
 import { gradleSeeds } from "./mappers/gradle.js";
@@ -53,6 +54,7 @@ const featureMappers: FeatureMapper[] = [
   { name: "gradle", map: gradleSeeds },
   { name: "laravel", map: laravelSeeds },
   { name: "config", map: configSeeds },
+  { name: "dotnet", map: dotnetSeeds },
 ];
 
 export async function mapFeatures(
