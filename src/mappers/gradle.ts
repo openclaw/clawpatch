@@ -327,6 +327,13 @@ async function kotlinRoleSeeds(
     ...kotlinFiles.flatMap(({ info }) => info.declarations.map((declaration) => declaration.name)),
     ...javaFiles.flatMap(({ info }) => info.declarations.map((declaration) => declaration.name)),
   ]);
+  const projectPackageTypes = new Set(
+    [...kotlinFiles, ...javaFiles].flatMap(({ info }) =>
+      info.packageName === null
+        ? []
+        : info.declarations.map((declaration) => `${info.packageName}.${declaration.name}`),
+    ),
+  );
 
   for (const { filePath, info } of kotlinFiles) {
     const frameworkEvidence = kotlinFrameworkRoleEvidence(
@@ -334,6 +341,7 @@ async function kotlinRoleSeeds(
       tags,
       projectPackages,
       projectTypes,
+      projectPackageTypes,
     );
     const evidence = kotlinEvidenceWithPathFallback(
       frameworkEvidence,
@@ -509,6 +517,7 @@ function kotlinFrameworkRoleEvidence(
   tags: string[],
   projectPackages: Set<string>,
   projectTypes: Set<string>,
+  projectPackageTypes: Set<string>,
 ): KotlinRoleEvidence[] {
   const evidence: KotlinRoleEvidence[] = [];
   const isAndroid = tags.includes("android");
@@ -717,8 +726,12 @@ function kotlinFrameworkRoleEvidence(
     }
   }
   if (!isAndroid) {
-    evidence.push(...kotlinDeclarationRoleEvidence(info, projectPackages, projectTypes));
-    evidence.push(...kotlinFunctionReturnRoleEvidence(info, projectPackages, projectTypes));
+    evidence.push(
+      ...kotlinDeclarationRoleEvidence(info, projectPackages, projectTypes, projectPackageTypes),
+    );
+    evidence.push(
+      ...kotlinFunctionReturnRoleEvidence(info, projectPackages, projectTypes, projectPackageTypes),
+    );
   }
 
   return dedupeKotlinEvidence(evidence);
@@ -758,6 +771,7 @@ function kotlinDeclarationRoleEvidence(
   info: KotlinFileInfo,
   projectPackages: Set<string>,
   projectTypes: Set<string>,
+  projectPackageTypes: Set<string>,
 ): KotlinRoleEvidence[] {
   const evidence: KotlinRoleEvidence[] = [];
   for (const declaration of info.declarations) {
@@ -769,7 +783,13 @@ function kotlinDeclarationRoleEvidence(
       });
     }
     for (const type of declaration.supertypes) {
-      const full = kotlinImportForType(info, type, projectTypes, projectPackages);
+      const full = kotlinImportForType(
+        info,
+        type,
+        projectTypes,
+        projectPackages,
+        projectPackageTypes,
+      );
       if (full !== undefined && isExternalProjectImport(full, projectPackages)) {
         evidence.push({
           role: "server-framework-component",
@@ -802,10 +822,17 @@ function kotlinFunctionReturnRoleEvidence(
   info: KotlinFileInfo,
   projectPackages: Set<string>,
   projectTypes: Set<string>,
+  projectPackageTypes: Set<string>,
 ): KotlinRoleEvidence[] {
   const evidence: KotlinRoleEvidence[] = [];
   for (const type of info.functionReturnTypes) {
-    const full = kotlinImportForType(info, type, projectTypes, projectPackages);
+    const full = kotlinImportForType(
+      info,
+      type,
+      projectTypes,
+      projectPackages,
+      projectPackageTypes,
+    );
     if (full !== undefined && isExternalProjectImport(full, projectPackages)) {
       evidence.push({
         role: "server-framework-component",
@@ -822,6 +849,7 @@ function kotlinImportForType(
   type: string,
   projectTypes: Set<string>,
   projectPackages: Set<string>,
+  projectPackageTypes: Set<string>,
 ): string | undefined {
   if (type.includes(".")) {
     const rootType = type.split(".")[0];
@@ -831,6 +859,9 @@ function kotlinImportForType(
     return type.startsWith("kotlin.") ? undefined : type;
   }
   if (info.declarations.some((declaration) => declaration.name === type)) {
+    return undefined;
+  }
+  if (info.packageName !== null && projectPackageTypes.has(`${info.packageName}.${type}`)) {
     return undefined;
   }
   const direct = info.imports.get(type);

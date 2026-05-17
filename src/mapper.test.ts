@@ -3099,14 +3099,18 @@ describe("mapFeatures", () => {
         "import kotlin.time.*",
         "import org.scheduler.*",
         "",
-        "open class LocalBase",
-        "",
         "class JobFactory : LocalBase(), JobFactoryBase<Job>() {",
         "  fun buildJob(): Job = TODO()",
+        "  fun local(): LocalBase = TODO()",
         '  fun label(): String = "job"',
         "}",
         "",
       ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/jobs/LocalBase.kt",
+      "package com.example.jobs\nopen class LocalBase\n",
     );
 
     const project = await detectProject(root);
