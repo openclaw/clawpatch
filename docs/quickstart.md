@@ -10,7 +10,9 @@ This guide walks through a complete review workflow from initialization to fixin
 ## Prerequisites
 
 - [Install clawpatch](install.md)
-- Install Codex CLI (`brew install codex`) **or** the Grok Build CLI (`curl -fsSL https://x.ai/cli/install.sh | bash`)
+- Install Codex CLI (`brew install codex`) for the default provider, or install
+  the Grok Build CLI (`curl -fsSL https://x.ai/cli/install.sh | bash`) and pass
+  `--provider grok` when reviewing
 - Have a project with code to review
 
 ## 1. Initialize
@@ -72,6 +74,12 @@ Review a few features in parallel:
 
 ```bash
 clawpatch review --limit 3 --jobs 3
+```
+
+Using Grok instead of the default Codex provider:
+
+```bash
+clawpatch review --provider grok --limit 3 --jobs 3
 ```
 
 This:
