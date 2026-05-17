@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
+const moduleRequire = createRequire(import.meta.url);
 const root = process.cwd();
 const tmp = mkdtempSync(join(tmpdir(), "clawpatch-pack-smoke-"));
+const fixtureRoot = join(tmp, "fixture");
+const installRoot = join(tmp, "installed");
+const npmCache = join(tmp, "npm-cache");
 
 function write(path, contents) {
-  const full = join(tmp, "fixture", path);
-  mkdirSync(join(full, ".."), { recursive: true });
+  const full = join(fixtureRoot, path);
+  mkdirSync(dirname(full), { recursive: true });
   writeFileSync(full, contents, "utf8");
 }
 
@@ -17,8 +22,21 @@ function run(command, args, options = {}) {
   return execFileSync(command, args, {
     cwd: options.cwd ?? root,
     encoding: "utf8",
+    env: {
+      ...process.env,
+      NPM_CONFIG_CACHE: npmCache,
+      npm_config_cache: npmCache,
+      npm_config_update_notifier: "false",
+    },
+    shell: needsWindowsShell(command) ? (process.env.ComSpec ?? true) : false,
     stdio: options.stdio ?? "pipe",
   });
+}
+
+function needsWindowsShell(command) {
+  return (
+    process.platform === "win32" && (!command.includes("/") || /\.(?:cmd|bat)$/iu.test(command))
+  );
 }
 
 try {
@@ -66,12 +84,29 @@ try {
   write("frontend/src/app/dashboard/page.test.tsx", "test('dashboard', () => {});\n");
 
   const packOutput = JSON.parse(
-    run("npm", ["pack", "--json", "--pack-destination", tmp], { stdio: "pipe" }),
+    run("npm", ["pack", "--json", "--cache", npmCache, "--pack-destination", tmp], {
+      stdio: "pipe",
+    }),
   );
-  const tarball = join(tmp, packOutput[0].filename);
-  const installRoot = join(tmp, "installed");
+  const tarball = join(tmp, packFilename(packOutput));
+  const zodPackOutput = JSON.parse(
+    run(
+      "npm",
+      [
+        "pack",
+        "--json",
+        "--cache",
+        npmCache,
+        "--pack-destination",
+        tmp,
+        dirname(moduleRequire.resolve("zod/package.json")),
+      ],
+      { stdio: "pipe" },
+    ),
+  );
+  const zodTarball = join(tmp, packFilename(zodPackOutput));
   mkdirSync(installRoot, { recursive: true });
-  run("npm", ["install", "--prefix", installRoot, tarball]);
+  run("npm", ["install", "--cache", npmCache, "--prefix", installRoot, tarball, zodTarball]);
 
   const bin = join(
     installRoot,
@@ -79,7 +114,6 @@ try {
     ".bin",
     process.platform === "win32" ? "clawpatch.cmd" : "clawpatch",
   );
-  const fixtureRoot = join(tmp, "fixture");
   run(bin, ["--root", fixtureRoot, "init", "--force", "--json"]);
   const mapped = JSON.parse(run(bin, ["--root", fixtureRoot, "map", "--json"]));
   const features = JSON.parse(
@@ -115,4 +149,12 @@ try {
   console.log(`packaged CLI smoke mapped ${mapped.features} features`);
 } finally {
   rmSync(tmp, { recursive: true, force: true });
+}
+
+function packFilename(output) {
+  const filename = Array.isArray(output) ? output[0]?.filename : null;
+  if (typeof filename !== "string" || filename.length === 0) {
+    throw new Error("npm pack did not report a tarball filename");
+  }
+  return filename;
 }
