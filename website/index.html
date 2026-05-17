@@ -768,6 +768,199 @@
         font-size: 0.92rem;
       }
 
+      /* Repo atlas */
+      .repo-atlas {
+        margin: 34px 0 50px;
+        padding: clamp(24px, 4vw, 42px);
+        border: 2px solid var(--line);
+        border-radius: 24px;
+        background:
+          radial-gradient(circle at top right, var(--accent-soft), transparent 38%),
+          linear-gradient(135deg, var(--paper) 0%, var(--sand-light) 100%);
+        box-shadow: var(--shadow-card);
+      }
+
+      .repo-atlas h2 {
+        margin: 0 0 10px;
+        color: var(--ink);
+        font-size: clamp(2rem, 4vw, 3.2rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+
+      .atlas-head {
+        max-width: 78ch;
+        margin-bottom: 26px;
+      }
+
+      .atlas-head p:not(.eyebrow) {
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .atlas-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        margin: 24px 0 28px;
+      }
+
+      .atlas-stat {
+        padding: 18px;
+        border: 2px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+      }
+
+      .atlas-stat strong {
+        display: block;
+        color: var(--ink);
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .atlas-stat span {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .atlas-panels {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 18px;
+        margin: 0 0 24px;
+      }
+
+      .atlas-panel {
+        border: 2px solid var(--line);
+        border-radius: 18px;
+        background: var(--paper);
+        padding: 20px;
+      }
+
+      .atlas-panel h3,
+      .public-showcase h3 {
+        margin: 0 0 14px;
+        color: var(--ink);
+        font-size: 1rem;
+      }
+
+      .signal-list {
+        display: grid;
+        gap: 10px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .signal-list li {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 14px;
+        color: var(--text);
+        font-size: 0.92rem;
+      }
+
+      .signal-list b {
+        color: var(--ink);
+        font-weight: 650;
+      }
+
+      .signal-list code {
+        font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+        color: var(--accent-strong);
+        background: var(--accent-soft);
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 0.82rem;
+      }
+
+      .repo-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 14px;
+      }
+
+      .repo-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 190px;
+        padding: 18px;
+        border: 2px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        color: var(--text);
+        text-decoration: none;
+        transition:
+          transform 0.2s,
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+
+      .repo-card:hover {
+        transform: translateY(-3px);
+        border-color: var(--secondary);
+        box-shadow: var(--shadow-float);
+        text-decoration: none;
+      }
+
+      .repo-card h4 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 1rem;
+        line-height: 1.25;
+      }
+
+      .repo-card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.88rem;
+        line-height: 1.5;
+        flex: 1;
+      }
+
+      .repo-meta,
+      .repo-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+      }
+
+      .repo-meta span,
+      .repo-tags span {
+        border-radius: 999px;
+        padding: 3px 8px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 0.72rem;
+        font-weight: 700;
+      }
+
+      .repo-tags span {
+        background: rgba(42, 157, 143, 0.12);
+        color: var(--ocean-deep);
+      }
+
+      :root[data-theme="dark"] .repo-tags span {
+        color: var(--ocean-light);
+      }
+
+      .atlas-note {
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: 0.86rem;
+      }
+
       /* Mobile responsive */
       @media (max-width: 900px) {
         .shell {
@@ -790,7 +983,9 @@
           font-size: 2.5rem;
         }
 
-        .features-grid {
+        .features-grid,
+        .atlas-stats,
+        .atlas-panels {
           grid-template-columns: 1fr;
         }
       }
@@ -980,6 +1175,7 @@
           </section>
           <section>
             <h2>Core Features</h2>
+            <a class="nav-link" href="#repo-atlas">Repo Atlas</a>
             <a class="nav-link" href="#initialization">Initialization</a>
             <a class="nav-link" href="#feature-mapping">Feature Mapping</a>
             <a class="nav-link" href="#code-review">Code Review</a>
@@ -1091,6 +1287,65 @@
             </p>
           </div>
         </div>
+
+        <section class="repo-atlas" id="repo-atlas" aria-labelledby="repo-atlas-title">
+          <div class="atlas-head">
+            <p class="eyebrow">Repo Atlas · GitHub inventory</p>
+            <h2 id="repo-atlas-title">All repos, inventoried without leaking the vault</h2>
+            <p>
+              This is the public inventory surface for Dwayne’s GitHub estate. Public repos are
+              linked below; private repo names and descriptions stay out of the public Pages
+              artifact while the aggregate coverage still shows the full operating field.
+            </p>
+          </div>
+
+          <div class="atlas-stats" aria-label="Repository coverage totals">
+            <div class="atlas-stat">
+              <strong data-atlas-total>138</strong>
+              <span>repos discovered</span>
+            </div>
+            <div class="atlas-stat">
+              <strong data-atlas-public>5</strong>
+              <span>public links</span>
+            </div>
+            <div class="atlas-stat">
+              <strong data-atlas-private>133</strong>
+              <span>private covered</span>
+            </div>
+            <div class="atlas-stat">
+              <strong data-atlas-recent>0</strong>
+              <span>updated in 30d</span>
+            </div>
+          </div>
+
+          <div class="atlas-panels">
+            <div class="atlas-panel">
+              <h3>Workload lanes</h3>
+              <ol class="signal-list" id="atlas-categories">
+                <li><b>Loading GitHub categories</b><code>…</code></li>
+              </ol>
+            </div>
+            <div class="atlas-panel">
+              <h3>Language mix</h3>
+              <ol class="signal-list" id="atlas-languages">
+                <li><b>Loading language totals</b><code>…</code></li>
+              </ol>
+            </div>
+          </div>
+
+          <div class="public-showcase">
+            <h3>Public repo links</h3>
+            <div class="repo-grid" id="public-repos" aria-live="polite">
+              <article class="repo-card">
+                <h4>Loading public repositories…</h4>
+                <p>Fetching the static atlas generated from GitHub metadata.</p>
+              </article>
+            </div>
+          </div>
+          <p class="atlas-note" id="atlas-note">
+            Public-safe atlas. Private repository metadata is counted, not published.
+          </p>
+        </section>
 
         <div class="doc">
           <h2 id="quickstart">Quick Start</h2>
@@ -1390,6 +1645,74 @@
         if (systemDark.addEventListener) systemDark.addEventListener("change", onSystemChange);
         else if (systemDark.addListener) systemDark.addListener(onSystemChange);
       }
+
+      // Repo atlas
+      function formatDate(value) {
+        if (!value) return "unknown";
+        try {
+          return new Intl.DateTimeFormat("en-AU", { dateStyle: "medium" }).format(new Date(value));
+        } catch (e) {
+          return value;
+        }
+      }
+
+      function topEntries(record, limit) {
+        return Object.entries(record || {})
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, limit);
+      }
+
+      function renderSignalList(id, entries) {
+        const node = document.getElementById(id);
+        if (!node) return;
+        node.innerHTML = entries
+          .map(([label, count]) => `<li><b>${label}</b><code>${count}</code></li>`)
+          .join("");
+      }
+
+      function renderPublicRepos(repos) {
+        const node = document.getElementById("public-repos");
+        if (!node) return;
+        node.innerHTML = (repos || [])
+          .map((repo) => {
+            const tags = (repo.topics || [])
+              .slice(0, 3)
+              .map((tag) => `<span>${tag}</span>`)
+              .join("");
+            const home = repo.homepageUrl ? `<span>site</span>` : "";
+            return `<a class="repo-card" href="${repo.url}" rel="noopener" target="_blank">
+              <h4>${repo.name}</h4>
+              <p>${repo.description}</p>
+              <div class="repo-meta"><span>${repo.language}</span><span>★ ${repo.stars}</span><span>updated ${formatDate(repo.updatedAt)}</span>${home}</div>
+              <div class="repo-tags">${tags}</div>
+            </a>`;
+          })
+          .join("");
+      }
+
+      fetch("assets/repo-atlas.json")
+        .then((res) => {
+          if (!res.ok) throw new Error(`atlas ${res.status}`);
+          return res.json();
+        })
+        .then((atlas) => {
+          document.querySelector("[data-atlas-total]").textContent = atlas.totals.all;
+          document.querySelector("[data-atlas-public]").textContent = atlas.totals.public;
+          document.querySelector("[data-atlas-private]").textContent = atlas.totals.private;
+          document.querySelector("[data-atlas-recent]").textContent =
+            atlas.activity.updatedWithin30Days;
+          renderSignalList("atlas-categories", topEntries(atlas.categories, 7));
+          renderSignalList("atlas-languages", topEntries(atlas.languages, 7));
+          renderPublicRepos(atlas.publicRepos);
+          const note = document.getElementById("atlas-note");
+          if (note) {
+            note.textContent = `${atlas.privacy} Generated ${formatDate(atlas.generatedAt)} from ${atlas.source}.`;
+          }
+        })
+        .catch((err) => {
+          const note = document.getElementById("atlas-note");
+          if (note) note.textContent = `Repo atlas failed to load: ${err.message}`;
+        });
 
       // Search functionality
       const input = document.getElementById("doc-search");

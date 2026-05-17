@@ -1,0 +1,103 @@
+{
+  "generatedAt": "2026-05-17T06:03:57+00:00",
+  "owner": "dwaynehelena",
+  "source": "GitHub API via gh repo list; private raw copy kept locally outside the public repo",
+  "privacy": "Public page exposes public repository links plus aggregate private coverage only. Private repository names and descriptions are intentionally not committed.",
+  "totals": {
+    "all": 138,
+    "public": 5,
+    "private": 133,
+    "archived": 0,
+    "forks": 2
+  },
+  "activity": {
+    "updatedWithin7Days": 6,
+    "updatedWithin30Days": 14,
+    "updatedWithin90Days": 127,
+    "updatedWithin365Days": 136
+  },
+  "languages": {
+    "Python": 84,
+    "Unspecified": 23,
+    "HTML": 13,
+    "TypeScript": 9,
+    "JavaScript": 7,
+    "C#": 1,
+    "Shell": 1
+  },
+  "categories": {
+    "Claw project capsules": 99,
+    "AI agents and automation": 15,
+    "Apps and experiments": 13,
+    "Dashboards and observability": 6,
+    "Home, energy, and renovation": 3,
+    "Finance and trading": 2
+  },
+  "publicRepos": [
+    {
+      "name": "dwaynehelena/south-coast-sconces",
+      "description": "No public description yet.",
+      "url": "https://github.com/dwaynehelena/south-coast-sconces",
+      "homepageUrl": "https://south-coast-sconces.vercel.app",
+      "language": "TypeScript",
+      "stars": 0,
+      "forks": 0,
+      "updatedAt": "2026-05-12T23:06:02Z",
+      "topics": [],
+      "archived": false,
+      "fork": false
+    },
+    {
+      "name": "dwaynehelena/free-power",
+      "description": "No public description yet.",
+      "url": "https://github.com/dwaynehelena/free-power",
+      "homepageUrl": "https://free-power.vercel.app",
+      "language": "Python",
+      "stars": 0,
+      "forks": 0,
+      "updatedAt": "2026-05-01T01:04:52Z",
+      "topics": [],
+      "archived": false,
+      "fork": false
+    },
+    {
+      "name": "dwaynehelena/agent-state",
+      "description": "Multi-agent state persistence system",
+      "url": "https://github.com/dwaynehelena/agent-state",
+      "homepageUrl": "",
+      "language": "Shell",
+      "stars": 0,
+      "forks": 0,
+      "updatedAt": "2026-04-30T21:28:16Z",
+      "topics": [],
+      "archived": false,
+      "fork": false
+    },
+    {
+      "name": "dwaynehelena/autoresearch",
+      "description": "AI agents running research on single-GPU nanochat training automatically",
+      "url": "https://github.com/dwaynehelena/autoresearch",
+      "homepageUrl": "",
+      "language": "Python",
+      "stars": 0,
+      "forks": 0,
+      "updatedAt": "2026-04-05T09:18:53Z",
+      "topics": [],
+      "archived": false,
+      "fork": true
+    },
+    {
+      "name": "dwaynehelena/autoagent",
+      "description": "autonomous harness engineering",
+      "url": "https://github.com/dwaynehelena/autoagent",
+      "homepageUrl": "",
+      "language": "Python",
+      "stars": 0,
+      "forks": 0,
+      "updatedAt": "2026-04-05T09:18:50Z",
+      "topics": [],
+      "archived": false,
+      "fork": true
+    }
+  ]
+}
