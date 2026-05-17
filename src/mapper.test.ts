@@ -4025,6 +4025,96 @@ describe("mapFeatures", () => {
     ).toBe(false);
   });
 
+  it("detects Android Kotlin roles from convention plugin android blocks", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-convention-block-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(
+      root,
+      "build.gradle.kts",
+      [
+        "plugins {",
+        '  id("com.company.android.library") version "1.0"',
+        "}",
+        "",
+        "android {",
+        '  namespace = "com.example"',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/ui/MainViewModel.kt",
+      [
+        "package com.example.ui",
+        "",
+        "import androidx.lifecycle.ViewModel",
+        "",
+        "class MainViewModel : ViewModel()",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const viewModel = result.features.find((feature) =>
+      feature.title.startsWith("Kotlin Android role view model "),
+    );
+
+    expect(viewModel?.source).toBe("kotlin-android-role-view-model");
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/ui/MainViewModel.kt",
+          ),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not treat child android extension blocks as root Android modules", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-child-extension-block-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(
+      root,
+      "build.gradle.kts",
+      [
+        'plugins { id("org.jetbrains.kotlin.jvm") }',
+        "subprojects {",
+        "  android {",
+        '    namespace = "com.example.child"',
+        "  }",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/OrderController.kt",
+      [
+        "package com.example.api",
+        "",
+        "import org.springframework.web.bind.annotation.RestController",
+        "",
+        "@RestController",
+        "class OrderController",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const web = result.features.find((feature) =>
+      feature.title.startsWith("Kotlin server role web entrypoint "),
+    );
+
+    expect(web?.source).toBe("kotlin-server-role-web-entrypoint");
+    expect(
+      result.features.some((feature) => feature.source.startsWith("kotlin-android-role-")),
+    ).toBe(false);
+  });
+
   it("keeps applied Android plugin declarations before unrelated alias apply false entries", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-android-alias-apply-false-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");

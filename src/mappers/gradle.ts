@@ -1769,6 +1769,7 @@ async function gradleTags(
   ]);
   if (
     sourceFiles.some((file) => file.endsWith("AndroidManifest.xml")) ||
+    hasAndroidExtensionBlock(buildSource, buildFile.endsWith(".kts")) ||
     hasAppliedAndroidPlugin(buildSource, androidAliases, buildFile.endsWith(".kts"))
   ) {
     tags.push("android");
@@ -1949,6 +1950,16 @@ function hasDirectAndroidApplyPlugin(source: string): boolean {
   const pattern =
     /\b(?:apply\s+plugin:\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']|apply\s*\(\s*plugin\s*(?:=|:)\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\))/gu;
   for (const match of source.matchAll(pattern)) {
+    if (!isInsideGradleChildProjectBlock(source, match.index ?? 0)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasAndroidExtensionBlock(buildSource: string, isKotlinDsl: boolean): boolean {
+  const source = stripGradleBuildComments(buildSource, isKotlinDsl);
+  for (const match of source.matchAll(/\bandroid\s*\{/gu)) {
     if (!isInsideGradleChildProjectBlock(source, match.index ?? 0)) {
       return true;
     }
