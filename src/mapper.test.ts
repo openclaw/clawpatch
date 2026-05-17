@@ -3331,6 +3331,29 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("keeps CMake binaries when a test-like helper comes before main", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-test-like-helper-before-main-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(app src/test_mode.c src/runner.c)\n",
+    );
+    await writeFixture(root, "src/test_mode.c", "int helper(void) { return 0; }\n");
+    await writeFixture(root, "src/runner.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(titles).not.toContain("CMake test suite app");
+    expect(app?.entrypoints[0]?.path).toBe("src/runner.c");
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/test_mode.c", reason: "target source" },
+      { path: "src/runner.c", reason: "target source" },
+    ]);
+  });
+
   it("attaches CMake tests named after the target", async () => {
     const root = await fixtureRoot("clawpatch-cmake-target-named-tests-");
     await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
@@ -3591,6 +3614,23 @@ add_executable(headerapp include/headers.hpp)
       { path: "src/main.c", reason: "target source" },
       { path: "src/util.c", reason: "target source" },
     ]);
+  });
+
+  it("resolves PROJECT_NAME inside composed CMake target names", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-composed-project-name-target-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "project(foo C)\nadd_executable(${PROJECT_NAME}_cli src/main.c)\n",
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary foo_cli");
+
+    expect(app?.entrypoints[0]).toMatchObject({ path: "src/main.c", command: "foo_cli" });
+    expect(app?.ownedFiles).toEqual([{ path: "src/main.c", reason: "target source" }]);
   });
 
   it("detects header-only C++ CMake libraries as C++ projects", async () => {

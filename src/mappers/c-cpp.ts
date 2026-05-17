@@ -165,7 +165,11 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         "CMake target declaration",
         extraSources,
       );
-      const testEntryPath = cmakeTestExecutableEntry(target, sourcePaths);
+      const entryPath = await pickExecutableEntry(root, sourcePaths, target);
+      if (entryPath === null) {
+        continue;
+      }
+      const testEntryPath = cmakeTestExecutableEntry(target, entryPath);
       if (testEntryPath !== null) {
         seeds.push({
           title: `CMake test suite ${target}`,
@@ -188,10 +192,6 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
           tests: sourcePaths.filter(isCOrCppTestPath).map((path) => ({ path, command: null })),
           skipNearbyTests: true,
         });
-        continue;
-      }
-      const entryPath = await pickExecutableEntry(root, sourcePaths, target);
-      if (entryPath === null) {
         continue;
       }
       const tag = languageTag(entryPath);
@@ -478,7 +478,7 @@ function cmakeTargetKey(dir: string, target: string): string {
 }
 
 function resolveCMakeTargetName(target: string, projectName: string): string {
-  return target === "${PROJECT_NAME}" && projectName.length > 0 ? projectName : target;
+  return projectName.length > 0 ? target.replace(/\$\{PROJECT_NAME\}/gu, projectName) : target;
 }
 
 function cmakeTargetContextFiles(
@@ -489,11 +489,7 @@ function cmakeTargetContextFiles(
   return uniqueFileRefs([{ path: cmakeFile, reason }, ...(extraSources?.contextFiles ?? [])]);
 }
 
-function cmakeTestExecutableEntry(target: string, sourcePaths: string[]): string | null {
-  const entryPath = pickEntry(sourcePaths, target) ?? sourcePaths[0];
-  if (entryPath === undefined) {
-    return null;
-  }
+function cmakeTestExecutableEntry(target: string, entryPath: string): string | null {
   return /(?:^|[_-])tests?$/iu.test(target) || isCOrCppTestPath(entryPath) ? entryPath : null;
 }
 
