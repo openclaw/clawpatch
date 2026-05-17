@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 - 2026-05-17
 
 - Added the `acpx` provider for routing review, fix, and revalidate through ACP-compatible coding agents, thanks @mvanhorn.
 - Added an OpenCode CLI provider for review, fix, revalidate, and doctor flows, thanks @Ashwinhegde19.
