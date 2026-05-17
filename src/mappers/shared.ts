@@ -41,6 +41,7 @@ export async function nearbyTests(
       .split("/")
       .at(-1)
       ?.replace(/\.[^.]+$/u, "") ?? "";
+  const stemTestName = testNameToken(stem);
   const swiftTestPrefixes = seedTestPrefixes.length > 0 ? [] : swiftTestPrefixesForEntry(entryPath);
   const cOrCppTestNames = seedTestNames.map(testNameToken).filter((name) => name.length > 0);
   const tests = all
@@ -58,7 +59,11 @@ export async function nearbyTests(
     .filter(
       (path) =>
         path.startsWith(base) ||
-        path.includes(stem) ||
+        (!isCOrCppEntry && path.includes(stem)) ||
+        (isCOrCppEntry &&
+          stemTestName !== "main" &&
+          stemTestName.length > 0 &&
+          pathMatchesTestName(path, stemTestName)) ||
         (path.endsWith(".rs") &&
           rustTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (isCOrCppPath(path) &&

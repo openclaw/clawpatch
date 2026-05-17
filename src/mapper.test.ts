@@ -3180,7 +3180,7 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(root, "src/upperlib.c", "int upperlib(void) { return 1; }\n");
     await writeFixture(root, "include/headers.hpp", "int header_only(void);\n");
     await writeFixture(root, "vendor/dep.hpp", "int dep(void);\n");
-    await writeFixture(root, "tests/main_test.cpp", "int main() { return 0; }\n");
+    await writeFixture(root, "tests/myapp_test.cpp", "int main() { return 0; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -3222,9 +3222,9 @@ add_executable(headerapp include/headers.hpp)
     ]);
     expect(myapp?.contextFiles).toEqual([
       { path: "CMakeLists.txt", reason: "CMake target declaration" },
-      { path: "tests/main_test.cpp", reason: "nearby test" },
+      { path: "tests/myapp_test.cpp", reason: "nearby test" },
     ]);
-    expect(myapp?.tests).toEqual([{ path: "tests/main_test.cpp", command: null }]);
+    expect(myapp?.tests).toEqual([{ path: "tests/myapp_test.cpp", command: null }]);
     expect(latebin?.entrypoints[0]?.path).toBe("src/late_main.c");
     expect(latebin?.ownedFiles).toEqual([
       { path: "src/late_main.c", reason: "target source" },
@@ -3262,6 +3262,26 @@ add_executable(headerapp include/headers.hpp)
 
     expect(app?.tests).toEqual([]);
     expect(tool?.tests).toEqual([{ path: "tests/tool_test.cpp", command: null }]);
+  });
+
+  it("does not attach generic main CMake tests to every target", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-generic-main-test-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "add_executable(foo foo/main.c)\nadd_executable(bar bar/main.c)\n",
+    );
+    await writeFixture(root, "foo/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "bar/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "tests/main_test.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const foo = result.features.find((feature) => feature.title === "CMake binary foo");
+    const bar = result.features.find((feature) => feature.title === "CMake binary bar");
+
+    expect(foo?.tests).toEqual([]);
+    expect(bar?.tests).toEqual([]);
   });
 
   it("maps CMake test executables as test suites", async () => {
