@@ -58,14 +58,13 @@ export async function turboTaskGraph(
         continue;
       }
       const metadata = metadataForTask(taskEntries, packageName, task);
-      if (metadata.persistent) {
-        continue;
-      }
       graph.commands.push({
         projectRoot: project.root,
         projectName: project.name,
         task,
-        command: turboCommand(rootPackageManager, task, turboFilter(project, packageName)),
+        command: metadata.persistent
+          ? null
+          : turboCommand(rootPackageManager, task, turboFilter(project, packageName)),
         metadata,
       });
     }

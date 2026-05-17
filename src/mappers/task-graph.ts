@@ -14,7 +14,7 @@ export type WorkspaceTaskCommand = {
   projectRoot: string;
   projectName: string;
   task: WorkspaceTaskName;
-  command: string;
+  command: string | null;
   metadata: WorkspaceTaskMetadata;
 };
 
@@ -35,11 +35,10 @@ export function taskGraphCommand(
   graph: WorkspaceTaskGraph,
   project: NodeProjectInfo,
   task: string,
-): string | null {
-  return (
-    graph.commands.find((command) => command.projectRoot === project.root && command.task === task)
-      ?.command ?? null
-  );
+): string | null | undefined {
+  return graph.commands.find(
+    (command) => command.projectRoot === project.root && command.task === task,
+  )?.command;
 }
 
 export function taskGraphProjectCommands(
@@ -49,7 +48,7 @@ export function taskGraphProjectCommands(
   const commands: Record<string, string> = {};
   for (const task of validationTaskNames) {
     const command = taskGraphCommand(graph, project, task);
-    if (command !== null) {
+    if (command !== undefined && command !== null) {
       commands[task] = command;
     }
   }

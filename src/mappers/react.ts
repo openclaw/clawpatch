@@ -14,7 +14,13 @@ import {
   walk,
 } from "./shared.js";
 import { projectTargetCommand } from "./projects.js";
-import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
+import {
+  FeatureSeed,
+  MapperContext,
+  SeedFileRef,
+  SeedTestRef,
+  suppressedTestCommandTag,
+} from "./types.js";
 import type { NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
 
@@ -33,6 +39,7 @@ type ReactPackage = {
   packageJson: PackageJson;
   packageManager: string;
   testCommand: string | null;
+  suppressConfiguredTest: boolean;
 };
 
 type RouteMatch = {
@@ -133,7 +140,12 @@ async function routeSeeds(root: string, info: ReactPackage): Promise<FeatureSeed
           ...routeTests.map((test) => ({ path: test.path, reason: "associated test" })),
         ]),
         tests: routeTests,
-        tags: ["react", "react-router", "web"],
+        tags: [
+          "react",
+          "react-router",
+          "web",
+          ...(info.suppressConfiguredTest ? [suppressedTestCommandTag] : []),
+        ],
         trustBoundaries: ["user-input", "network", "serialization"],
         skipNearbyTests: true,
       });
@@ -184,7 +196,12 @@ async function componentSeeds(
         ...componentTests.map((test) => ({ path: test.path, reason: "associated test" })),
       ]),
       tests: componentTests,
-      tags: ["react", "component", "web"],
+      tags: [
+        "react",
+        "component",
+        "web",
+        ...(info.suppressConfiguredTest ? [suppressedTestCommandTag] : []),
+      ],
       trustBoundaries: ["user-input", "network", "serialization"],
       skipNearbyTests: true,
     };
@@ -209,14 +226,17 @@ async function discoverReactPackages(
       project?.packageManager ??
       (await packageManagerForReactPackage(root, packageRoot, rootPackageManager));
     const projectTestCommand =
-      project === undefined ? null : projectTargetCommand(project, "test", taskGraph);
+      project === undefined ? undefined : projectTargetCommand(project, "test", taskGraph);
     packages.push({
       root: packageRoot,
       packageJsonPath,
       packageJson,
       packageManager,
       testCommand:
-        projectTestCommand ?? packageJsonTestCommand(packageJson, packageManager, packageRoot),
+        projectTestCommand !== undefined
+          ? projectTestCommand
+          : packageJsonTestCommand(packageJson, packageManager, packageRoot),
+      suppressConfiguredTest: projectTestCommand === null,
     });
   }
   return packages;

@@ -1277,6 +1277,41 @@ describe("workflow", () => {
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 
+  it("suppresses configured test validation for persistent feature tests", async () => {
+    const root = await fixtureRoot("clawpatch-feature-validation-suppressed-test-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {
+          format: 'node -e "process.exit(0)"',
+          test: 'node -e "process.exit(9)"',
+        },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [{ path: "src/index.test.ts", command: null }],
+      tags: [...feature!.tags, "validation:test-suppressed"],
+    });
+    const fixed = await fixCommand(context, { finding, dryRun: true });
+
+    expect(fixed).toMatchObject({ dryRun: true, validation: "npm run format" });
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
   it("fails fix when feature-specific validation fails", async () => {
     const root = await fixtureRoot("clawpatch-feature-validation-fail-");
     await runCommand(

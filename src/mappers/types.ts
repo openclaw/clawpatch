@@ -33,6 +33,8 @@ export type FeatureSeed = {
   skipNearbyTests?: boolean;
 };
 
+export const suppressedTestCommandTag = "validation:test-suppressed";
+
 export type FeatureMapper = {
   name: string;
   map(root: string, context: MapperContext): Promise<FeatureSeed[]>;

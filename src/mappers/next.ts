@@ -10,7 +10,7 @@ import {
 import { walk } from "./shared.js";
 import type { NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
-import { FeatureSeed, MapperContext } from "./types.js";
+import { FeatureSeed, MapperContext, suppressedTestCommandTag } from "./types.js";
 
 export async function nextSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   const seedGroups = await Promise.all(
@@ -56,9 +56,14 @@ async function projectNextSeeds(
       route,
       command: null,
       contextFiles,
-      tags: ["next", "web", ...projectTags(project)],
+      tags: [
+        "next",
+        "web",
+        ...projectTags(project),
+        ...(testCommand === null ? [suppressedTestCommandTag] : []),
+      ],
       trustBoundaries: ["user-input", "network", "serialization"],
-      ...(testCommand === null ? {} : { testCommand }),
+      ...(testCommand === undefined ? {} : { testCommand }),
     };
   });
 }

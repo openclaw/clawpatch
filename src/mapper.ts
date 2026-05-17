@@ -63,7 +63,9 @@ export async function mapFeatures(
         : await nearbyTests(
             root,
             seed.entryPath,
-            seed.testCommand ?? project.detected.commands.test,
+            Object.hasOwn(seed, "testCommand")
+              ? (seed.testCommand ?? null)
+              : project.detected.commands.test,
             seed.testPrefixes ?? [],
             [seed.command, seed.identityKey].filter(
               (name): name is string => typeof name === "string",

@@ -9,6 +9,7 @@ import { nowIso, writeJson } from "./fs.js";
 import { changedFilesSince, discoverGit, findProjectRoot } from "./git.js";
 import { stableId, runId } from "./id.js";
 import { mapFeatures } from "./mapper.js";
+import { suppressedTestCommandTag } from "./mappers/types.js";
 import { providerByName } from "./provider.js";
 import { buildFixPrompt, buildReviewPrompt, buildRevalidatePrompt } from "./prompt.js";
 import {
@@ -864,12 +865,14 @@ function validationCommandsForFeature(
   const featureCommands = (feature?.tests ?? []).flatMap((test) =>
     test.command === null || test.command.length === 0 ? [] : [test.command],
   );
+  const configuredTest =
+    feature?.tags.includes(suppressedTestCommandTag) === true ? null : commands.test;
   const ordered = [
     commands.format,
     ...featureCommands,
     commands.typecheck,
     commands.lint,
-    commands.test,
+    configuredTest,
   ].filter((command): command is string => command !== null && command.length > 0);
   return Array.from(new Set(ordered));
 }

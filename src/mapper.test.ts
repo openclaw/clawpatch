@@ -457,6 +457,61 @@ describe("mapFeatures", () => {
     ]);
   });
 
+  it("suppresses fallback validation commands for persistent Turbo tasks", async () => {
+    const root = await fixtureRoot("clawpatch-turbo-persistent-task-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "workspace-root",
+          packageManager: "pnpm@10.0.0",
+          workspaces: ["apps/*"],
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(
+      root,
+      "turbo.json",
+      JSON.stringify({ tasks: { test: { cache: false, persistent: true } } }, null, 2),
+    );
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify(
+        {
+          name: "web",
+          scripts: { test: "vitest --watch" },
+          dependencies: { next: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/app/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/app/page.test.tsx", "test('page', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "web route /");
+    const webPackage = result.features.find((feature) => feature.title === "Node package web");
+    const webTestScript = result.features.find(
+      (feature) => feature.title === "Package script test (web)",
+    );
+
+    expect(route?.tests).toEqual([{ path: "apps/web/app/page.test.tsx", command: null }]);
+    expect(route?.tags).toContain("validation:test-suppressed");
+    expect(webPackage?.tags).toContain("validation:test-suppressed");
+    expect(webTestScript?.tags).toContain("validation:test-suppressed");
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));

@@ -150,9 +150,9 @@ export function projectTargetCommand(
   project: NodeProjectInfo,
   target: string,
   graph: WorkspaceTaskGraph,
-): string | null {
+): string | null | undefined {
   const graphCommand = taskGraphCommand(graph, project, target);
-  if (graphCommand !== null) {
+  if (graphCommand !== undefined) {
     return graphCommand;
   }
   if (project.targets[target] !== undefined) {
@@ -161,7 +161,7 @@ export function projectTargetCommand(
   if (project.packageJson !== null && packageScripts(project.packageJson)[target] !== undefined) {
     return scriptCommand(project.packageManager, project.root, target);
   }
-  return null;
+  return undefined;
 }
 
 export function packageRelativePath(packageRoot: string, path: string): string {

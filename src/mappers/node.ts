@@ -19,7 +19,13 @@ import {
 } from "./projects.js";
 import type { NodePackageJson, NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
-import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
+import {
+  FeatureSeed,
+  MapperContext,
+  SeedFileRef,
+  SeedTestRef,
+  suppressedTestCommandTag,
+} from "./types.js";
 
 type PackageInfo = NodeProjectInfo & {
   packageJsonPath: string;
@@ -64,6 +70,9 @@ async function packageSeeds(
     packageTags.push("workspace");
   }
   const testCommand = projectTargetCommand(info, "test", taskGraph);
+  if (testCommand === null) {
+    packageTags.push(suppressedTestCommandTag);
+  }
 
   const manifestSeed: FeatureSeed = {
     title: `Node package ${packageName}`,
@@ -99,9 +108,9 @@ async function packageSeeds(
       symbol: null,
       route: null,
       command,
-      tags: ["node", "cli"],
+      tags: ["node", "cli", ...(testCommand === null ? [suppressedTestCommandTag] : [])],
       trustBoundaries: ["user-input", "filesystem", "process-exec"],
-      ...(testCommand === null ? {} : { testCommand }),
+      ...(testCommand === undefined ? {} : { testCommand }),
     });
   }
 
@@ -125,7 +134,12 @@ async function packageSeeds(
       symbol: script,
       route: null,
       command: script,
-      tags: ["node", "package-script", ...projectTags(info)],
+      tags: [
+        "node",
+        "package-script",
+        ...projectTags(info),
+        ...(testCommand === null ? [suppressedTestCommandTag] : []),
+      ],
       trustBoundaries: script === "test" ? [] : ["process-exec", "filesystem"],
       skipNearbyTests: true,
     });
@@ -159,7 +173,7 @@ async function sourceGroupSeeds(
       continue;
     }
     for (const group of partitionSourceFiles(sourceRoot, files, sourceGroupMaxOwnedFiles)) {
-      const tests = associatedTests(group.files, testFiles, testCommand);
+      const tests = associatedTests(group.files, testFiles, testCommand ?? null);
       seeds.push({
         title: `Node source ${group.label}`,
         summary:
@@ -182,9 +196,15 @@ async function sourceGroupSeeds(
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ]),
         tests,
-        tags: ["node", "typescript", "source-group", ...projectTags(info)],
+        tags: [
+          "node",
+          "typescript",
+          "source-group",
+          ...projectTags(info),
+          ...(testCommand === null ? [suppressedTestCommandTag] : []),
+        ],
         trustBoundaries: packageTrustBoundaries(`${packageName} ${group.label}`),
-        testCommand,
+        ...(testCommand === undefined ? {} : { testCommand }),
         skipNearbyTests: true,
       });
     }
