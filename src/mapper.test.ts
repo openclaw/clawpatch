@@ -1190,6 +1190,11 @@ describe("mapFeatures", () => {
     await writeFixture(root, "pnpm-lock.yaml", "");
     await writeFixture(
       root,
+      "apps/web/project.json",
+      JSON.stringify({ name: "web-app", targets: { test: {} } }, null, 2),
+    );
+    await writeFixture(
+      root,
       "turbo.json",
       JSON.stringify(
         {
@@ -1197,7 +1202,7 @@ describe("mapFeatures", () => {
           globalEnv: ["NODE_ENV"],
           tasks: {
             build: { dependsOn: ["^build"], outputs: ["dist/**", ".next/**"] },
-            test: { dependsOn: ["^test"], outputs: ["coverage/**"] },
+            "@scope/web#test": { dependsOn: ["^test"], outputs: ["coverage/**"] },
             lint: {},
             dev: { cache: false, persistent: true },
             "@scope/ext#build": {
@@ -1216,7 +1221,7 @@ describe("mapFeatures", () => {
       "apps/web/package.json",
       JSON.stringify(
         {
-          name: "web",
+          name: "@scope/web",
           scripts: { build: "next build", test: "vitest run", lint: "biome check ." },
           dependencies: { next: "1.0.0" },
         },
@@ -1242,7 +1247,7 @@ describe("mapFeatures", () => {
     const projects = await discoverNodeProjects(root);
     const graph = await turboTaskGraph(root, projects);
     const webTest = graph.commands.find(
-      (command) => command.projectName === "web" && command.task === "test",
+      (command) => command.projectRoot === "apps/web" && command.task === "test",
     );
     const extBuild = graph.commands.find(
       (command) => command.projectName === "@scope/ext" && command.task === "build",
@@ -1251,7 +1256,8 @@ describe("mapFeatures", () => {
     expect(graph.runner).toBe("turbo");
     expect(graph.globalDependencies).toEqual(["package.json", "pnpm-lock.yaml"]);
     expect(graph.globalEnv).toEqual(["NODE_ENV"]);
-    expect(webTest?.command).toBe("pnpm turbo run test --filter web");
+    expect(webTest?.projectName).toBe("web-app");
+    expect(webTest?.command).toBe("pnpm turbo run test --filter @scope/web");
     expect(webTest?.metadata.dependsOn).toEqual(["^test"]);
     expect(extBuild?.command).toBe("pnpm turbo run build --filter @scope/ext");
     expect(extBuild?.metadata.dependsOn).toEqual(["@scope/contracts#build"]);

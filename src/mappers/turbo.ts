@@ -47,15 +47,16 @@ export async function turboTaskGraph(
 
   for (const project of projects) {
     const scripts = packageScripts(project.packageJson);
+    const packageName = turboPackageName(project);
     for (const task of validationTaskNames) {
       if (
         project.root === "." ||
         scripts[task] === undefined ||
-        !hasTaskEntry(taskEntries, project.name, task)
+        !hasTaskEntry(taskEntries, packageName, task)
       ) {
         continue;
       }
-      const metadata = metadataForTask(taskEntries, project.name, task);
+      const metadata = metadataForTask(taskEntries, packageName, task);
       if (metadata.persistent) {
         continue;
       }
@@ -63,7 +64,7 @@ export async function turboTaskGraph(
         projectRoot: project.root,
         projectName: project.name,
         task,
-        command: turboCommand(rootPackageManager, task, project.name, project.root),
+        command: turboCommand(rootPackageManager, task, turboFilter(project, packageName)),
         metadata,
       });
     }
@@ -79,16 +80,22 @@ function taskRecord(value: unknown): Map<string, unknown> {
   return new Map(Object.entries(value));
 }
 
-function hasTaskEntry(entries: Map<string, unknown>, projectName: string, task: string): boolean {
-  return entries.has(`${projectName}#${task}`) || entries.has(task);
+function hasTaskEntry(
+  entries: Map<string, unknown>,
+  packageName: string | null,
+  task: string,
+): boolean {
+  return (packageName !== null && entries.has(`${packageName}#${task}`)) || entries.has(task);
 }
 
 function metadataForTask(
   entries: Map<string, unknown>,
-  projectName: string,
+  packageName: string | null,
   task: string,
 ): WorkspaceTaskMetadata {
-  return taskMetadata(entries.get(`${projectName}#${task}`) ?? entries.get(task));
+  return taskMetadata(
+    (packageName === null ? undefined : entries.get(`${packageName}#${task}`)) ?? entries.get(task),
+  );
 }
 
 function taskMetadata(value: unknown): WorkspaceTaskMetadata {
@@ -117,13 +124,7 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
-function turboCommand(
-  packageManager: string,
-  task: string,
-  projectName: string,
-  projectRoot: string,
-): string {
-  const filter = projectName.length > 0 ? projectName : projectRoot;
+function turboCommand(packageManager: string, task: string, filter: string): string {
   if (packageManager === "pnpm") {
     return `pnpm turbo run ${task} --filter ${filter}`;
   }
@@ -134,4 +135,19 @@ function turboCommand(
     return `bunx turbo run ${task} --filter ${filter}`;
   }
   return `npx turbo run ${task} --filter ${filter}`;
+}
+
+function turboPackageName(project: NodeProjectInfo): string | null {
+  const packageName = project.packageJson?.name;
+  if (typeof packageName === "string" && packageName.length > 0) {
+    return packageName;
+  }
+  return null;
+}
+
+function turboFilter(project: NodeProjectInfo, packageName: string | null): string {
+  if (packageName !== null) {
+    return packageName;
+  }
+  return `./${project.root}`;
 }
