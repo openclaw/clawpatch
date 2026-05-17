@@ -31,19 +31,27 @@ Supported deterministic mappers today:
 - Node/TypeScript workspace packages from `package.json` workspaces, `pnpm-workspace.yaml`, and common package folders
 - Nx project metadata from `project.json`, including project names, source roots, project types, and target names
 - bounded Node/TypeScript source groups under `src/`, `lib/`, `app/`, `pages/`, and `scripts/`
+- React Router `<Route path element>` declarations and React components in
+  root or nested frontend packages such as `frontend/`, `client/`, `web/`,
+  workspaces, and packages under `apps/` or `packages/`
 - Next.js `app/` and `pages/` routes at the repo root or inside discovered monorepo projects
 - Go `cmd/*/main.go`
 - Go `internal/*` packages
 - Python project metadata, console scripts, root app files, bounded source groups,
   pytest suites, and Flask/FastAPI routes
-- JVM semantic role groups from Java annotations, imports, inheritance, interfaces, and method signatures
+- Java and Kotlin JVM semantic role groups, plus Kotlin Android semantic role
+  groups including Hilt, Dagger, Koin, and Metro
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites,
   Rails configs, routes, views, assets, and database files
 - Rust Cargo commands, libraries, workspace crates, and integration tests
+- C/C++ standalone `main()` files, CMake targets, and autotools targets
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
 - Apple/Xcode projects from `project.yml`, `.xcodeproj`, or `.xcworkspace`
 - Java/Kotlin Gradle modules from `settings.gradle(.kts)` and `build.gradle(.kts)`
+- Laravel/PHP projects from `composer.json` and `artisan`, including controllers
+  referenced by routes, form requests, Artisan commands, jobs, services, models,
+  migrations, seeders, Composer scripts, and grouped PHP test suites
 - common config files
 
 The mapper does not call a model. It uses repo conventions and cheap filesystem
@@ -72,13 +80,27 @@ clawpatch next --project web
 When an Nx project target is available, nearby tests use the project-scoped
 command, such as `yarn nx test web`, instead of a repository-wide test command.
 
+React mapping discovers packages with a React dependency, including common
+nested frontend directories. It maps React Router route declarations to the
+component they render when the component can be resolved from a local import or
+lazy import, and also maps page/component files under `src/pages` and
+`src/components` as UI-flow slices.
+
 Native app mappers use the same bounded grouping model. SwiftPM packages can be
 discovered below the repo root, Apple projects are grouped by Swift source area,
 and Gradle modules are grouped from `src/main`, `src/test`, and `src/androidTest`.
 Root Gradle projects get default `gradle`/`./gradlew` build and test commands.
-Java files in Gradle modules also get role-oriented review slices when code
-evidence identifies web entrypoints, services, persistence boundaries, external
-clients, configuration, framework components, or extension boundaries.
+Java and Kotlin files in Gradle modules also get role-oriented review slices
+when code evidence identifies web entrypoints, services, persistence boundaries,
+external clients, configuration, framework components, extension boundaries,
+Android UI entrypoints, ViewModels, data boundaries, or dependency injection.
+Kotlin dependency-injection evidence includes Hilt, Dagger, Koin, and Metro
+annotations and imports.
+
+C/C++ mapping covers generic project shapes only: standalone source files with
+`main()`, CMake `add_executable` / `add_library`, and autotools `bin_PROGRAMS` /
+`lib_LTLIBRARIES`. It deliberately avoids project-specific C dialects such as
+php-src extension metadata.
 
 Python mapping covers `pyproject.toml`, `setup.cfg`, `setup.py`, and
 `requirements.txt` metadata; `[project.scripts]`, `[tool.poetry.scripts]`,
@@ -91,14 +113,16 @@ tuple, or set literals. FastAPI paths can be positional strings or literal
 pyright, and black.
 
 Ruby mapping covers project metadata, executables, source groups, RSpec and
-Minitest suites, and Rails app structure. Rails legacy `config/secrets.yml` is
-not mapped as reviewable config because it can contain provider-sensitive
-secrets.
+Minitest suites, and Rails app structure. Rails legacy `config/secrets.yml`,
+`config/database.yml`, and `config/initializers/secret_token.rb` are not mapped
+as reviewable config because they can contain provider-sensitive secrets.
 
 Known gaps:
 
 - no Express/Fastify/Hono route mapper yet
 - no Django route mapper yet
+- Laravel route parsing is convention-based, does not execute Laravel route discovery,
+  and may omit prefixes applied by `Route::group(...)` wrappers
 - no import graph expansion beyond nearby tests yet
 - no Turborepo task metadata mapper yet
 - no agent enrichment yet
