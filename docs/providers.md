@@ -41,9 +41,9 @@ CLAWPATCH_MODEL=<model> clawpatch review
 The `acpx` provider routes through `acpx <agent> exec`, where `<agent>` is any
 ACP-compatible coding agent.
 
-- review / revalidate: `--deny-all` plus an explicit read-only prompt directive
+- review / revalidate: `--approve-reads` plus an explicit read-only prompt directive
 - fix: `--approve-all`
-- output: `--format json --json-strict`, parsed from known ACP NDJSON envelope kinds
+- output: `--format json --json-strict --suppress-reads`, parsed from known ACP NDJSON envelope kinds
 - tested envelope shape: `acpx@^0.8.0`
 
 Permission caveat: `acpx --approve-all` is not the same as `codex --sandbox
@@ -52,16 +52,16 @@ approval flags control ACP permission prompts; the underlying agent still has
 whatever filesystem and network access its own runtime grants. For untrusted
 code, run `clawpatch fix --provider acpx` inside an isolated checkout. For
 review and revalidate, strict read-only behavior still depends on the underlying
-agent honoring the denied permissions and prompt directive.
+agent honoring read-only permissions and the prompt directive.
 
 Agent selection uses `--model` as `<agent>` or `<agent>:<model>`, split on the
-last colon:
+first colon:
 
 - unset: agent `codex`, default model
 - `codex`: agent `codex`, default model
 - `claude`: agent `claude`, default model
 - `claude:sonnet-4-5`: agent `claude`, model `sonnet-4-5`
-- `ollama:llama3:70b`: agent `ollama:llama3`, model `70b`
+- `ollama:llama3:70b`: agent `ollama`, model `llama3:70b`
 
 Migration note: `--provider codex --model gpt-5-codex` is not equivalent to
 `--provider acpx --model gpt-5-codex`; the latter selects an ACP agent named

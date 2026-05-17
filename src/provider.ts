@@ -79,7 +79,7 @@ const acpxProvider: Provider = {
     return `${version} (tested against ${ACPX_TESTED_VERSIONS})`;
   },
   async review(root: string, prompt: string, model: string | null): Promise<ReviewOutput> {
-    const output = await runAcpxJson(root, prompt, model, reviewJsonSchema, "deny");
+    const output = await runAcpxJson(root, prompt, model, reviewJsonSchema, "read");
     return reviewOutputSchema.parse(output);
   },
   async fix(root: string, prompt: string, model: string | null): Promise<FixPlanOutput> {
@@ -87,7 +87,7 @@ const acpxProvider: Provider = {
     return fixPlanOutputSchema.parse(output);
   },
   async revalidate(root: string, prompt: string, model: string | null): Promise<RevalidateOutput> {
-    const output = await runAcpxJson(root, prompt, model, revalidateJsonSchema, "deny");
+    const output = await runAcpxJson(root, prompt, model, revalidateJsonSchema, "read");
     return revalidateOutputSchema.parse(output);
   },
 };
@@ -244,7 +244,7 @@ export function parseAcpxAgent(model: string | null): {
   if (model === null) {
     return { agent: "codex", agentModel: null };
   }
-  const idx = model.lastIndexOf(":");
+  const idx = model.indexOf(":");
   if (idx === -1) {
     return { agent: model, agentModel: null };
   }
@@ -256,11 +256,11 @@ async function runAcpxJson(
   prompt: string,
   model: string | null,
   schema: object,
-  permission: "deny" | "approve",
+  permission: "read" | "approve",
 ): Promise<unknown> {
   const { agent, agentModel } = parseAcpxAgent(model);
-  const permFlag = permission === "deny" ? "--deny-all" : "--approve-all";
-  const args = ["--cwd", root, permFlag, "--format", "json", "--json-strict"];
+  const permFlag = permission === "read" ? "--approve-reads" : "--approve-all";
+  const args = ["--cwd", root, permFlag, "--format", "json", "--json-strict", "--suppress-reads"];
   if (agentModel !== null) {
     args.push("--model", agentModel);
   }
@@ -274,17 +274,17 @@ async function runAcpxJson(
   );
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
-      `acpx provider failed: ${result.stderr || result.stdout}`,
-      acpxExitCode(result.stderr),
+      acpxFailureMessage(result.stdout, result.stderr, result.exitCode),
+      acpxExitCode(result.stdout, result.stderr, result.exitCode),
       "provider-failure",
     );
   }
   return extractAcpxJson(result.stdout);
 }
 
-function buildAcpxPrompt(prompt: string, schema: object, permission: "deny" | "approve"): string {
+function buildAcpxPrompt(prompt: string, schema: object, permission: "read" | "approve"): string {
   const promptBody =
-    permission === "deny"
+    permission === "read"
       ? "READ-ONLY REVIEW MODE.\n" +
         "Do not modify, create, or delete any files.\n" +
         "Do not make any tool calls that write to the workspace.\n" +
@@ -301,8 +301,9 @@ function buildAcpxPrompt(prompt: string, schema: object, permission: "deny" | "a
 }
 
 export function extractAcpxJson(stdout: string): unknown {
-  const candidates: string[] = [];
-  const chunkBuf: string[] = [];
+  const toolCandidates: string[] = [];
+  const messageChunks: string[] = [];
+  const thoughtChunks: string[] = [];
   const observedKinds = new Set<string>();
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
@@ -333,19 +334,26 @@ export function extractAcpxJson(stdout: string): unknown {
     }
     observedKinds.add(update.sessionUpdate);
     if (
-      (update.sessionUpdate === "agent_message_chunk" ||
-        update.sessionUpdate === "agent_thought_chunk") &&
+      update.sessionUpdate === "agent_message_chunk" &&
       update.content?.type === "text" &&
       typeof update.content.text === "string"
     ) {
-      chunkBuf.push(update.content.text);
+      messageChunks.push(update.content.text);
+    } else if (
+      update.sessionUpdate === "agent_thought_chunk" &&
+      update.content?.type === "text" &&
+      typeof update.content.text === "string"
+    ) {
+      thoughtChunks.push(update.content.text);
     } else if (update.sessionUpdate === "tool_call_result" && typeof update.output === "string") {
-      candidates.push(update.output);
+      toolCandidates.push(update.output);
     }
   }
-  if (chunkBuf.length > 0) {
-    candidates.push(chunkBuf.join(""));
-  }
+  const candidates = [
+    ...(messageChunks.length > 0 ? [messageChunks.join("")] : []),
+    ...toolCandidates.toReversed(),
+    ...(thoughtChunks.length > 0 ? [thoughtChunks.join("")] : []),
+  ];
   if (candidates.length === 0) {
     throw new ClawpatchError(
       `acpx provider produced no extractable text. Observed envelope kinds: ` +
@@ -358,8 +366,8 @@ export function extractAcpxJson(stdout: string): unknown {
   }
 
   let lastErr: unknown;
-  for (let i = candidates.length - 1; i >= 0; i--) {
-    const text = candidates[i]!.trim();
+  for (const candidate of candidates) {
+    const text = candidate.trim();
     try {
       const parsed = extractJson(text);
       if (parsed !== null) {
@@ -535,21 +543,86 @@ function providerExitCode(stderr: string): number {
   return 1;
 }
 
-function acpxExitCode(stderr: string): number {
-  if (/auth|login|api key|not authenticated/iu.test(stderr)) {
+function acpxFailureMessage(stdout: string, stderr: string, exitCode: number | null): string {
+  const error = extractAcpxError(stdout);
+  if (error !== null) {
+    return `acpx provider failed: ${error}`;
+  }
+  const stderrPreview = safeProviderPreview(stderr);
+  if (stderrPreview.length > 0) {
+    return `acpx provider failed: ${stderrPreview}`;
+  }
+  return `acpx provider failed with exit code ${exitCode ?? "unknown"}`;
+}
+
+function extractAcpxError(stdout: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    let env: unknown;
+    try {
+      env = JSON.parse(trimmed) as unknown;
+    } catch {
+      continue;
+    }
+    if (typeof env !== "object" || env === null) {
+      continue;
+    }
+    const error = (env as Record<string, unknown>)["error"];
+    if (typeof error !== "object" || error === null) {
+      continue;
+    }
+    const errorRecord = error as Record<string, unknown>;
+    const data = errorRecord["data"];
+    const dataRecord =
+      typeof data === "object" && data !== null ? (data as Record<string, unknown>) : {};
+    const parts = [
+      stringPart("code", errorRecord["code"]),
+      stringPart("acpxCode", dataRecord["acpxCode"]),
+      stringPart("detail", dataRecord["detailCode"]),
+      stringPart("origin", dataRecord["origin"]),
+      stringPart("message", errorRecord["message"], 160),
+    ].filter((part) => part.length > 0);
+    if (parts.length > 0) {
+      return parts.join("; ");
+    }
+  }
+  return null;
+}
+
+function stringPart(label: string, value: unknown, maxLength = 80): string {
+  if (typeof value !== "string" && typeof value !== "number") {
+    return "";
+  }
+  const preview = safeProviderPreview(String(value), maxLength);
+  return preview.length === 0 ? "" : `${label}=${preview}`;
+}
+
+function safeProviderPreview(value: string, maxLength = 200): string {
+  return value.replace(/\s+/gu, " ").trim().slice(0, maxLength);
+}
+
+function acpxExitCode(stdout: string, stderr: string, exitCode: number | null): number {
+  const combined = `${stderr}\n${extractAcpxError(stdout) ?? ""}`;
+  if (/auth|login|api key|not authenticated|AUTH_REQUIRED/iu.test(combined)) {
     return 4;
   }
-  if (/quota|rate.?limit/iu.test(stderr)) {
+  if (/quota|rate.?limit/iu.test(combined)) {
     return 5;
   }
-  if (/acpx: command not found|spawn acpx ENOENT/iu.test(stderr)) {
+  if (/acpx: command not found|spawn acpx ENOENT/iu.test(combined)) {
     return 4;
+  }
+  if (exitCode === 3 || /TIMEOUT/iu.test(combined)) {
+    return 1;
   }
   return 1;
 }
 
 // eslint-disable-next-line no-underscore-dangle
-export const __testing = { extractAcpxJson, parseAcpxAgent };
+export const __testing = { acpxFailureMessage, extractAcpxJson, parseAcpxAgent };
 
 const reviewJsonSchema = {
   type: "object",

@@ -3,7 +3,7 @@ import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
 
 // eslint-disable-next-line no-underscore-dangle
-const { extractAcpxJson, parseAcpxAgent } = __testing;
+const { acpxFailureMessage, extractAcpxJson, parseAcpxAgent } = __testing;
 
 function updateEnvelope(update: object): string {
   return JSON.stringify({
@@ -90,10 +90,10 @@ describe("parseAcpxAgent", () => {
     });
   });
 
-  it("splits on the last colon for model ids that contain colons", () => {
+  it("splits on the first colon so model ids may contain colons", () => {
     expect(parseAcpxAgent("ollama:llama3:70b")).toEqual({
-      agent: "ollama:llama3",
-      agentModel: "70b",
+      agent: "ollama",
+      agentModel: "llama3:70b",
     });
   });
 });
@@ -137,6 +137,15 @@ describe("extractAcpxJson", () => {
       steps: [],
       validationCommands: [],
     });
+  });
+
+  it("prefers final message chunks over thought chunks", () => {
+    const stdout = [
+      textChunk("agent_thought_chunk", '{"note":"not final"}'),
+      textChunk("agent_message_chunk", '{"ok":true}'),
+    ].join("\n");
+
+    expect(extractAcpxJson(stdout)).toEqual({ ok: true });
   });
 
   it("strips json markdown fences", () => {
@@ -197,6 +206,39 @@ describe("extractAcpxJson", () => {
     expect(lines).toHaveLength(256);
     expect(stdout.length).toBeGreaterThan(8_000);
     expect(extractAcpxJson(stdout)).toEqual({ large: true });
+  });
+});
+
+describe("acpxFailureMessage", () => {
+  it("does not include raw prompt envelopes from ACPX stdout", () => {
+    const secretPrompt = "SOURCE_CONTEXT_SECRET";
+    const stdout = [
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "session/prompt",
+        params: {
+          prompt: [{ type: "text", text: secretPrompt }],
+        },
+      }),
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: -32070,
+          message: "Timed out after 500ms",
+          data: { acpxCode: "TIMEOUT", origin: "cli", sessionId: "session-1" },
+        },
+      }),
+    ].join("\n");
+
+    const message = acpxFailureMessage(stdout, "", 3);
+
+    expect(message).toContain("acpx provider failed");
+    expect(message).toContain("acpxCode=TIMEOUT");
+    expect(message).toContain("message=Timed out after 500ms");
+    expect(message).not.toContain(secretPrompt);
+    expect(message).not.toContain("session/prompt");
   });
 });
 
