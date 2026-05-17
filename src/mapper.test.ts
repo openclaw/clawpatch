@@ -3310,6 +3310,34 @@ describe("mapFeatures", () => {
     ).toBe(true);
   });
 
+  it("does not treat project-local nested Kotlin types as external frameworks", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-local-nested-type-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/Outer.kt",
+      [
+        "package com.example",
+        "",
+        "class Outer { open class Base }",
+        "class Handler : Outer.Base()",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some((file) => file.path === "src/main/kotlin/com/example/Outer.kt"),
+      ),
+    ).toBe(false);
+  });
+
   it("normalizes root Gradle source groups", async () => {
     const root = await fixtureRoot("clawpatch-root-gradle-map-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");

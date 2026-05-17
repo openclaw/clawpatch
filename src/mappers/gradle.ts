@@ -310,6 +310,9 @@ async function kotlinRoleSeeds(
     const source = await readFile(join(root, filePath), "utf8");
     kotlinFiles.push({ filePath, info: parseKotlinFile(source) });
   }
+  if (kotlinFiles.length === 0) {
+    return [];
+  }
   const javaFiles: Array<{ filePath: string; info: JavaFileInfo }> = [];
   for (const filePath of sourceFiles.filter((file) => file.endsWith(".java"))) {
     const source = await readFile(join(root, filePath), "utf8");
@@ -821,6 +824,10 @@ function kotlinImportForType(
   projectPackages: Set<string>,
 ): string | undefined {
   if (type.includes(".")) {
+    const rootType = type.split(".")[0];
+    if (rootType !== undefined && projectTypes.has(rootType)) {
+      return undefined;
+    }
     return type.startsWith("kotlin.") ? undefined : type;
   }
   const direct = info.imports.get(type);
