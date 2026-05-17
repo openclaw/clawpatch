@@ -2046,23 +2046,91 @@ function hasAppliedAndroidPlugin(
   isKotlinDsl: boolean,
 ): boolean {
   const source = stripGradleBuildComments(buildSource, isKotlinDsl);
-  for (const match of source.matchAll(androidPluginDeclarationPattern())) {
-    const start = match.index ?? 0;
-    if (!hasGradleApplyFalse(source, start)) {
-      return true;
+  for (const pluginBlock of rootGradlePluginBlocks(source)) {
+    for (const match of pluginBlock.matchAll(androidPluginDeclarationPattern())) {
+      const start = match.index ?? 0;
+      if (!hasGradleApplyFalse(pluginBlock, start)) {
+        return true;
+      }
     }
-  }
-  for (const match of source.matchAll(/\balias\s*\(\s*libs\.plugins\.([A-Za-z0-9_.]+)\s*\)/gu)) {
-    const alias = match[1];
-    if (
-      alias !== undefined &&
-      androidAliases.has(normalizeVersionCatalogAlias(alias)) &&
-      !hasGradleApplyFalse(source, match.index ?? 0)
-    ) {
-      return true;
+    for (const match of pluginBlock.matchAll(
+      /\balias\s*\(\s*libs\.plugins\.([A-Za-z0-9_.]+)\s*\)/gu,
+    )) {
+      const alias = match[1];
+      if (
+        alias !== undefined &&
+        androidAliases.has(normalizeVersionCatalogAlias(alias)) &&
+        !hasGradleApplyFalse(pluginBlock, match.index ?? 0)
+      ) {
+        return true;
+      }
     }
   }
   return hasDirectAndroidApplyPlugin(source);
+}
+
+function rootGradlePluginBlocks(source: string): string[] {
+  const blocks: string[] = [];
+  let quote: "'" | '"' | null = null;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index] ?? "";
+    if (quote !== null) {
+      if (char === "\\") {
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char !== "{") {
+      continue;
+    }
+    const prefix = source.slice(Math.max(0, index - 100), index).trimEnd();
+    if (!/\bplugins\s*$/u.test(prefix) || isInsideGradleChildProjectBlock(source, index)) {
+      continue;
+    }
+    const end = gradleBlockEnd(source, index);
+    blocks.push(source.slice(index + 1, end));
+    index = end;
+  }
+  return blocks;
+}
+
+function gradleBlockEnd(source: string, openBrace: number): number {
+  let quote: "'" | '"' | null = null;
+  let depth = 1;
+  for (let index = openBrace + 1; index < source.length; index += 1) {
+    const char = source[index] ?? "";
+    if (quote !== null) {
+      if (char === "\\") {
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return source.length;
 }
 
 function stripGradleBuildComments(source: string, supportsNestedBlockComments: boolean): string {

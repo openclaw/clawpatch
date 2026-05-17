@@ -4629,6 +4629,51 @@ describe("mapFeatures", () => {
     ).toBe(false);
   });
 
+  it("does not treat version-catalog Android plugin aliases inside Gradle strings as Android modules", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-plugin-alias-string-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(
+      root,
+      "gradle/libs.versions.toml",
+      ["[plugins]", 'agp = { id = "com.android.library", version = "8.0.0" }', ""].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "build.gradle.kts",
+      [
+        'plugins { id("org.jetbrains.kotlin.jvm") }',
+        'tasks.register("note") {',
+        '  doLast { println("alias(libs.plugins.agp)") }',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/OrderController.kt",
+      [
+        "package com.example.api",
+        "",
+        "import org.springframework.web.bind.annotation.RestController",
+        "",
+        "@RestController",
+        "class OrderController",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const web = result.features.find((feature) =>
+      feature.title.startsWith("Kotlin server role web entrypoint "),
+    );
+
+    expect(web?.source).toBe("kotlin-server-role-web-entrypoint");
+    expect(
+      result.features.some((feature) => feature.source.startsWith("kotlin-android-role-")),
+    ).toBe(false);
+  });
+
   it("detects Android Kotlin roles from dotted-key version-catalog plugin aliases", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-android-plugin-dotted-catalog-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
