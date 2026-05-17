@@ -1133,6 +1133,43 @@ describe("workflow", () => {
     expect(agentFeature?.tests).toEqual([{ path: "agent/worker.test.custom", command: null }]);
   });
 
+  it("does not invoke agent mapping for meaningful Elixir heuristic coverage", async () => {
+    const root = await fixtureRoot("clawpatch-elixir-auto-map-");
+    await writeFixture(
+      root,
+      "mix.exs",
+      'defmodule SampleApp.MixProject do\n  use Mix.Project\n  def project, do: [app: :sample_app, version: "0.1.0"]\nend\n',
+    );
+    await writeFixture(
+      root,
+      "lib/sample_app/accounts.ex",
+      "defmodule SampleApp.Accounts do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "lib/sample_app/accounts/user.ex",
+      "defmodule SampleApp.Accounts.User do\nend\n",
+    );
+    await writeFixture(
+      root,
+      "test/sample_app/accounts_test.exs",
+      "defmodule SampleApp.AccountsTest do\nend\n",
+    );
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    const mapped = await mapCommand(context, { source: "auto", provider: "mock" });
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+
+    expect(mapped).toMatchObject({
+      source: "auto",
+      usedAgent: false,
+      reason: "heuristic map is meaningful",
+    });
+    expect(features.map((feature) => feature.title)).toContain("Elixir context accounts");
+    expect(features.some((feature) => feature.source === "agent-mapper")).toBe(false);
+  });
+
   it("fails forced agent mapping when the provider returns no valid features", async () => {
     const root = await fixtureRoot("clawpatch-empty-agent-map-");
     await writeFixture(

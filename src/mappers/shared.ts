@@ -196,6 +196,8 @@ export function shouldSkip(path: string): boolean {
     /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
       path,
     ) ||
+    path === "deps" ||
+    path.startsWith("deps/") ||
     path === "target" ||
     path.startsWith("target/") ||
     path === ".build" ||
