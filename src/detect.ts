@@ -3,6 +3,12 @@ import { join } from "node:path";
 import { pathExists } from "./fs.js";
 import { projectNameFromRoot, discoverGit } from "./git.js";
 import { stableId } from "./id.js";
+import {
+  fileHasRubyShebang,
+  rubyDependencyNames,
+  rubyGemspecPaths,
+  stripRubyComments,
+} from "./ruby.js";
 import { ProjectRecord, ProjectCommands } from "./types.js";
 
 type PackageJson = {
@@ -11,6 +17,14 @@ type PackageJson = {
   dependencies?: unknown;
   devDependencies?: unknown;
   bin?: unknown;
+};
+
+export type ComposerJson = {
+  name?: unknown;
+  type?: unknown;
+  scripts?: unknown;
+  require?: unknown;
+  "require-dev"?: unknown;
 };
 
 type PythonProjectInfo = {
@@ -22,11 +36,17 @@ type PythonProjectInfo = {
 export async function detectProject(root: string): Promise<ProjectRecord> {
   const git = await discoverGit(root);
   const pkg = await readPackageJson(root);
+  const composer = await readComposerJson(root);
   const packageManagers = await detectPackageManagers(root);
-  const frameworks = detectFrameworks(pkg);
+  const frameworks = await detectFrameworks(root, pkg, composer);
   const languages = await detectLanguages(root);
-  const commands = await detectCommands(root, pkg, languages, packageManagers);
-  const name = typeof pkg?.name === "string" ? pkg.name : projectNameFromRoot(root, git.remoteUrl);
+  const commands = await detectCommands(root, pkg, composer, languages, packageManagers);
+  const name =
+    typeof pkg?.name === "string"
+      ? pkg.name
+      : typeof composer?.name === "string"
+        ? (composer.name.split("/").at(-1) ?? composer.name)
+        : projectNameFromRoot(root, git.remoteUrl);
   const now = new Date().toISOString();
   return {
     schemaVersion: 1,
@@ -90,32 +110,88 @@ export function packageBins(pkg: PackageJson | null): Record<string, string> {
   return bins;
 }
 
+export async function readComposerJson(root: string): Promise<ComposerJson | null> {
+  const path = join(root, "composer.json");
+  if (!(await pathExists(path))) {
+    return null;
+  }
+  const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+  return typeof parsed === "object" && parsed !== null ? (parsed as ComposerJson) : null;
+}
+
+export function composerScripts(composer: ComposerJson | null): Record<string, string> {
+  if (typeof composer?.scripts !== "object" || composer.scripts === null) {
+    return {};
+  }
+  const scripts: Record<string, string> = {};
+  for (const [key, value] of Object.entries(composer.scripts)) {
+    if (typeof value === "string") {
+      scripts[key] = value;
+    } else if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      scripts[key] = value.join(" && ");
+    }
+  }
+  return scripts;
+}
+
+export function composerDependencyNames(composer: ComposerJson | null): Set<string> {
+  const names = new Set<string>();
+  for (const field of [composer?.require, composer?.["require-dev"]]) {
+    if (typeof field !== "object" || field === null) {
+      continue;
+    }
+    for (const name of Object.keys(field)) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
 async function detectCommands(
   root: string,
   pkg: PackageJson | null,
+  composer: ComposerJson | null,
   languages: string[],
   packageManagers: string[],
 ): Promise<ProjectCommands> {
   const scripts = packageScripts(pkg);
-  const defaults = await languageDefaultCommands(root, languages);
+  const composerScriptMap = composerScripts(composer);
+  const defaults = await languageDefaultCommands(root, languages, composer);
   const packageManager = packageScriptManager(packageManagers);
+  const composerTestCommand = composerValidationCommand(composerScriptMap, ["test"]);
   return {
     typecheck:
       scripts["typecheck"] !== undefined
         ? packageRunCommand(packageManager, "typecheck")
-        : defaults.typecheck,
-    lint: scripts["lint"] !== undefined ? packageRunCommand(packageManager, "lint") : defaults.lint,
+        : (composerValidationCommand(composerScriptMap, ["typecheck", "analyse", "analyze"]) ??
+          defaults.typecheck),
+    lint:
+      scripts["lint"] !== undefined
+        ? packageRunCommand(packageManager, "lint")
+        : (composerValidationCommand(composerScriptMap, ["lint"]) ?? defaults.lint),
     format:
       scripts["format"] !== undefined
         ? packageRunCommand(packageManager, "format")
-        : defaults.format,
-    test: scripts["test"] !== undefined ? packageRunCommand(packageManager, "test") : defaults.test,
+        : (composerValidationCommand(composerScriptMap, ["format"]) ?? defaults.format),
+    test:
+      scripts["test"] !== undefined
+        ? packageRunCommand(packageManager, "test")
+        : (composerTestCommand ?? defaults.test),
   };
+}
+
+function composerValidationCommand(
+  scripts: Record<string, string>,
+  candidates: string[],
+): string | null {
+  const script = candidates.find((candidate) => scripts[candidate] !== undefined);
+  return script === undefined ? null : `composer ${script}`;
 }
 
 async function languageDefaultCommands(
   root: string,
   languages: string[],
+  composer: ComposerJson | null,
 ): Promise<ProjectCommands> {
   if (languages.includes("go")) {
     return {
@@ -143,6 +219,18 @@ async function languageDefaultCommands(
   }
   if (languages.includes("python")) {
     return pythonDefaultCommands(root);
+  }
+  if (languages.includes("php")) {
+    return phpDefaultCommands(root, composer);
+  }
+  if (
+    (languages.includes("java") || languages.includes("kotlin")) &&
+    (await isRootGradleProject(root))
+  ) {
+    return gradleDefaultCommands(root);
+  }
+  if (languages.includes("ruby")) {
+    return rubyDefaultCommands(root);
   }
 
   return {
@@ -216,6 +304,22 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("gradle");
   }
+  if (
+    !found.includes("cmake") &&
+    (await containsFileNamed(root, "CMakeLists.txt", 5, shouldSkipCOrCppSearchEntry))
+  ) {
+    found.push("cmake");
+  }
+  if (
+    !found.includes("autotools") &&
+    ((await containsFileNamed(root, "Makefile.am", 5, shouldSkipCOrCppSearchEntry)) ||
+      (await containsFileNamed(root, "Makefile.in", 5, shouldSkipCOrCppSearchEntry)))
+  ) {
+    found.push("autotools");
+  }
+  if (await pathExists(join(root, "composer.json"))) {
+    found.push("composer");
+  }
   const pythonManagers: Array<[string, string]> = [
     ["uv", "uv.lock"],
     ["poetry", "poetry.lock"],
@@ -235,10 +339,61 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   if (!found.some((name) => pythonPackageManagers.has(name)) && (await isPythonProject(root))) {
     found.push((await pathExists(join(root, "requirements.txt"))) ? "pip" : "python");
   }
+  if ((await isRubyProject(root)) && !found.some((name) => rubyPackageManagers.has(name))) {
+    found.push((await hasBundlerConfig(root)) ? "bundler" : "ruby");
+  }
   return found;
 }
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
+const rubyPackageManagers = new Set(["bundler", "ruby"]);
+
+async function isRootGradleProject(root: string): Promise<boolean> {
+  return (
+    (await pathExists(join(root, "settings.gradle"))) ||
+    (await pathExists(join(root, "settings.gradle.kts"))) ||
+    (await pathExists(join(root, "build.gradle"))) ||
+    (await pathExists(join(root, "build.gradle.kts")))
+  );
+}
+
+async function gradleDefaultCommands(root: string): Promise<ProjectCommands> {
+  const runner = (await pathExists(join(root, "gradlew"))) ? "./gradlew" : "gradle";
+  return {
+    typecheck: `${runner} build`,
+    lint: null,
+    format: null,
+    test: `${runner} test`,
+  };
+}
+
+async function phpDefaultCommands(
+  root: string,
+  composer: ComposerJson | null,
+): Promise<ProjectCommands> {
+  const dependencies = composerDependencyNames(composer);
+  const hasArtisan = await pathExists(join(root, "artisan"));
+  const hasPint = dependencies.has("laravel/pint");
+  const hasPhpStan = dependencies.has("phpstan/phpstan") || dependencies.has("larastan/larastan");
+  const hasPest = dependencies.has("pestphp/pest");
+  const hasPhpunit =
+    dependencies.has("phpunit/phpunit") ||
+    dependencies.has("phpunit/phpunit-selenium") ||
+    (await pathExists(join(root, "phpunit.xml"))) ||
+    (await pathExists(join(root, "phpunit.xml.dist")));
+  return {
+    typecheck: hasPhpStan ? "vendor/bin/phpstan analyse" : null,
+    lint: hasPint ? "vendor/bin/pint --test" : null,
+    format: hasPint ? "vendor/bin/pint --test" : null,
+    test: hasArtisan
+      ? "php artisan test"
+      : hasPest
+        ? "vendor/bin/pest"
+        : hasPhpunit
+          ? "vendor/bin/phpunit"
+          : null,
+  };
+}
 
 async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
   const info = await pythonProjectInfo(root);
@@ -248,6 +403,7 @@ async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
     info.dependencies.has("pytest") ||
     (await containsPythonTestFile(root, 5));
   const hasRuff = info.tools.has("ruff") || info.dependencies.has("ruff");
+  const hasBlack = info.tools.has("black") || info.dependencies.has("black");
   const hasPyright = info.tools.has("pyright") || info.dependencies.has("pyright");
   const hasMypy = info.tools.has("mypy") || info.dependencies.has("mypy");
   return {
@@ -259,7 +415,11 @@ async function pythonDefaultCommands(root: string): Promise<ProjectCommands> {
           ? pythonRunCommand(runner, "ruff check .")
           : null,
     lint: hasRuff ? pythonRunCommand(runner, "ruff check .") : null,
-    format: hasRuff ? pythonRunCommand(runner, "ruff format --check .") : null,
+    format: hasRuff
+      ? pythonRunCommand(runner, "ruff format --check .")
+      : hasBlack
+        ? pythonRunCommand(runner, "black --check .")
+        : null,
     test: hasPytest ? pythonRunCommand(runner, "pytest") : null,
   };
 }
@@ -311,6 +471,51 @@ function pythonRunCommand(runner: string | null, command: string): string {
   return command;
 }
 
+async function rubyDefaultCommands(root: string): Promise<ProjectCommands> {
+  const source = await rubyDependencySource(root);
+  const dependencies = rubyDependencyNames(source);
+  const hasBundle = await hasBundlerConfig(root);
+  const hasRspec =
+    dependencies.has("rspec") ||
+    dependencies.has("rspec-rails") ||
+    (await containsRubySpecFile(root, 5));
+  const hasMinitest = dependencies.has("minitest") || (await containsRubyTestFile(root, 5));
+  const hasRubocop =
+    hasRubocopDependency(dependencies) ||
+    (await pathExists(join(root, ".rubocop.yml"))) ||
+    (await pathExists(join(root, ".rubocop_todo.yml")));
+  const run = hasBundle ? "bundle exec " : "";
+  return {
+    typecheck: null,
+    lint: hasRubocop ? `${run}rubocop` : null,
+    format: null,
+    test: hasRspec ? `${run}rspec` : hasMinitest ? `${run}rake test` : null,
+  };
+}
+
+function hasRubocopDependency(dependencies: Set<string>): boolean {
+  return [...dependencies].some(
+    (dependency) => dependency === "rubocop" || dependency.startsWith("rubocop-"),
+  );
+}
+
+async function hasBundlerConfig(root: string): Promise<boolean> {
+  return (await pathExists(join(root, "Gemfile"))) || (await pathExists(join(root, "gems.rb")));
+}
+
+async function rubyDependencySource(root: string): Promise<string> {
+  const chunks: string[] = [];
+  for (const path of ["Gemfile", "gems.rb"]) {
+    if (await pathExists(join(root, path))) {
+      chunks.push(await readFile(join(root, path), "utf8"));
+    }
+  }
+  for (const path of await rubyGemspecPaths(root)) {
+    chunks.push(await readFile(join(root, path), "utf8"));
+  }
+  return stripRubyComments(chunks.join("\n"));
+}
+
 async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
   const info: PythonProjectInfo = {
     dependencies: new Set(),
@@ -341,7 +546,7 @@ async function pythonProjectInfo(root: string): Promise<PythonProjectInfo> {
     if (/^\s*(?:\[tool:pytest\]|\[pytest\])\s*(?:#.*)?$/mu.test(source)) {
       info.hasPytestConfig = true;
     }
-    for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff)\]/gmu)) {
+    for (const toolMatch of source.matchAll(/^\s*\[(mypy|pyright|ruff|black)\]/gmu)) {
       if (toolMatch[1] !== undefined) {
         info.tools.add(toolMatch[1]);
       }
@@ -667,15 +872,62 @@ async function containsSwiftFile(dir: string): Promise<boolean> {
   return false;
 }
 
-function detectFrameworks(pkg: PackageJson | null): string[] {
+async function detectFrameworks(
+  root: string,
+  pkg: PackageJson | null,
+  composer: ComposerJson | null,
+): Promise<string[]> {
   const deps = dependencyNames(pkg);
+  const composerDeps = composerDependencyNames(composer);
   const frameworks: string[] = [];
   for (const name of ["next", "express", "fastify", "hono", "vitest"]) {
     if (deps.has(name)) {
       frameworks.push(name);
     }
   }
+  if (composerDeps.has("laravel/framework")) {
+    frameworks.push("laravel");
+  }
+  if (composerDeps.has("symfony/framework-bundle")) {
+    frameworks.push("symfony");
+  }
+  if (composerDeps.has("slim/slim")) {
+    frameworks.push("slim");
+  }
+  if (await isPythonProject(root)) {
+    const info = await pythonProjectInfo(root);
+    for (const name of ["flask", "fastapi", "django", "pytest"]) {
+      if (info.dependencies.has(name)) {
+        frameworks.push(name);
+      }
+    }
+    for (const name of await pythonImportedFrameworks(root)) {
+      if (!frameworks.includes(name)) {
+        frameworks.push(name);
+      }
+    }
+  }
+  for (const name of await detectRubyFrameworks(root)) {
+    if (!frameworks.includes(name)) {
+      frameworks.push(name);
+    }
+  }
+  return uniqueStrings(frameworks);
+}
+
+async function detectRubyFrameworks(root: string): Promise<string[]> {
+  const source = await rubyDependencySource(root);
+  const frameworks: string[] = [];
+  for (const name of ["jekyll", "rails", "sinatra"]) {
+    if (new RegExp(`\\b${name}\\b`, "iu").test(source)) {
+      frameworks.push(name);
+    }
+  }
   return frameworks;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function dependencyNames(pkg: PackageJson | null): Set<string> {
@@ -702,6 +954,12 @@ async function detectLanguages(root: string): Promise<string[]> {
     ["python", "setup.py"],
     ["python", "setup.cfg"],
     ["python", "requirements.txt"],
+    ["php", "composer.json"],
+    ["php", "artisan"],
+    ["ruby", "Gemfile"],
+    ["ruby", "gems.rb"],
+    ["ruby", "Rakefile"],
+    ["ruby", "config.ru"],
   ];
   const languages: string[] = [];
   for (const [language, file] of checks) {
@@ -712,6 +970,12 @@ async function detectLanguages(root: string): Promise<string[]> {
   if (!languages.includes("python") && (await containsReviewablePythonFile(root))) {
     languages.push("python");
   }
+  if (!languages.includes("java") && (await containsReviewableJavaFile(root))) {
+    languages.push("java");
+  }
+  if (!languages.includes("ruby") && (await isRubyProject(root))) {
+    languages.push("ruby");
+  }
   if (
     !languages.includes("swift") &&
     ((await containsFileNamed(root, "Package.swift", 5)) ||
@@ -721,12 +985,58 @@ async function detectLanguages(root: string): Promise<string[]> {
   }
   if (
     !languages.includes("kotlin") &&
-    ((await containsFileWithExtension(root, ".kt", 5)) ||
+    ((await containsReviewableKotlinFile(root)) ||
+      (await containsFileWithExtension(root, ".kt", 5)) ||
       (await containsFileWithExtension(root, ".kts", 5)))
   ) {
     languages.push("kotlin");
   }
+  if (!languages.includes("c") && (await containsCFile(root))) {
+    languages.push("c");
+  }
+  if (!languages.includes("cpp") && (await containsCppFile(root))) {
+    languages.push("cpp");
+  }
+  if (!languages.includes("php") && (await containsReviewablePhpFile(root))) {
+    languages.push("php");
+  }
   return languages;
+}
+
+async function containsCFile(root: string): Promise<boolean> {
+  return containsFileWithExtension(root, ".c", 5, shouldSkipCOrCppSearchEntry);
+}
+
+async function containsCppFile(root: string): Promise<boolean> {
+  return (
+    (await containsFileWithExtension(root, ".C", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtension(root, ".H", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cpp", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cc", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cxx", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hpp", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hh", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".hxx", 5, shouldSkipCOrCppSearchEntry))
+  );
+}
+
+const jvmSourceSearchRoots = ["src", "app", "apps", "lib"] as const;
+
+async function containsReviewableJavaFile(root: string): Promise<boolean> {
+  return containsReviewableJvmFile(root, ".java");
+}
+
+async function containsReviewableKotlinFile(root: string): Promise<boolean> {
+  return containsReviewableJvmFile(root, ".kt");
+}
+
+async function containsReviewableJvmFile(root: string, extension: string): Promise<boolean> {
+  for (const prefix of jvmSourceSearchRoots) {
+    if (await containsFileWithExtension(join(root, prefix), extension, 8, undefined, prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function isPythonProject(root: string): Promise<boolean> {
@@ -739,31 +1049,161 @@ async function isPythonProject(root: string): Promise<boolean> {
   );
 }
 
+async function isRubyProject(root: string): Promise<boolean> {
+  if (
+    (await pathExists(join(root, "Gemfile"))) ||
+    (await pathExists(join(root, "gems.rb"))) ||
+    (await pathExists(join(root, "Rakefile"))) ||
+    (await pathExists(join(root, "config.ru"))) ||
+    (await rubyGemspecPaths(root, { includeNested: true })).length > 0
+  ) {
+    return true;
+  }
+  return containsReviewableRubyFile(root);
+}
+
 async function containsReviewablePythonFile(root: string): Promise<boolean> {
-  for (const prefix of ["src", "app", "apps", "lib", "scripts"]) {
-    if (await containsFileWithExtension(join(root, prefix), ".py", 4)) {
+  if (await containsRootReviewablePythonFile(root)) {
+    return true;
+  }
+  for (const prefix of pythonSourceSearchRoots) {
+    if (
+      await containsFileMatching(
+        join(root, prefix),
+        4,
+        isReviewablePythonFileName,
+        undefined,
+        prefix,
+      )
+    ) {
       return true;
     }
   }
   return containsFileNamed(root, "__init__.py", 3);
 }
 
-async function containsFileNamed(root: string, name: string, maxDepth: number): Promise<boolean> {
-  return containsFileMatching(root, maxDepth, (entry) => entry === name);
+async function containsReviewablePhpFile(root: string): Promise<boolean> {
+  for (const prefix of ["app", "routes", "config", "database", "tests"]) {
+    if (await containsFileWithExtension(join(root, prefix), ".php", 4, undefined, prefix)) {
+      return true;
+    }
+  }
+  return false;
 }
 
-async function containsFileWithExtension(
-  root: string,
-  extension: string,
-  maxDepth: number,
-): Promise<boolean> {
-  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith(extension));
+const pythonSourceSearchRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;
+
+async function containsRootReviewablePythonFile(root: string): Promise<boolean> {
+  return (await readdir(root, { withFileTypes: true }).catch(() => [])).some(
+    (entry) => entry.isFile() && isReviewablePythonFileName(entry.name),
+  );
 }
 
-async function containsFileMatching(
+function isReviewablePythonFileName(entry: string): boolean {
+  return (
+    entry.endsWith(".py") &&
+    !/^test_[^/]+\.py$/u.test(entry) &&
+    !entry.endsWith("_test.py") &&
+    !/(?:generated|_pb2|_pb2_grpc|\.gen)\.py$/iu.test(entry)
+  );
+}
+
+async function pythonImportedFrameworks(root: string): Promise<string[]> {
+  const frameworks = new Set<string>();
+  for (const path of await pythonFrameworkScanFiles(root)) {
+    const source = await readFile(path, "utf8").catch(() => "");
+    for (const name of ["flask", "fastapi", "django"] as const) {
+      const importPattern = new RegExp(
+        `^\\s*(?:from\\s+${name}\\s+import\\s+|import\\s+${name}\\b)`,
+        "mu",
+      );
+      if (importPattern.test(source)) {
+        frameworks.add(name);
+      }
+    }
+  }
+  return [...frameworks];
+}
+
+async function pythonFrameworkScanFiles(root: string): Promise<string[]> {
+  const files: string[] = [];
+  for (const entry of await readdir(root, { withFileTypes: true }).catch(() => [])) {
+    if (entry.isFile() && isReviewablePythonFileName(entry.name)) {
+      files.push(join(root, entry.name));
+    }
+  }
+  for (const prefix of pythonSourceSearchRoots) {
+    await collectPythonFrameworkScanFiles(join(root, prefix), 4, files, prefix);
+  }
+  return [...new Set(files)].slice(0, 200);
+}
+
+async function collectPythonFrameworkScanFiles(
   dir: string,
   remainingDepth: number,
-  predicate: (entry: string) => boolean,
+  files: string[],
+  relativeDir = "",
+): Promise<void> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return;
+  }
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = relativeDir === "" ? entry.name : `${relativeDir}/${entry.name}`;
+    if (shouldSkipSearchEntry(entry.name, path)) {
+      continue;
+    }
+    const full = join(dir, entry.name);
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    if (entry.isFile() && isReviewablePythonFileName(entry.name)) {
+      files.push(full);
+    } else if (entry.isDirectory()) {
+      await collectPythonFrameworkScanFiles(full, remainingDepth - 1, files, path);
+    }
+  }
+}
+
+async function containsReviewableRubyFile(root: string): Promise<boolean> {
+  if (await containsFileMatching(root, 0, isRootReviewableRubyFileName)) {
+    return true;
+  }
+  for (const prefix of ["app", "lib"]) {
+    if (
+      await containsFileMatching(join(root, prefix), 4, isReviewableRubyFileName, undefined, prefix)
+    ) {
+      return true;
+    }
+  }
+  for (const prefix of ["scripts", "script", "exe", "bin"]) {
+    if (await containsRubyExecutableSource(join(root, prefix), 4, prefix)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isReviewableRubyFileName(entry: string): boolean {
+  return (
+    entry.endsWith(".rb") &&
+    !entry.endsWith("_spec.rb") &&
+    !entry.endsWith("_test.rb") &&
+    !/(?:generated|\.gen)\.rb$/iu.test(entry)
+  );
+}
+
+function isRootReviewableRubyFileName(entry: string): boolean {
+  return isReviewableRubyFileName(entry) && !entry.startsWith("test_");
+}
+
+async function containsRubyExecutableSource(
+  dir: string,
+  remainingDepth: number,
+  relativeDir = "",
 ): Promise<boolean> {
   if (remainingDepth < 0 || !(await pathExists(dir))) {
     return false;
@@ -773,32 +1213,149 @@ async function containsFileMatching(
     return false;
   }
   for (const entry of await readdir(dir)) {
+    const path = relativeDir === "" ? entry : `${relativeDir}/${entry}`;
+    if (shouldSkipSearchEntry(entry, path)) {
+      continue;
+    }
+    const full = join(dir, entry);
+    const info = await lstat(full);
+    if (info.isSymbolicLink()) {
+      continue;
+    }
     if (
-      [
-        "node_modules",
-        "dist",
-        "build",
-        "target",
-        ".build",
-        ".swiftpm",
-        ".git",
-        ".clawpatch",
-        ".worktrees",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".mypy_cache",
-        ".ruff_cache",
-        ".pytest_cache",
-        "fixtures",
-        "__fixtures__",
-        "testdata",
-        "Pods",
-        "Carthage",
-        "SourcePackages",
-        "DerivedData",
-      ].includes(entry)
+      info.isFile() &&
+      (isReviewableRubyFileName(entry) ||
+        (isRubyShebangCandidate(entry) && (await fileHasRubyShebang(full))))
     ) {
+      return true;
+    }
+    if (
+      info.isDirectory() &&
+      (await containsRubyExecutableSource(full, remainingDepth - 1, path))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isRubyShebangCandidate(path: string): boolean {
+  return !path.includes(".");
+}
+
+async function containsRubySpecFile(root: string, maxDepth: number): Promise<boolean> {
+  return containsFileMatching(root, maxDepth, (entry) => entry.endsWith("_spec.rb"));
+}
+
+async function containsRubyTestFile(root: string, maxDepth: number): Promise<boolean> {
+  return (
+    (await containsFileMatching(root, maxDepth, (entry) => entry.endsWith("_test.rb"))) ||
+    (await containsRubyPrefixedMinitestFile(root, maxDepth))
+  );
+}
+
+function isRubyPrefixedMinitestFileName(entry: string): boolean {
+  return /^test_.+\.rb$/u.test(entry) && !/^test_helpers?\.rb$/u.test(entry);
+}
+
+async function containsRubyPrefixedMinitestFile(
+  dir: string,
+  remainingDepth: number,
+  relativeDir = "",
+): Promise<boolean> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return false;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return false;
+  }
+  for (const entry of await readdir(dir)) {
+    if (shouldSkipSearchEntry(entry)) {
+      continue;
+    }
+    const full = join(dir, entry);
+    const path = relativeDir === "" ? entry : `${relativeDir}/${entry}`;
+    const info = await lstat(full);
+    if (info.isSymbolicLink()) {
+      continue;
+    }
+    if (
+      info.isFile() &&
+      isRubyPrefixedMinitestFileName(entry) &&
+      (relativeDir === "" || /(^|\/)test$/u.test(relativeDir))
+    ) {
+      return true;
+    }
+    if (
+      info.isDirectory() &&
+      (await containsRubyPrefixedMinitestFile(full, remainingDepth - 1, path))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function containsFileNamed(
+  root: string,
+  name: string,
+  maxDepth: number,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+): Promise<boolean> {
+  return containsFileMatching(root, maxDepth, (entry) => entry === name, skipEntry);
+}
+
+async function containsFileWithExtension(
+  root: string,
+  extension: string,
+  maxDepth: number,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
+): Promise<boolean> {
+  return containsFileMatching(
+    root,
+    maxDepth,
+    (entry) => entry.endsWith(extension),
+    skipEntry,
+    relativeDir,
+  );
+}
+
+async function containsFileWithExtensionIgnoringCase(
+  root: string,
+  extension: string,
+  maxDepth: number,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
+): Promise<boolean> {
+  const lowercaseExtension = extension.toLowerCase();
+  return containsFileMatching(
+    root,
+    maxDepth,
+    (entry) => entry.toLowerCase().endsWith(lowercaseExtension),
+    skipEntry,
+    relativeDir,
+  );
+}
+
+async function containsFileMatching(
+  dir: string,
+  remainingDepth: number,
+  predicate: (entry: string) => boolean,
+  skipEntry: (entry: string, relativePath: string) => boolean = shouldSkipSearchEntry,
+  relativeDir = "",
+): Promise<boolean> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return false;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return false;
+  }
+  for (const entry of await readdir(dir)) {
+    const relativePath = relativeDir.length === 0 ? entry : `${relativeDir}/${entry}`;
+    if (skipEntry(entry, relativePath)) {
       continue;
     }
     const full = join(dir, entry);
@@ -809,11 +1366,54 @@ async function containsFileMatching(
     if (info.isFile() && predicate(entry)) {
       return true;
     }
-    if (info.isDirectory() && (await containsFileMatching(full, remainingDepth - 1, predicate))) {
+    if (
+      info.isDirectory() &&
+      (await containsFileMatching(full, remainingDepth - 1, predicate, skipEntry, relativePath))
+    ) {
       return true;
     }
   }
   return false;
+}
+
+function shouldSkipSearchEntry(entry: string, relativePath = entry): boolean {
+  if (entry === "vendor" && relativePath === "vendor") {
+    return true;
+  }
+  return [
+    "node_modules",
+    "dist",
+    "build",
+    "target",
+    ".build",
+    ".swiftpm",
+    ".git",
+    ".clawpatch",
+    ".worktrees",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".pytest_cache",
+    ".bundle",
+    "fixtures",
+    "__fixtures__",
+    "testdata",
+    "Pods",
+    "Carthage",
+    "SourcePackages",
+    "DerivedData",
+  ].includes(entry);
+}
+
+function shouldSkipCOrCppSearchEntry(entry: string): boolean {
+  return (
+    shouldSkipSearchEntry(entry) ||
+    entry === "vendor" ||
+    entry === "CMakeFiles" ||
+    /^cmake-build-[^/]+$/u.test(entry)
+  );
 }
 
 function stripLineComments(source: string, marker: "//"): string {

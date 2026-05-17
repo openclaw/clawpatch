@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
-import { __testing } from "./provider.js";
+import { __testing, extractJson, providerByName } from "./provider.js";
 
 // eslint-disable-next-line no-underscore-dangle
 const { extractAcpxJson, parseAcpxAgent } = __testing;
@@ -42,6 +42,37 @@ function expectMalformed(fn: () => unknown, message: RegExp): void {
   }
   throw new Error("expected malformed-output");
 }
+
+describe("extractJson", () => {
+  it("parses strict JSON directly", () => {
+    const input = '{"findings":[],"inspected":{"files":[],"symbols":[],"notes":[]}}';
+    expect(extractJson(input)).toEqual({
+      findings: [],
+      inspected: { files: [], symbols: [], notes: [] },
+    });
+  });
+
+  it("extracts JSON from json code fence", () => {
+    const input =
+      'Here is the result:\n\n```json\n{"outcome":"fixed","reasoning":"all good","commands":[]}\n```';
+    expect(extractJson(input)).toEqual({ outcome: "fixed", reasoning: "all good", commands: [] });
+  });
+
+  it("extracts JSON from generic code fence", () => {
+    const input = '```\n{"risk":"low","steps":[]}\n```';
+    expect(extractJson(input)).toEqual({ risk: "low", steps: [] });
+  });
+
+  it("recovers JSON via balanced brace heuristic", () => {
+    const input = 'Some leading text { "title": "x", "nested": { "a": 1 } } trailing';
+    expect(extractJson(input)).toEqual({ title: "x", nested: { a: 1 } });
+  });
+
+  it("returns null for text with no valid JSON", () => {
+    expect(extractJson("no json here at all")).toBeNull();
+    expect(extractJson("just some words { unbalanced")).toBeNull();
+  });
+});
 
 describe("parseAcpxAgent", () => {
   it("defaults null model to codex/null", () => {
@@ -166,5 +197,18 @@ describe("extractAcpxJson", () => {
     expect(lines).toHaveLength(256);
     expect(stdout.length).toBeGreaterThan(8_000);
     expect(extractAcpxJson(stdout)).toEqual({ large: true });
+  });
+});
+
+describe("providerByName", () => {
+  it("returns provider instances for optional CLI-backed providers", () => {
+    expect(providerByName("acpx").name).toBe("acpx");
+    expect(providerByName("grok").name).toBe("grok");
+  });
+
+  it("still supports codex, mock, and mock-fail", () => {
+    expect(providerByName("codex").name).toBe("codex");
+    expect(providerByName("mock").name).toBe("mock");
+    expect(providerByName("mock-fail").name).toBe("mock-fail");
   });
 });

@@ -1,0 +1,34 @@
+# Protect ownership and automation rules.
+/.github/CODEOWNERS @openclaw/openclaw-secops
+
+# WARNING: GitHub CODEOWNERS uses last-match-wins semantics.
+# If you add overlapping rules below the secops block, include @openclaw/openclaw-secops
+# on those entries too or required secops review can be bypassed.
+
+# Security automation and disclosure surfaces.
+/SECURITY.md @openclaw/openclaw-secops
+/.github/codeql/ @openclaw/openclaw-secops
+/.github/dependabot.yml @openclaw/openclaw-secops
+/.github/workflows/ @openclaw/openclaw-secops
+
+# Package integrity surfaces.
+/package.json @openclaw/openclaw-secops
+/pnpm-lock.yaml @openclaw/openclaw-secops
+
+# Provider execution, prompt construction, config, and patch workflow surfaces.
+/src/exec.ts @openclaw/openclaw-secops
+/src/provider.ts @openclaw/openclaw-secops
+/src/prompt.ts @openclaw/openclaw-secops
+/src/config.ts @openclaw/openclaw-secops
+/src/app.ts @openclaw/openclaw-secops
+/src/workflow.test.ts @openclaw/openclaw-secops
+
+# File mapping controls what code and config can be sent to providers.
+/src/mapper.ts @openclaw/openclaw-secops
+/src/mappers/ @openclaw/openclaw-secops
+
+# Security, provider, and validation documentation.
+/docs/safety.md @openclaw/openclaw-secops
+/docs/providers.md @openclaw/openclaw-secops
+/docs/configuration.md @openclaw/openclaw-secops
+/docs/validation.md @openclaw/openclaw-secops

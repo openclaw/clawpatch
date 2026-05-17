@@ -1,16 +1,22 @@
 import { nowIso } from "./fs.js";
 import { stableId } from "./id.js";
+import { cCppSeeds } from "./mappers/c-cpp.js";
 import { configSeeds } from "./mappers/config.js";
 import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
 import { gradleSeeds } from "./mappers/gradle.js";
+import { laravelSeeds } from "./mappers/laravel.js";
 import { nextSeeds } from "./mappers/next.js";
 import { nodeSeeds } from "./mappers/node.js";
 import { pythonSeeds } from "./mappers/python.js";
+import { reactSeeds } from "./mappers/react.js";
+import { discoverNodeProjects } from "./mappers/projects.js";
+import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
 import { nearbyTests } from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
-import { FeatureMapper, FeatureSeed } from "./mappers/types.js";
+import { turboTaskGraph } from "./mappers/turbo.js";
+import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
 import { FeatureRecord, ProjectRecord } from "./types.js";
 
 export type MapResult = {
@@ -23,12 +29,16 @@ export type MapResult = {
 const featureMappers: FeatureMapper[] = [
   { name: "node", map: nodeSeeds },
   { name: "next", map: nextSeeds },
+  { name: "react", map: reactSeeds },
   { name: "go", map: goSeeds },
   { name: "python", map: pythonSeeds },
+  { name: "ruby", map: rubySeeds },
   { name: "rust", map: rustSeeds },
+  { name: "c-cpp", map: cCppSeeds },
   { name: "swift", map: swiftSeeds },
   { name: "apple", map: appleSeeds },
   { name: "gradle", map: gradleSeeds },
+  { name: "laravel", map: laravelSeeds },
   { name: "config", map: configSeeds },
 ];
 
@@ -44,12 +54,8 @@ export async function mapFeatures(
   let changed = 0;
   const now = nowIso();
   for (const seed of seeds) {
-    const featureId = stableId("feat", [
-      seed.kind,
-      seed.source,
-      seed.entryPath,
-      seed.command ?? seed.route ?? seed.symbol ?? "",
-    ]);
+    const identity = featureIdentity(seed, existingById);
+    const featureId = identity.featureId;
     const previous = existingById.get(featureId);
     const discoveredTests =
       seed.skipNearbyTests === true
@@ -59,6 +65,9 @@ export async function mapFeatures(
             seed.entryPath,
             seed.testCommand ?? project.detected.commands.test,
             seed.testPrefixes ?? [],
+            [seed.command, seed.identityKey].filter(
+              (name): name is string => typeof name === "string",
+            ),
           );
     const tests = uniqueTests([...(seed.tests ?? []), ...discoveredTests]);
     const contextFiles = uniqueFileRefs([
@@ -76,7 +85,7 @@ export async function mapFeatures(
       entrypoints: [
         {
           path: seed.entryPath,
-          symbol: seed.symbol,
+          symbol: identity.symbol,
           route: seed.route,
           command: seed.command,
         },
@@ -119,6 +128,47 @@ export async function mapFeatures(
   };
 }
 
+function featureIdentity(
+  seed: FeatureSeed,
+  existingById: Map<string, FeatureRecord>,
+): { featureId: string; symbol: string | null } {
+  const symbol = effectiveSymbol(seed, existingById);
+  return {
+    featureId: stableId("feat", [
+      seed.kind,
+      seed.source,
+      seed.entryPath,
+      seed.identityKey ?? seed.command ?? seed.route ?? symbol ?? "",
+    ]),
+    symbol,
+  };
+}
+
+function effectiveSymbol(
+  seed: FeatureSeed,
+  existingById: Map<string, FeatureRecord>,
+): string | null {
+  if (!isDisambiguatedCppLibrary(seed)) {
+    return seed.symbol;
+  }
+  const legacyId = stableId("feat", [seed.kind, seed.source, seed.entryPath, ""]);
+  const previous = existingById.get(legacyId);
+  if (seed.symbol !== null || previous?.title === seed.title) {
+    return previous?.title === seed.title ? null : seed.symbol;
+  }
+  const previousSymbol = disambiguatorFromTitle(seed.title);
+  const previousId = stableId("feat", [seed.kind, seed.source, seed.entryPath, previousSymbol]);
+  return existingById.get(previousId)?.title === seed.title ? previousSymbol : null;
+}
+
+function isDisambiguatedCppLibrary(seed: FeatureSeed): boolean {
+  return seed.kind === "library" && ["cmake-lib", "autotools-lib"].includes(seed.source);
+}
+
+function disambiguatorFromTitle(title: string): string {
+  return title.split(" ").at(-1) ?? title;
+}
+
 function uniqueFileRefs(refs: Array<{ path: string; reason: string }>): Array<{
   path: string;
   reason: string;
@@ -152,7 +202,12 @@ function uniqueTests(tests: Array<{ path: string; command: string | null }>): Ar
 }
 
 async function collectSeeds(root: string): Promise<FeatureSeed[]> {
-  const groups = await Promise.all(featureMappers.map((mapper) => mapper.map(root)));
+  const projects = await discoverNodeProjects(root);
+  const context: MapperContext = {
+    projects,
+    taskGraph: await turboTaskGraph(root, projects),
+  };
+  const groups = await Promise.all(featureMappers.map((mapper) => mapper.map(root, context)));
   return dedupeSeeds(groups.flat());
 }
 
