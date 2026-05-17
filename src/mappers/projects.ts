@@ -29,6 +29,7 @@ export type NodeProjectInfo = {
   projectType: string | null;
   targets: Record<string, NodeProjectTarget>;
   packageManager: string;
+  nxPackageManager: string;
 };
 
 type CandidateContextFile = {
@@ -38,7 +39,7 @@ type CandidateContextFile = {
 
 export async function discoverNodeProjects(root: string): Promise<NodeProjectInfo[]> {
   const rootPackage = await readPackageJson(root);
-  const packageManager = await detectNodePackageManager(root);
+  const rootPackageManager = await detectNodePackageManager(root);
   const byRoot = new Map<string, NodeProjectInfo>();
 
   for (const packageRoot of await discoverPackageRoots(root, rootPackage)) {
@@ -56,7 +57,8 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
       sourceRoot: null,
       projectType: null,
       targets: {},
-      packageManager,
+      packageManager: await nodePackageManagerForPackage(root, packageRoot, rootPackageManager),
+      nxPackageManager: rootPackageManager,
     });
   }
 
@@ -85,11 +87,35 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
       sourceRoot: nxProject.sourceRoot,
       projectType: nxProject.projectType,
       targets: nxProject.targets,
-      packageManager,
+      packageManager: await nodePackageManagerForPackage(root, projectRoot, rootPackageManager),
+      nxPackageManager: rootPackageManager,
     });
   }
 
   return [...byRoot.values()].toSorted((left, right) => left.root.localeCompare(right.root));
+}
+
+async function nodePackageManagerForPackage(
+  root: string,
+  packageRoot: string,
+  rootPackageManager: string,
+): Promise<string> {
+  if (packageRoot === ".") {
+    return rootPackageManager;
+  }
+  const packageDir = join(root, packageRoot);
+  for (const lockfile of [
+    "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "package-lock.json",
+  ]) {
+    if (await pathExists(join(packageDir, lockfile))) {
+      return detectNodePackageManager(packageDir);
+    }
+  }
+  return rootPackageManager;
 }
 
 export function projectTags(project: NodeProjectInfo): string[] {
@@ -117,7 +143,7 @@ export function projectTargetCommand(
     return graphCommand;
   }
   if (project.targets[target] !== undefined) {
-    return nxCommand(project.packageManager, target, project.name);
+    return nxCommand(project.nxPackageManager, target, project.name);
   }
   if (project.packageJson !== null && packageScripts(project.packageJson)[target] !== undefined) {
     return scriptCommand(project.packageManager, project.root, target);
@@ -131,6 +157,9 @@ export function packageRelativePath(packageRoot: string, path: string): string {
 
 export function scriptCommand(packageManager: string, packageRoot: string, script: string): string {
   if (packageRoot === ".") {
+    if (packageManager === "bun") {
+      return `bun run ${script}`;
+    }
     return packageManager === "npm" ? `npm run ${script}` : `${packageManager} ${script}`;
   }
   if (packageManager === "pnpm") {
@@ -242,8 +271,17 @@ async function workspacePatterns(root: string, pkg: NodePackageJson | null): Pro
       patterns.add(pattern);
     }
   }
-  for (const fallback of ["packages/*", "apps/*", "extensions/*", "plugins/*"]) {
-    if (await pathExists(join(root, fallback.slice(0, -2)))) {
+  for (const fallback of [
+    "frontend",
+    "client",
+    "web",
+    "ui",
+    "packages/*",
+    "apps/*",
+    "extensions/*",
+    "plugins/*",
+  ]) {
+    if (await pathExists(join(root, fallback.replace(/\/\*$/u, "")))) {
       patterns.add(fallback);
     }
   }

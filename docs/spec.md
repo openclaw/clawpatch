@@ -704,6 +704,7 @@ Mappers:
 - Express/Fastify/Hono route registrations.
 - Go `cmd/*` commands and `internal/*` packages.
 - Rust Cargo commands, libraries, workspace crates, and integration tests.
+- C/C++ standalone `main()` files, CMake targets, and autotools targets.
 - SwiftPM executable targets, library targets, and test suites.
 - Test suites from common test file globs.
 - Config/release features from package/build/release files.

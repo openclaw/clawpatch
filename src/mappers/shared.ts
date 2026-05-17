@@ -14,45 +14,61 @@ export async function nearbyTests(
   entryPath: string,
   testCommand: string | null,
   seedTestPrefixes: string[],
+  seedTestNames: string[] = [],
 ): Promise<TestRef[]> {
   const dir = dirname(entryPath);
   const base = entryPath.replace(/\.[^.]+$/u, "");
   const rustTestPrefixes = rustTestPrefixesForEntry(entryPath);
-  const all = await walk(root, [
-    dir === "." ? "" : dir,
-    "test",
-    "Tests",
-    "tests",
-    "__tests__",
-    "src",
-    ...rustTestPrefixes,
-    ...seedTestPrefixes,
-  ]);
+  const isRustEntry = entryPath.endsWith(".rs");
+  const isSwiftEntry = entryPath.endsWith(".swift");
+  const isCOrCppEntry = isCOrCppPath(entryPath);
+  const all = await walk(
+    root,
+    [
+      dir === "." ? "" : dir,
+      "test",
+      "Tests",
+      "tests",
+      "__tests__",
+      "src",
+      ...rustTestPrefixes,
+      ...seedTestPrefixes,
+    ],
+    isCOrCppEntry ? shouldSkipCOrCppNearbyPath : shouldSkip,
+  );
   const stem =
     entryPath
       .split("/")
       .at(-1)
       ?.replace(/\.[^.]+$/u, "") ?? "";
+  const stemTestName = testNameToken(stem);
   const swiftTestPrefixes = seedTestPrefixes.length > 0 ? [] : swiftTestPrefixesForEntry(entryPath);
-  const isRustEntry = entryPath.endsWith(".rs");
-  const isSwiftEntry = entryPath.endsWith(".swift");
+  const cOrCppTestNames = seedTestNames.map(testNameToken).filter((name) => name.length > 0);
   const tests = all
     .filter((path) => path !== entryPath)
     .filter(
       (path) =>
         (isRustEntry && path.endsWith(".rs") && isTestPath(path)) ||
+        (isCOrCppEntry && isCOrCppPath(path) && isCOrCppTestPath(path)) ||
         (isSwiftEntry &&
           path.endsWith(".swift") &&
           (isTestPath(path) ||
             seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix)))) ||
-        (!isRustEntry && !isSwiftEntry && isJsTestPath(path)),
+        (!isRustEntry && !isSwiftEntry && !isCOrCppEntry && isJsTestPath(path)),
     )
     .filter(
       (path) =>
         path.startsWith(base) ||
-        path.includes(stem) ||
+        (!isCOrCppEntry && path.includes(stem)) ||
+        (isCOrCppEntry &&
+          stemTestName !== "main" &&
+          stemTestName.length > 0 &&
+          pathMatchesTestName(path, stemTestName)) ||
         (path.endsWith(".rs") &&
           rustTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
+        (isCOrCppPath(path) &&
+          seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
+        (isCOrCppPath(path) && cOrCppTestNames.some((name) => pathMatchesTestName(path, name))) ||
         (path.endsWith(".swift") &&
           seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (path.endsWith(".swift") &&
@@ -62,7 +78,11 @@ export async function nearbyTests(
   return tests.map((path) => ({ path, command: testCommand }));
 }
 
-export async function walk(root: string, prefixes: string[]): Promise<string[]> {
+export async function walk(
+  root: string,
+  prefixes: string[],
+  skipPath: (path: string) => boolean = shouldSkip,
+): Promise<string[]> {
   const files: string[] = [];
   const seen = new Set<string>();
   const seenRoots = new Set<string>();
@@ -85,7 +105,7 @@ export async function walk(root: string, prefixes: string[]): Promise<string[]> 
     }
     const rel = normalize(relative(realRoot, canonicalStart));
     if (info.isFile()) {
-      if (!seen.has(rel) && !shouldSkip(rel)) {
+      if (!seen.has(rel) && !skipPath(rel)) {
         seen.add(rel);
         files.push(rel);
       }
@@ -95,7 +115,7 @@ export async function walk(root: string, prefixes: string[]): Promise<string[]> 
       continue;
     }
     seenRoots.add(canonicalStart);
-    await walkDir(realRoot, canonicalStart, files, seen);
+    await walkDir(realRoot, canonicalStart, files, seen, skipPath);
   }
   return files.toSorted();
 }
@@ -105,6 +125,7 @@ async function walkDir(
   dir: string,
   files: string[],
   seen: Set<string>,
+  skipPath: (path: string) => boolean,
 ): Promise<void> {
   const dirInfo = await lstat(dir);
   if (dirInfo.isSymbolicLink()) {
@@ -115,14 +136,14 @@ async function walkDir(
     return;
   }
   const relDir = normalize(relative(root, dir));
-  if (shouldSkip(relDir)) {
+  if (skipPath(relDir)) {
     return;
   }
   const entries = await readdir(dir);
   for (const entry of entries) {
     const full = join(dir, entry);
     const rel = normalize(relative(root, full));
-    if (seen.has(rel) || shouldSkip(rel)) {
+    if (seen.has(rel) || skipPath(rel)) {
       continue;
     }
     seen.add(rel);
@@ -131,7 +152,7 @@ async function walkDir(
       continue;
     }
     if (info.isDirectory()) {
-      await walkDir(root, full, files, seen);
+      await walkDir(root, full, files, seen, skipPath);
     } else if (info.isFile()) {
       files.push(rel);
     }
@@ -172,7 +193,7 @@ export function shouldSkip(path: string): boolean {
     return false;
   }
   return (
-    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|__pycache__)(\/|$)/u.test(
+    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
       path,
     ) ||
     path === "target" ||
@@ -230,6 +251,63 @@ export function pathMatchesPrefix(path: string, prefix: string): boolean {
   return normalized === "" || path === normalized || path.startsWith(`${normalized}/`);
 }
 
+function pathMatchesTestName(path: string, name: string): boolean {
+  const normalized = testNameToken(path.replace(/\.[^.]+$/u, ""));
+  return (
+    normalized === name ||
+    normalized.startsWith(`${name}_`) ||
+    normalized.endsWith(`_${name}`) ||
+    normalized.includes(`_${name}_`)
+  );
+}
+
+function testNameToken(name: string): string {
+  return name
+    .replace(/\.[^.]+$/u, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
+}
+
+export async function detectNodePackageManager(root: string): Promise<string> {
+  if (
+    (await pathExists(join(root, "pnpm-lock.yaml"))) ||
+    (await pathExists(join(root, "pnpm-workspace.yaml")))
+  ) {
+    return "pnpm";
+  }
+  if (await pathExists(join(root, "yarn.lock"))) {
+    return "yarn";
+  }
+  if (await pathExists(join(root, "bun.lockb"))) {
+    return "bun";
+  }
+  return "npm";
+}
+
+export function nodeScriptCommand(
+  packageManager: string,
+  packageRoot: string,
+  script: string,
+): string {
+  if (packageRoot === ".") {
+    if (packageManager === "bun") {
+      return `bun run ${script}`;
+    }
+    return packageManager === "npm" ? `npm run ${script}` : `${packageManager} ${script}`;
+  }
+  if (packageManager === "pnpm") {
+    return `pnpm --dir ${packageRoot} ${script}`;
+  }
+  if (packageManager === "yarn") {
+    return `yarn --cwd ${packageRoot} ${script}`;
+  }
+  if (packageManager === "bun") {
+    return `bun --cwd ${packageRoot} run ${script}`;
+  }
+  return `npm --prefix ${packageRoot} run ${script}`;
+}
+
 function isTestPath(path: string): boolean {
   return (
     isJsTestPath(path) ||
@@ -242,6 +320,28 @@ function isTestPath(path: string): boolean {
 
 function isJsTestPath(path: string): boolean {
   return /\.(test|spec)\.(ts|tsx|js|jsx)$/u.test(path);
+}
+
+export function isCOrCppPath(path: string): boolean {
+  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/iu.test(path);
+}
+
+export function isCOrCppTestPath(path: string): boolean {
+  const base = path.split("/").at(-1) ?? path;
+  return (
+    /(^|\/)(test|tests|__tests__)\//iu.test(path) ||
+    /^test[_-]/iu.test(base) ||
+    /(?:^|[_-])tests?\./iu.test(base) ||
+    /Tests?\.[^.]+$/u.test(base)
+  );
+}
+
+function shouldSkipCOrCppNearbyPath(path: string): boolean {
+  return shouldSkip(path) || isCOrCppDependencyPath(path) || isSampleProjectPath(path);
+}
+
+function isCOrCppDependencyPath(path: string): boolean {
+  return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
 function swiftTestPrefixesForEntry(entryPath: string): string[] {

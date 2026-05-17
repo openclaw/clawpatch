@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { access, mkdir, readFile, rm, symlink, unlink } from "node:fs/promises";
+import { access, mkdir, open, readFile, readdir, rm, symlink, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import {
   fixCommand,
@@ -20,6 +20,8 @@ import { loadConfig } from "./config.js";
 import { runCommand } from "./exec.js";
 import { changedFilesSince } from "./git.js";
 import {
+  claimFeature,
+  releaseFeatureLock,
   readFeatures,
   readFinding,
   readFindings,
@@ -694,6 +696,126 @@ describe("workflow", () => {
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 
+  it("claims feature locks atomically", async () => {
+    const root = await fixtureRoot("clawpatch-atomic-lock-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "atomic-lock", bin: { atomic: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+
+    const first = {
+      lockedByRunId: "run-one",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
+    };
+    const second = {
+      lockedByRunId: "run-two",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 2,
+    };
+    const results = await Promise.allSettled([
+      claimFeature(paths, feature!.featureId, first),
+      claimFeature(paths, feature!.featureId, second),
+    ]);
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toMatchObject({
+      reason: { code: "lock-conflict" },
+    });
+    expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
+
+    await releaseFeatureLock(paths, feature!.featureId);
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
+  it("cleans up lock files when claim lock payload writes fail", async () => {
+    const root = await fixtureRoot("clawpatch-lock-write-fail-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "lock-write-fail", bin: { lock: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    const probe = await open(join(paths.locks, "probe.json"), "w");
+    const writeFileSpy = vi
+      .spyOn(Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile }, "writeFile")
+      .mockRejectedValueOnce(new Error("simulated lock write failure"));
+    await probe.close();
+    await unlink(join(paths.locks, "probe.json"));
+
+    await expect(
+      claimFeature(paths, feature!.featureId, {
+        lockedByRunId: "run",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      }),
+    ).rejects.toThrow("simulated lock write failure");
+    expect(await readdir(paths.locks)).toEqual([]);
+
+    writeFileSpy.mockRestore();
+  });
+
+  it("does not claim a stale feature after another run finishes it", async () => {
+    const root = await fixtureRoot("clawpatch-stale-lock-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "stale-lock", bin: { stale: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    await writeFeature(paths, {
+      ...feature!,
+      status: "reviewed",
+      lock: null,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await expect(
+      claimFeature(paths, feature!.featureId, {
+        lockedByRunId: "run",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      }),
+    ).rejects.toMatchObject({ code: "lock-conflict" });
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
   it("does not consume features on dry-run review", async () => {
     const root = await fixtureRoot("clawpatch-dry-run-");
     await writeFixture(
@@ -970,6 +1092,7 @@ describe("workflow", () => {
 
     expect(features[0]?.status).toBe("error");
     expect(features[0]?.lock).toBeNull();
+    expect(await readdir(join(root, ".clawpatch/locks"))).toEqual([]);
     await rm(join(root, ".clawpatch"), { recursive: true, force: true });
   });
 
@@ -1017,21 +1140,79 @@ describe("workflow", () => {
     await mapCommand(context);
     const feature = (await readFeatures(paths))[0];
     expect(feature).toBeDefined();
-    await writeFeature(paths, {
-      ...feature!,
-      status: "claimed",
-      lock: {
-        lockedByRunId: "run",
-        lockedAt: new Date().toISOString(),
-        hostname: "test",
-        pid: 1,
-      },
+    await claimFeature(paths, feature!.featureId, {
+      lockedByRunId: "run",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
     });
+    expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
     await cleanLocksCommand(context);
     const cleaned = (await readFeatures(paths))[0];
 
     expect(cleaned?.status).toBe("pending");
     expect(cleaned?.lock).toBeNull();
+    expect(await readdir(paths.locks)).toEqual([]);
+  });
+
+  it("surfaces crash-window lock files in status", async () => {
+    const root = await fixtureRoot("clawpatch-file-lock-status-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "file-lock-status", bin: { clean: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths))[0];
+    expect(feature).toBeDefined();
+    await writeFixture(
+      root,
+      `.clawpatch/locks/${feature!.featureId}.json`,
+      `${JSON.stringify({
+        lockedByRunId: "interrupted",
+        lockedAt: new Date().toISOString(),
+        hostname: "test",
+        pid: 1,
+      })}\n`,
+    );
+
+    expect(await statusCommand(context)).toMatchObject({ activeLocks: 1, lockFiles: 1 });
+  });
+
+  it("cleans interrupted review locks through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-clean-locks-cli-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "clean-locks-cli", bin: { clean: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+
+    await runCli(["--root", root, "init", "--json"]);
+    await runCli(["--root", root, "map", "--json"]);
+
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    expect(feature).toBeDefined();
+    await claimFeature(paths, feature!.featureId, {
+      lockedByRunId: "interrupted",
+      lockedAt: new Date().toISOString(),
+      hostname: "test",
+      pid: 1,
+    });
+
+    const output = await runCli(["--root", root, "clean-locks", "--json"]);
+    const cleaned = (await readFeatures(paths))[0];
+
+    expect(JSON.parse(output.stdout)).toMatchObject({ cleared: 1, lockFilesCleared: 1 });
+    expect(cleaned?.status).toBe("pending");
+    expect(cleaned?.lock).toBeNull();
+    expect(await readdir(paths.locks)).toEqual([]);
   });
 
   it("filters state files from successful fix results", async () => {
