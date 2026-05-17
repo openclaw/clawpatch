@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { packageScripts } from "../detect.js";
 import { pathExists } from "../fs.js";
 import type { NodeProjectInfo } from "./projects.js";
+import { detectNodePackageManager } from "./shared.js";
 import {
   emptyTaskGraph,
   validationTaskNames,
@@ -36,6 +37,7 @@ export async function turboTaskGraph(
 
   const parsed = JSON.parse(await readFile(path, "utf8")) as TurboConfig;
   const taskEntries = taskRecord(parsed.tasks ?? parsed.pipeline);
+  const rootPackageManager = await detectNodePackageManager(root);
   const graph: WorkspaceTaskGraph = {
     runner: "turbo",
     globalDependencies: stringArray(parsed.globalDependencies),
@@ -46,7 +48,11 @@ export async function turboTaskGraph(
   for (const project of projects) {
     const scripts = packageScripts(project.packageJson);
     for (const task of validationTaskNames) {
-      if (scripts[task] === undefined || !hasTaskEntry(taskEntries, project.name, task)) {
+      if (
+        project.root === "." ||
+        scripts[task] === undefined ||
+        !hasTaskEntry(taskEntries, project.name, task)
+      ) {
         continue;
       }
       const metadata = metadataForTask(taskEntries, project.name, task);
@@ -57,7 +63,7 @@ export async function turboTaskGraph(
         projectRoot: project.root,
         projectName: project.name,
         task,
-        command: turboCommand(project.packageManager, task, project.name, project.root),
+        command: turboCommand(rootPackageManager, task, project.name, project.root),
         metadata,
       });
     }

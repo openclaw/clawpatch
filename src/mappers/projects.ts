@@ -136,9 +136,9 @@ export function projectContextFiles(
 export function projectTargetCommand(
   project: NodeProjectInfo,
   target: string,
-  graph?: WorkspaceTaskGraph,
+  graph: WorkspaceTaskGraph,
 ): string | null {
-  const graphCommand = graph === undefined ? null : taskGraphCommand(graph, project, target);
+  const graphCommand = taskGraphCommand(graph, project, target);
   if (graphCommand !== null) {
     return graphCommand;
   }

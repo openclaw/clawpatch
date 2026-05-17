@@ -408,6 +408,55 @@ describe("mapFeatures", () => {
       { path: "apps/web/src/pages/HomePage.test.tsx", command: "pnpm nx test web" },
     ]);
   });
+
+  it("uses Turbo task commands for React route tests", async () => {
+    const root = await fixtureRoot("clawpatch-map-react-turbo-test-command-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "workspace-root", workspaces: ["apps/*"] }, null, 2),
+    );
+    await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - apps/*\n");
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(root, "turbo.json", JSON.stringify({ tasks: { test: {} } }, null, 2));
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify(
+        {
+          name: "web",
+          scripts: { test: "vitest run" },
+          dependencies: { react: "1.0.0", "react-router-dom": "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/App.tsx",
+      [
+        "import { Route, Routes } from 'react-router-dom';",
+        "import HomePage from './pages/HomePage';",
+        'export function App() { return <Routes><Route path="/home" element={<HomePage />} /></Routes>; }',
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "apps/web/src/pages/HomePage.tsx",
+      "export default function HomePage() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "React route /home");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/src/pages/HomePage.test.tsx", command: "pnpm turbo run test --filter web" },
+    ]);
+  });
+
   it("does not map src app-shaped routes without a Next project signal", async () => {
     const root = await fixtureRoot("clawpatch-map-src-non-next-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "plain-app" }, null, 2));
@@ -1132,6 +1181,7 @@ describe("mapFeatures", () => {
           name: "workspace-root",
           packageManager: "pnpm@10.0.0",
           workspaces: ["apps/*", "packages/*"],
+          scripts: { test: "vitest run root.test.ts" },
         },
         null,
         2,
@@ -1160,6 +1210,7 @@ describe("mapFeatures", () => {
         2,
       ),
     );
+    await writeFixture(root, "apps/web/package-lock.json", "{}\n");
     await writeFixture(
       root,
       "apps/web/package.json",
@@ -1210,6 +1261,7 @@ describe("mapFeatures", () => {
         (command) => command.projectName === "@scope/contracts" && command.task === "test",
       ),
     ).toBe(false);
+    expect(graph.commands.some((command) => command.projectRoot === ".")).toBe(false);
   });
 
   it("uses Turbo task commands for mapped workspace feature validation", async () => {

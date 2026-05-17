@@ -16,6 +16,7 @@ import {
 import { projectTargetCommand } from "./projects.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 import type { NodeProjectInfo } from "./projects.js";
+import type { WorkspaceTaskGraph } from "./task-graph.js";
 
 type PackageJson = {
   name?: unknown;
@@ -73,7 +74,7 @@ const contextImportExtensions = new Set([
 
 export async function reactSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   syncFileCache.clear();
-  const packages = await discoverReactPackages(root, context.projects);
+  const packages = await discoverReactPackages(root, context.projects, context.taskGraph);
   const seeds: FeatureSeed[] = [];
   for (const info of packages) {
     seeds.push(...(await routeSeeds(root, info)));
@@ -193,6 +194,7 @@ async function componentSeeds(
 async function discoverReactPackages(
   root: string,
   projects: NodeProjectInfo[],
+  taskGraph: WorkspaceTaskGraph,
 ): Promise<ReactPackage[]> {
   const packages: ReactPackage[] = [];
   const rootPackageManager = await detectNodePackageManager(root);
@@ -206,7 +208,8 @@ async function discoverReactPackages(
     const packageManager =
       project?.packageManager ??
       (await packageManagerForReactPackage(root, packageRoot, rootPackageManager));
-    const projectTestCommand = project === undefined ? null : projectTargetCommand(project, "test");
+    const projectTestCommand =
+      project === undefined ? null : projectTargetCommand(project, "test", taskGraph);
     packages.push({
       root: packageRoot,
       packageJsonPath,
