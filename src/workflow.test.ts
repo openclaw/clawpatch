@@ -247,6 +247,15 @@ describe("workflow", () => {
     expect(parseArgs(["review", "--since", "HEAD~5"]).flags).toMatchObject({
       since: "HEAD~5",
     });
+    expect(parseArgs(["review", "--mode", "deslopify"]).flags).toMatchObject({
+      mode: "deslopify",
+    });
+    expect(() => parseArgs(["review", "--mode", "simplify"])).toThrow(
+      "invalid --mode; expected default or deslopify",
+    );
+    expect(() => parseArgs(["review", "--mode", "slop"])).toThrow(
+      "invalid --mode; expected default or deslopify",
+    );
     expect(parseArgs(["revalidate", "--since", "origin/main"]).flags).toMatchObject({
       since: "origin/main",
     });
@@ -2161,6 +2170,79 @@ describe("workflow", () => {
 
     expect(reviewedAgain?.status).toBe("fixed");
     expect(reviewedAgain?.linkedPatchAttemptIds).toEqual(["pat_existing"]);
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("adds deslopify-only review instructions when requested", async () => {
+    const root = await fixtureRoot("clawpatch-deslopify-prompt-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "deslopify-prompt" }));
+    await writeFixture(root, "src/index.ts", "export function main() { return 1; }\n");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    const project = await readProject(statePaths(join(root, ".clawpatch")));
+    expect(project).toBeDefined();
+    const prompt = await buildReviewPrompt(
+      root,
+      project!,
+      {
+        schemaVersion: 1,
+        featureId: "feat_deslopify",
+        title: "deslopify",
+        summary: "deslopify",
+        kind: "library",
+        source: "test",
+        confidence: "high",
+        entrypoints: [{ path: "src/index.ts", symbol: null, route: null, command: null }],
+        ownedFiles: [{ path: "src/index.ts", reason: "test" }],
+        contextFiles: [],
+        tests: [],
+        tags: [],
+        trustBoundaries: [],
+        status: "pending",
+        lock: null,
+        findingIds: [],
+        patchAttemptIds: [],
+        analysisHistory: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+      await loadConfig(root, testOptions(root)),
+      "deslopify",
+    );
+
+    expect(prompt).toContain("Deslopify mode:");
+    expect(prompt).toContain(
+      'only simplification findings in category "maintainability" or "performance"',
+    );
+    expect(prompt).toContain("stay separate from normal review");
+    expect(prompt).toContain("locally provable AI-slop patterns");
+    expect(prompt).toContain("semantic duplication");
+    expect(prompt).toContain("shadow modules and useless wrappers");
+    expect(prompt).toContain("concrete code bloat");
+    expect(prompt).toContain("dead legacy paths kept alive by tests");
+    expect(prompt).toContain("cargo-cult defensive code");
+    expect(prompt).toContain("tautological or coupled tests");
+    expect(prompt).toContain("type/build silencing and band-aid hacks");
+    expect(prompt).toContain("do not report file size");
+    expect(prompt).toContain("do not report correctness, security, API contract");
+  });
+
+  it("filters non-simplification findings in deslopify mode", async () => {
+    const root = await fixtureRoot("clawpatch-deslopify-filter-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "deslopify-filter" }));
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = await reviewCommand(context, { limit: "1", mode: "deslopify" });
+    const paths = statePaths(join(root, ".clawpatch"));
+    const findings = await readFindings(paths);
+
+    expect(reviewed).toMatchObject({ findings: 0 });
+    expect(findings).toHaveLength(0);
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 

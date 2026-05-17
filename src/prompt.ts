@@ -2,6 +2,8 @@ import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { ClawpatchConfig, FeatureRecord, FindingRecord, ProjectRecord } from "./types.js";
 
+export type ReviewMode = "default" | "deslopify";
+
 export function buildAgentMapPrompt(project: ProjectRecord, inventory: unknown): string {
   return `You are mapping a repository into semantic clawpatch review slices.
 
@@ -57,6 +59,7 @@ export async function buildReviewPrompt(
   project: ProjectRecord,
   feature: FeatureRecord,
   config: ClawpatchConfig,
+  mode: ReviewMode = "default",
 ): Promise<string> {
   const owned = feature.ownedFiles.slice(0, config.review.maxOwnedFiles);
   const context = feature.contextFiles.slice(0, config.review.maxContextFiles);
@@ -86,6 +89,8 @@ Review categories:
 - missing/weak tests
 - release/build hazards
 - maintainability risks with concrete impact
+
+${reviewModeInstructions(mode)}
 
 Inspect owned files, context files, and linked tests. Treat included tests as first-class
 evidence of intended behavior. If tests contradict a suspected bug, either skip it or
@@ -118,6 +123,31 @@ JSON shape:
 
 Files:
 ${fileBlocks.join("\n\n")}`;
+}
+
+function reviewModeInstructions(mode: ReviewMode): string {
+  if (mode === "default") {
+    return "";
+  }
+  if (mode === "deslopify") {
+    return `Deslopify mode:
+- report only simplification findings in category "maintainability" or "performance"
+- stay separate from normal review: do not look for general bugs, security issues, API contract problems, or missing edge-case handling
+- focus on locally provable AI-slop patterns whose likely fix is deletion, consolidation, or reuse of an existing local pattern
+- prioritize semantic duplication: repeated behavior across files, tests, CLIs, SQL queries, adapters, wrappers, or generated-looking utilities
+- prioritize shadow modules and useless wrappers: thin layers that pass through to another path without hiding real complexity
+- prioritize concrete code bloat: generated-looking mass, production-included test/debug/demo artifacts, wrapper swarms, duplicated boilerplate, or manual registries that duplicate a source of truth
+- prioritize dead legacy paths kept alive by tests: obsolete validators, schemas, adapters, compatibility branches, feature flags, or helpers
+- prioritize cargo-cult defensive code: broad try/catch, fallback, logging, null guard, or "safe" wrapper code that does not match a real trust boundary
+- prioritize tautological or coupled tests: tests that mirror implementation internals, repeat giant fake harnesses, or preserve accidental private structure instead of behavior
+- prioritize type/build silencing and band-aid hacks: broad disables, any/type-ignore casts, sleeps/timeouts, path mutation, fake success returns, or removed checks when simplification is the fix
+- every finding must have a concrete maintenance or runtime cost in the included files
+- prefer deletion, consolidation, or existing local patterns over new abstractions
+- do not report file size, explicit generated files, normal framework boilerplate, or domain modules that merely look large
+- do not report style taste, naming preference, broad architecture opinions, or speculative cleanup
+- do not report correctness, security, API contract, data-loss, or build-release issues unless the root cause is accidental complexity and the minimum fix is simplification`;
+  }
+  throw new Error(`Unsupported review mode: ${mode}`);
 }
 
 export async function buildRevalidatePrompt(root: string, findingJson: string): Promise<string> {

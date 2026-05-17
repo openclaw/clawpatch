@@ -24,6 +24,7 @@ import { mapFeatures } from "./mapper.js";
 import { emitProgress } from "./progress.js";
 import { providerByName } from "./provider.js";
 import { buildFixPrompt, buildReviewPrompt, buildRevalidatePrompt } from "./prompt.js";
+import type { ReviewMode } from "./prompt.js";
 import {
   evidenceLabel,
   findingSummaries,
@@ -66,6 +67,7 @@ import {
   FixPlanOutput,
   FindingRecord,
   PatchAttempt,
+  ReviewOutput,
   RunRecord,
   reasoningEffortSchema,
   reasoningEfforts,
@@ -231,6 +233,7 @@ export async function reviewCommand(
   const loaded = await loadProjectState(context);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
+  const mode = reviewMode(flags);
   const features = await selectReviewFeatures(loaded, flags);
   if (features.length === 0 && typeof flags["since"] === "string") {
     return { next: "no features touched by diff" };
@@ -239,6 +242,7 @@ export async function reviewCommand(
     return {
       dryRun: true,
       wouldReview: features.length,
+      mode,
       jobs: reviewJobs(flags),
       featureIds: features.map((feature) => feature.featureId),
     };
@@ -276,6 +280,7 @@ export async function reviewCommand(
             currentRunId,
             index,
             total: features.length,
+            mode,
             allowNonPendingFeatureReview: stringFlag(flags, "feature") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
@@ -483,6 +488,7 @@ type ReviewFeatureOptions = {
   currentRunId: string;
   index: number;
   total: number;
+  mode: ReviewMode;
   allowNonPendingFeatureReview: boolean;
 };
 
@@ -496,6 +502,7 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
     currentRunId,
     index,
     total,
+    mode,
     allowNonPendingFeatureReview,
   } = options;
   const started = Date.now();
@@ -516,9 +523,16 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
       },
     );
     locked = lockedFeature;
-    const prompt = await buildReviewPrompt(loaded.root, loaded.project, lockedFeature, config);
+    const prompt = await buildReviewPrompt(
+      loaded.root,
+      loaded.project,
+      lockedFeature,
+      config,
+      mode,
+    );
     const output = await provider.review(loaded.root, prompt, providerOptions(config));
-    const records = output.findings
+    const modeFindings = reviewFindingsForMode(output.findings, mode);
+    const records = modeFindings
       .slice(0, config.review.maxFindingsPerFeature)
       .map((finding) => findingFromOutput(finding, lockedFeature.featureId, currentRunId));
     const findingIds: string[] = [];
@@ -1054,6 +1068,25 @@ function reviewJobs(flags: Record<string, string | boolean>): number {
   return Math.min(Math.floor(parsed), 32);
 }
 
+function reviewMode(flags: Record<string, string | boolean>): ReviewMode {
+  const mode = stringFlag(flags, "mode") ?? "default";
+  if (mode === "default" || mode === "deslopify") {
+    return mode;
+  }
+  throw new ClawpatchError("invalid --mode; expected default or deslopify", 2, "invalid-usage");
+}
+
+function reviewFindingsForMode(
+  findings: ReviewOutput["findings"],
+  mode: ReviewMode,
+): ReviewOutput["findings"] {
+  if (mode !== "deslopify") {
+    return findings;
+  }
+  return findings.filter(
+    (finding) => finding.category === "maintainability" || finding.category === "performance",
+  );
+}
 function featureLock(currentRunId: string): NonNullable<FeatureRecord["lock"]> {
   return {
     lockedByRunId: currentRunId,

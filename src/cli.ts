@@ -154,6 +154,7 @@ const commandFlags = {
     "limit",
     "since",
     "jobs",
+    "mode",
     "provider",
     "model",
     "reasoningEffort",
@@ -197,6 +198,7 @@ const valueFlagNames = new Set([
   "limit",
   "since",
   "jobs",
+  "mode",
   "source",
   "provider",
   "model",
@@ -266,6 +268,14 @@ function validateCommandRequirements(
     typeof flags["since"] !== "string"
   ) {
     throw new ClawpatchError("missing --finding or --all", 2, "invalid-usage");
+  }
+  if (
+    command === "review" &&
+    typeof flags["mode"] === "string" &&
+    flags["mode"] !== "default" &&
+    flags["mode"] !== "deslopify"
+  ) {
+    throw new ClawpatchError("invalid --mode; expected default or deslopify", 2, "invalid-usage");
   }
 }
 
@@ -370,6 +380,7 @@ Flags:
   --limit <n>
   --since <ref>
   --jobs <n>        default: 10
+  --mode <default|deslopify>
   --provider <name>
   --model <name>
   --reasoning-effort <none|minimal|low|medium|high|xhigh>

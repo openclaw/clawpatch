@@ -30,6 +30,7 @@ pnpm link --global
 clawpatch init
 clawpatch map
 clawpatch review --limit 3 --jobs 3
+clawpatch review --mode deslopify --limit 3
 clawpatch report
 clawpatch next
 clawpatch show --finding <id>
@@ -109,6 +110,7 @@ Supported provider names today:
 - `clawpatch map`: write feature records
 - `clawpatch status`: show project, dirty state, feature/finding counts
 - `clawpatch review`: review pending or selected features
+- `clawpatch review --mode deslopify`: review only for locally provable slop cleanup
 - `clawpatch report`: print or write a Markdown findings report
 - `clawpatch next`: print the next actionable finding
 - `clawpatch show --finding <id>`: inspect one finding with evidence and suggested validation
