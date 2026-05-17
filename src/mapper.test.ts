@@ -2693,6 +2693,21 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "src/main/kotlin/com/example/client/GitHubApi.kt",
+      [
+        "package com.example.client",
+        "",
+        "import retrofit2.http.GET",
+        "",
+        "interface GitHubApi {",
+        '  @GET("/users")',
+        "  fun users(): String",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
       "src/main/kotlin/com/example/network/FallbackClient.kt",
       "package com.example.network\nclass FallbackClient\n",
     );
@@ -2742,6 +2757,9 @@ describe("mapFeatures", () => {
     );
 
     expect(web?.source).toBe("kotlin-server-role-web-entrypoint");
+    expect(web?.ownedFiles.map((file) => file.path)).not.toContain(
+      "src/main/kotlin/com/example/client/GitHubApi.kt",
+    );
     expect(web?.tests).toEqual([
       { path: "src/test/kotlin/com/example/api/OrderControllerTest.kt", command: null },
     ]);
@@ -2758,6 +2776,7 @@ describe("mapFeatures", () => {
     expect(clientFeatures[0]?.confidence).toBe("high");
     expect(clientFiles).toEqual(
       expect.arrayContaining([
+        "src/main/kotlin/com/example/client/GitHubApi.kt",
         "src/main/kotlin/com/example/client/RemoteClient.kt",
         "src/main/kotlin/com/example/network/FallbackClient.kt",
         "src/main/kotlin/com/example/network/PaymentClient.kt",

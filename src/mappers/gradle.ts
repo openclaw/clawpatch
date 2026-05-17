@@ -177,6 +177,22 @@ type KotlinFileInfo = {
   declarations: KotlinDeclaration[];
   functionReturnTypes: Set<string>;
 };
+const kotlinServerWebAnnotationNames = new Set([
+  "Controller",
+  "RestController",
+  "RequestMapping",
+  "GetMapping",
+  "PostMapping",
+  "PutMapping",
+  "DeleteMapping",
+  "PatchMapping",
+  "Path",
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "PATCH",
+]);
 
 export async function gradleSeeds(root: string): Promise<FeatureSeed[]> {
   const roots = await discoverGradleRoots(root);
@@ -537,25 +553,7 @@ function kotlinFrameworkRoleEvidence(
         confidence: "high",
       });
     }
-    if (
-      !isAndroid &&
-      [
-        "Controller",
-        "RestController",
-        "RequestMapping",
-        "GetMapping",
-        "PostMapping",
-        "PutMapping",
-        "DeleteMapping",
-        "PatchMapping",
-        "Path",
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "PATCH",
-      ].includes(annotation)
-    ) {
+    if (!isAndroid && isKotlinServerWebAnnotation(annotation, info)) {
       evidence.push({
         role: "server-web-entrypoint",
         reason: `server web annotation @${annotation}`,
@@ -638,14 +636,7 @@ function kotlinFrameworkRoleEvidence(
         confidence: "high",
       });
     }
-    if (
-      !isAndroid &&
-      (full.startsWith("org.springframework.web.bind.annotation.") ||
-        full.startsWith("io.ktor.server.") ||
-        full.startsWith("org.http4k.") ||
-        full.startsWith("io.javalin.") ||
-        /^(?:jakarta|javax)\.ws\.rs\./u.test(full))
-    ) {
+    if (!isAndroid && isKotlinServerWebImport(full)) {
       evidence.push({
         role: "server-web-entrypoint",
         reason: `server web import ${full}`,
@@ -727,6 +718,32 @@ function kotlinFrameworkRoleEvidence(
   }
 
   return dedupeKotlinEvidence(evidence);
+}
+
+function isKotlinServerWebAnnotation(annotation: string, info: KotlinFileInfo): boolean {
+  if (!kotlinServerWebAnnotationNames.has(annotation)) {
+    return false;
+  }
+  const imported = info.imports.get(annotation);
+  if (imported !== undefined) {
+    return isKotlinServerWebImport(imported);
+  }
+  for (const full of info.imports.values()) {
+    if (full.endsWith(".*") && isKotlinServerWebImport(full)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isKotlinServerWebImport(full: string): boolean {
+  return (
+    full.startsWith("org.springframework.web.bind.annotation.") ||
+    full.startsWith("io.ktor.server.") ||
+    full.startsWith("org.http4k.") ||
+    full.startsWith("io.javalin.") ||
+    /^(?:jakarta|javax)\.ws\.rs\./u.test(full)
+  );
 }
 
 function kotlinDeclarationRoleEvidence(
@@ -901,7 +918,11 @@ function parseJavaFile(source: string): JavaFileInfo {
   for (const match of stripped.matchAll(/@([A-Za-z_][A-Za-z0-9_.]*)/gu)) {
     const raw = match[1];
     if (raw !== undefined) {
-      annotations.add(raw.split(".").at(-1) ?? raw);
+      const simple = raw.split(".").at(-1) ?? raw;
+      annotations.add(simple);
+      if (raw.includes(".")) {
+        imports.set(simple, raw);
+      }
     }
   }
 
