@@ -255,7 +255,7 @@ async function runPiJson(
       args.push("--model", options.model);
     }
     if (options.reasoningEffort !== null) {
-      args.push("--thinking", options.reasoningEffort);
+      args.push("--thinking", piThinkingLevel(options.reasoningEffort));
     }
     if (readOnly) {
       args.push("--tools", "read");
@@ -307,6 +307,10 @@ function piFailureMessage(stdout: string, stderr: string): string {
   return preview.length === 0
     ? "pi provider failed"
     : `pi provider failed (output preview: ${preview})`;
+}
+
+function piThinkingLevel(reasoningEffort: ReasoningEffort): string {
+  return reasoningEffort === "none" ? "off" : reasoningEffort;
 }
 
 function piTimeoutMs(): number {
@@ -970,5 +974,6 @@ export const __testing = {
   extractOpencodeJson,
   parseAcpxAgent,
   parseCodexJson,
+  piThinkingLevel,
   providerJsonSchema,
 };

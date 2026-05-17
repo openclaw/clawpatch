@@ -11,6 +11,7 @@ const {
   extractOpencodeJson,
   parseAcpxAgent,
   parseCodexJson,
+  piThinkingLevel,
   providerJsonSchema,
 } = __testing;
 
@@ -157,6 +158,16 @@ describe("providerJsonSchema", () => {
         "multipleOf",
       ]),
     );
+  });
+});
+
+describe("piThinkingLevel", () => {
+  it("maps clawpatch none to pi off", () => {
+    expect(piThinkingLevel("none")).toBe("off");
+  });
+
+  it("passes supported pi thinking levels through", () => {
+    expect(piThinkingLevel("xhigh")).toBe("xhigh");
   });
 });
 
