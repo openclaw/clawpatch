@@ -4124,6 +4124,34 @@ add_executable(headerapp include/headers.hpp)
     expect(core?.ownedFiles).toEqual([{ path: "core.c", reason: "target source" }]);
   });
 
+  it("maps autotools sources with source-directory variables", async () => {
+    const root = await fixtureRoot("clawpatch-autotools-srcdir-sources-");
+    await writeFixture(
+      root,
+      "src/Makefile.am",
+      "bin_PROGRAMS = app\napp_SOURCES = $(srcdir)/main.c $(top_srcdir)/shared/util.c\nlib_LTLIBRARIES = libcore.la\nlibcore_la_SOURCES = ${srcdir}/core.c @top_srcdir@/include/core.h\n",
+    );
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/core.c", "int core(void) { return 1; }\n");
+    await writeFixture(root, "shared/util.c", "int util(void) { return 1; }\n");
+    await writeFixture(root, "include/core.h", "int core(void);\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "Autotools binary app");
+    const core = result.features.find((feature) => feature.title === "Autotools library libcore");
+
+    expect(app?.entrypoints[0]).toMatchObject({ path: "src/main.c", command: "app" });
+    expect(app?.ownedFiles).toEqual([
+      { path: "src/main.c", reason: "target source" },
+      { path: "shared/util.c", reason: "target source" },
+    ]);
+    expect(core?.ownedFiles).toEqual([
+      { path: "src/core.c", reason: "target source" },
+      { path: "include/core.h", reason: "target source" },
+    ]);
+  });
+
   it("honors Automake assignment overrides", async () => {
     const root = await fixtureRoot("clawpatch-autotools-override-");
     await writeFixture(

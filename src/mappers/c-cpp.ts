@@ -66,7 +66,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         continue;
       }
       const sources = await automakeTargetSources(root, dir, body, target);
-      const sourcePaths = await targetSourcePaths(root, dir, sources);
+      const sourcePaths = await targetSourcePaths(root, dir, expandAutomakeSources(root, sources));
       if (sourcePaths.length === 0) {
         continue;
       }
@@ -97,7 +97,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
       }
       const target = rawTarget.replace(/\.la$/u, "");
       const sources = readTargetSources(body, automakeVariableName(rawTarget));
-      const sourcePaths = await targetSourcePaths(root, dir, sources);
+      const sourcePaths = await targetSourcePaths(root, dir, expandAutomakeSources(root, sources));
       if (sourcePaths.length === 0) {
         continue;
       }
@@ -1120,6 +1120,22 @@ function automakeVariableName(target: string): string {
 
 function normalizeAutomakeProgramTarget(target: string): string {
   return target.replace(/\$[({]EXEEXT[)}]|@EXEEXT@/gu, "");
+}
+
+function expandAutomakeSources(root: string, sources: string[]): string[] {
+  return sources.map((source) => expandAutomakeSource(root, source));
+}
+
+function expandAutomakeSource(root: string, source: string): string {
+  const normalized = normalize(source);
+  const srcdir = /^(?:\$\((?:srcdir)\)|\$\{srcdir\}|@srcdir@)(?:\/(.*)|$)/u.exec(normalized);
+  if (srcdir !== null) {
+    return srcdir[1] ?? "";
+  }
+  const topSrcdir = /^(?:\$\((?:top_srcdir)\)|\$\{top_srcdir\}|@top_srcdir@)(?:\/(.*)|$)/u.exec(
+    normalized,
+  );
+  return topSrcdir === null ? source : join(root, topSrcdir[1] ?? "");
 }
 
 function prefixDir(dir: string, file: string): string {
