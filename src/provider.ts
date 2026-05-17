@@ -213,7 +213,7 @@ async function runGrokJson(
 ): Promise<unknown> {
   const dir = await mkdtemp(join(tmpdir(), "clawpatch-grok-"));
   const promptPath = join(dir, "prompt.txt");
-  await writeFile(promptPath, prompt, "utf8");
+  await writeFile(promptPath, grokPrompt(prompt, schema), "utf8");
 
   try {
     const args = [
@@ -240,9 +240,9 @@ async function runGrokJson(
         "provider-failure",
       );
     }
-    let envelope: { text?: string };
+    let envelope: unknown;
     try {
-      envelope = JSON.parse(result.stdout) as { text?: string };
+      envelope = JSON.parse(result.stdout) as unknown;
     } catch {
       const preview = result.stdout.slice(0, 200).replace(/\s+/gu, " ");
       throw new ClawpatchError(
@@ -251,11 +251,8 @@ async function runGrokJson(
         "malformed-output",
       );
     }
-    const text = typeof envelope.text === "string" ? envelope.text : "";
-    if (text.trim().length === 0) {
-      throw new ClawpatchError("grok provider produced empty response", 8, "malformed-output");
-    }
-    const parsed = extractJson(text);
+    const text = grokEnvelopeText(envelope);
+    const parsed = text === null ? envelope : extractJson(text);
     if (parsed === null) {
       throw new ClawpatchError("grok provider produced unparsable JSON", 8, "malformed-output");
     }
@@ -265,24 +262,55 @@ async function runGrokJson(
   }
 }
 
+function grokPrompt(prompt: string, schema: object): string {
+  return `${prompt}
+
+Provider output schema:
+${JSON.stringify(schema, null, 2)}
+
+Return only one JSON object matching the schema.`;
+}
+
+function grokEnvelopeText(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  for (const key of ["text", "response", "output", "content"]) {
+    const item = (value as Record<string, unknown>)[key];
+    if (typeof item === "string") {
+      return item;
+    }
+  }
+  const choices = (value as Record<string, unknown>)["choices"];
+  if (Array.isArray(choices)) {
+    const first = choices[0] as unknown;
+    if (typeof first === "object" && first !== null) {
+      const message = (first as Record<string, unknown>)["message"];
+      if (typeof message === "object" && message !== null) {
+        const content = (message as Record<string, unknown>)["content"];
+        if (typeof content === "string") {
+          return content;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 export function extractJson(text: string): unknown | null {
-  // 1. Direct parse (ideal path when model follows "strict JSON only")
   try {
     return JSON.parse(text);
-  } catch {
-    // continue to fallbacks
-  }
-  // 2. Extract from markdown code fence ```json ... ``` or ``` ... ```
+  } catch {}
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/u);
   if (fenceMatch && fenceMatch[1]) {
     const candidate = fenceMatch[1].trim();
     try {
       return JSON.parse(candidate);
-    } catch {
-      // continue
-    }
+    } catch {}
   }
-  // 3. Heuristic: find the first balanced top-level JSON object
   const firstBrace = text.indexOf("{");
   if (firstBrace !== -1) {
     let depth = 0;

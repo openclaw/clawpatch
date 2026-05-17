@@ -30,7 +30,7 @@ Codex invocation:
 
 ### Grok
 
-The `grok` provider shells out to the local [Grok Build CLI](https://x.ai/cli) 
+The `grok` provider shells out to the local [Grok Build CLI](https://x.ai/cli)
 
 Install the Grok CLI:
 
@@ -38,7 +38,7 @@ Install the Grok CLI:
 curl -fsSL https://x.ai/cli/install.sh | bash
 ```
 
-Then ensure `grok --version` works and you are authenticated (browser login or `GROK_CODE_XAI_API_KEY` environment variable).
+Then ensure `grok --version` works and authenticate using the flow supported by the local Grok CLI.
 
 **Provider selection:**
 
@@ -61,7 +61,7 @@ CLAWPATCH_MODEL=<model> clawpatch review
 - **Headless mode**: Uses `--prompt-file` + `--output-format json --always-approve --verbatim --cwd <root>`.
 - **Read-only operations** (`review`, `revalidate`): Adds `--disallowed-tools "search_replace,run_terminal_cmd,Agent"` so the agent cannot modify files or run shell commands.
 - **Write operations** (`fix`): Uses full `--always-approve` so the agent can edit files and run validation commands.
-- **Structured output**: The inner prompt instructs the model to return strict JSON matching clawpatch's schemas. The provider parses the `text` field of the JSON envelope returned by `--output-format json` and validates it with Zod (same schemas used for Codex).
+- **Structured output**: The inner prompt includes clawpatch's JSON schema. The provider parses the text field of the JSON envelope returned by `--output-format json` and validates it with Zod (same schemas used for Codex).
 - **Large prompts**: Review and fix prompts can be tens of kilobytes (they embed the full source of owned and context files). Passing such prompts via `-p`/`--single` is unreliable, so the provider always uses `--prompt-file` (the intended mechanism for automation and large inputs).
 
 Direct OpenAI, Claude, Gemini, local-model, and multi-model panel providers are
