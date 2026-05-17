@@ -51,6 +51,7 @@ export async function turboTaskGraph(
     for (const task of validationTaskNames) {
       if (
         project.root === "." ||
+        !project.workspaceMember ||
         scripts[task] === undefined ||
         !hasTaskEntry(taskEntries, packageName, task)
       ) {

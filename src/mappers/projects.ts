@@ -22,6 +22,7 @@ export type NodeProjectTarget = {
 export type NodeProjectInfo = {
   root: string;
   name: string;
+  workspaceMember: boolean;
   packageJsonPath: string | null;
   packageJson: NodePackageJson | null;
   projectJsonPath: string | null;
@@ -41,6 +42,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
   const rootPackage = await readPackageJson(root);
   const rootPackageManager = await detectNodePackageManager(root);
   const byRoot = new Map<string, NodeProjectInfo>();
+  const declaredPackageRoots = await discoverDeclaredPackageRoots(root, rootPackage);
 
   for (const packageRoot of await discoverPackageRoots(root, rootPackage)) {
     const packageJsonPath = packageRelativePath(packageRoot, "package.json");
@@ -51,6 +53,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
     byRoot.set(packageRoot, {
       root: packageRoot,
       name: packageDisplayName(packageRoot, packageJsonPath, packageJson),
+      workspaceMember: packageRoot === "." || declaredPackageRoots.has(packageRoot),
       packageJsonPath,
       packageJson,
       projectJsonPath: null,
@@ -81,6 +84,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
         previousName: previous?.name,
         nxName: nxProject.name,
       }),
+      workspaceMember: projectRoot === "." || declaredPackageRoots.has(projectRoot),
       packageJsonPath: packageJson === null ? null : packageJsonPath,
       packageJson,
       projectJsonPath,
@@ -93,6 +97,15 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
   }
 
   return [...byRoot.values()].toSorted((left, right) => left.root.localeCompare(right.root));
+}
+
+async function discoverDeclaredPackageRoots(
+  root: string,
+  rootPackage: NodePackageJson | null,
+): Promise<Set<string>> {
+  const patterns = await declaredWorkspacePatterns(root, rootPackage);
+  const roots = await packageRootsForPatterns(root, patterns);
+  return new Set(roots);
 }
 
 async function nodePackageManagerForPackage(
@@ -242,35 +255,17 @@ async function discoverPackageRoots(
   if (rootPackage !== null) {
     packageRoots.add(".");
   }
-  const patterns = await workspacePatterns(root, rootPackage);
-  const excludes = patterns
-    .filter((pattern) => pattern.startsWith("!"))
-    .flatMap((pattern) => {
-      const normalized = normalizeWorkspacePattern(pattern.slice(1));
-      return normalized === null ? [] : [normalized];
-    });
-  for (const includePattern of patterns.filter((pattern) => !pattern.startsWith("!"))) {
-    for (const packageRoot of await expandWorkspacePattern(root, includePattern)) {
-      packageRoots.add(packageRoot);
-    }
+  for (const packageRoot of await packageRootsForPatterns(
+    root,
+    await workspacePatterns(root, rootPackage),
+  )) {
+    packageRoots.add(packageRoot);
   }
-  return [...packageRoots].filter((path) => !isExcludedWorkspace(path, excludes)).toSorted();
+  return [...packageRoots].toSorted();
 }
 
 async function workspacePatterns(root: string, pkg: NodePackageJson | null): Promise<string[]> {
-  const patterns = new Set<string>();
-  if (pkg !== null) {
-    for (const pattern of packageWorkspacePatterns(pkg)) {
-      patterns.add(pattern);
-    }
-  }
-  if (await pathExists(join(root, "pnpm-workspace.yaml"))) {
-    for (const pattern of parsePnpmWorkspace(
-      await readFile(join(root, "pnpm-workspace.yaml"), "utf8"),
-    )) {
-      patterns.add(pattern);
-    }
-  }
+  const patterns = new Set(await declaredWorkspacePatterns(root, pkg));
   for (const fallback of [
     "frontend",
     "client",
@@ -286,6 +281,42 @@ async function workspacePatterns(root: string, pkg: NodePackageJson | null): Pro
     }
   }
   return [...patterns];
+}
+
+async function declaredWorkspacePatterns(
+  root: string,
+  pkg: NodePackageJson | null,
+): Promise<string[]> {
+  const patterns = new Set<string>();
+  if (pkg !== null) {
+    for (const pattern of packageWorkspacePatterns(pkg)) {
+      patterns.add(pattern);
+    }
+  }
+  if (await pathExists(join(root, "pnpm-workspace.yaml"))) {
+    for (const pattern of parsePnpmWorkspace(
+      await readFile(join(root, "pnpm-workspace.yaml"), "utf8"),
+    )) {
+      patterns.add(pattern);
+    }
+  }
+  return [...patterns];
+}
+
+async function packageRootsForPatterns(root: string, patterns: string[]): Promise<string[]> {
+  const excludes = patterns
+    .filter((pattern) => pattern.startsWith("!"))
+    .flatMap((pattern) => {
+      const normalized = normalizeWorkspacePattern(pattern.slice(1));
+      return normalized === null ? [] : [normalized];
+    });
+  const packageRoots = new Set<string>();
+  for (const includePattern of patterns.filter((pattern) => !pattern.startsWith("!"))) {
+    for (const packageRoot of await expandWorkspacePattern(root, includePattern)) {
+      packageRoots.add(packageRoot);
+    }
+  }
+  return [...packageRoots].filter((path) => !isExcludedWorkspace(path, excludes)).toSorted();
 }
 
 function packageWorkspacePatterns(pkg: NodePackageJson): string[] {

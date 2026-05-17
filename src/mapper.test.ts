@@ -1326,6 +1326,52 @@ describe("mapFeatures", () => {
     ]);
   });
 
+  it("keeps package-local validation for fallback packages outside the workspace graph", async () => {
+    const root = await fixtureRoot("clawpatch-turbo-non-workspace-package-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "workspace-root",
+          packageManager: "pnpm@10.0.0",
+          workspaces: ["packages/*"],
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(root, "pnpm-lock.yaml", "");
+    await writeFixture(root, "turbo.json", JSON.stringify({ tasks: { test: {} } }, null, 2));
+    await writeFixture(
+      root,
+      "apps/web/package.json",
+      JSON.stringify(
+        {
+          name: "web",
+          scripts: { test: "vitest run" },
+          dependencies: { next: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "apps/web/app/page.tsx",
+      "export default function Page() { return null; }\n",
+    );
+    await writeFixture(root, "apps/web/app/page.test.tsx", "test('page', () => {});\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "web route /");
+
+    expect(route?.tests).toEqual([
+      { path: "apps/web/app/page.test.tsx", command: "pnpm --dir apps/web test" },
+    ]);
+  });
+
   it("maps turbo config and skips versioned virtualenv directories", async () => {
     const root = await fixtureRoot("clawpatch-turbo-config-venv-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "root" }, null, 2));
