@@ -11,17 +11,18 @@ describe("extractJson", () => {
   });
 
   it("extracts JSON from json code fence", () => {
-    const input = 'Here is the result:\n\n```json\n{"outcome":"fixed","reasoning":"all good","commands":[]}\n```';
+    const input =
+      'Here is the result:\n\n```json\n{"outcome":"fixed","reasoning":"all good","commands":[]}\n```';
     expect(extractJson(input)).toEqual({ outcome: "fixed", reasoning: "all good", commands: [] });
   });
 
   it("extracts JSON from generic code fence", () => {
-    const input = "```\n{\"risk\":\"low\",\"steps\":[]}\n```";
+    const input = '```\n{"risk":"low","steps":[]}\n```';
     expect(extractJson(input)).toEqual({ risk: "low", steps: [] });
   });
 
   it("recovers JSON via balanced brace heuristic", () => {
-    const input = "Some leading text { \"title\": \"x\", \"nested\": { \"a\": 1 } } trailing";
+    const input = 'Some leading text { "title": "x", "nested": { "a": 1 } } trailing';
     expect(extractJson(input)).toEqual({ title: "x", nested: { a: 1 } });
   });
 
