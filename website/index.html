@@ -768,6 +768,189 @@
         font-size: 0.92rem;
       }
 
+
+
+      .repo-showcase {
+        margin: 28px 0 34px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        padding: 28px;
+        background:
+          radial-gradient(circle at top left, rgba(255, 107, 74, 0.16), transparent 34%),
+          radial-gradient(circle at bottom right, rgba(42, 157, 143, 0.18), transparent 36%),
+          var(--card);
+        box-shadow: var(--shadow);
+      }
+
+      .repo-showcase-hero h2 {
+        margin: 0 0 12px;
+        font-size: clamp(2rem, 5vw, 4.8rem);
+        letter-spacing: -0.06em;
+        line-height: 0.95;
+      }
+
+      .repo-showcase-hero p {
+        max-width: 880px;
+        color: var(--muted);
+        font-size: 1.04rem;
+        line-height: 1.7;
+      }
+
+      .repo-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin: 24px 0 14px;
+      }
+
+      .repo-stats span {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        padding: 16px;
+        background: var(--bg-soft);
+        color: var(--muted);
+      }
+
+      .repo-stats strong {
+        display: block;
+        color: var(--text);
+        font-size: 2rem;
+        line-height: 1;
+      }
+
+      .repo-controls {
+        margin: 24px 0;
+        display: grid;
+        gap: 14px;
+      }
+
+      .repo-controls label span {
+        display: block;
+        margin: 0 0 8px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .repo-controls input {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 14px 16px;
+        background: var(--bg);
+        color: var(--text);
+        font: inherit;
+      }
+
+      .repo-filter-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .repo-filter-buttons button {
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 8px 12px;
+        background: var(--bg-soft);
+        color: var(--text);
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .repo-filter-buttons button span {
+        color: var(--muted);
+      }
+
+      .repo-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 14px;
+        max-height: 980px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+
+      .repo-card {
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 16px;
+        background: color-mix(in srgb, var(--card) 88%, var(--bg-soft));
+      }
+
+      .repo-card-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .repo-card h3 {
+        margin: 0;
+        font-size: 1rem;
+        letter-spacing: -0.02em;
+        word-break: break-word;
+      }
+
+      .repo-card h3 a,
+      .repo-card h3 span {
+        color: var(--text);
+        text-decoration: none;
+      }
+
+      .repo-card p {
+        min-height: 3.3em;
+        color: var(--muted);
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+
+      .repo-visibility {
+        border-radius: 999px;
+        padding: 4px 8px;
+        font-size: 0.72rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .repo-visibility.public {
+        color: #0f766e;
+        background: rgba(45, 212, 191, 0.16);
+      }
+
+      .repo-visibility.private {
+        color: #c2410c;
+        background: rgba(251, 146, 60, 0.16);
+      }
+
+      .repo-meta,
+      .repo-topics,
+      .repo-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .repo-meta span,
+      .repo-topics span,
+      .repo-cta a,
+      .repo-cta span {
+        border-radius: 999px;
+        padding: 5px 8px;
+        background: var(--bg-soft);
+        color: var(--muted);
+        font-size: 0.78rem;
+        text-decoration: none;
+      }
+
+      .repo-cta a {
+        color: var(--accent);
+        font-weight: 700;
+      }
+
       /* Mobile responsive */
       @media (max-width: 900px) {
         .shell {
@@ -977,6 +1160,7 @@
             <a class="nav-link active" href="#overview">Overview</a>
             <a class="nav-link" href="#quickstart">Quick Start</a>
             <a class="nav-link" href="#installation">Installation</a>
+            <a class="nav-link" href="#repo-showcase">Repo Showcase</a>
           </section>
           <section>
             <h2>Core Features</h2>
@@ -1091,6 +1275,1425 @@
             </p>
           </div>
         </div>
+
+
+        <section class="repo-showcase" id="repo-showcase" aria-labelledby="repo-showcase-title">
+          <div class="repo-showcase-hero">
+            <p class="eyebrow">Dwayne Helena · Repo Universe</p>
+            <h2 id="repo-showcase-title">138 repos, one review surface</h2>
+            <p>
+              Clawpatch is built for this kind of portfolio: private agent systems, research tools,
+              dashboards, automation glue, and public demos all mapped into reviewable code units.
+            </p>
+            <div class="repo-stats" aria-label="Repository inventory statistics">
+              <span><strong>138</strong> total repos</span>
+              <span><strong>5</strong> public</span>
+              <span><strong>133</strong> private</span>
+              <span><strong>7</strong> languages</span>
+            </div>
+            <p class="muted">Private repo links and raw metadata are intentionally withheld. Snapshot: 2026-05-17 16:01 AEST. Top languages: Python 84, Unknown 23, HTML 13, TypeScript 9, JavaScript 7.</p>
+          </div>
+          <div class="repo-controls" aria-label="Repository filters">
+            <label>
+              <span>Filter repos</span>
+              <input id="repo-filter" type="search" placeholder="python, agent, dashboard, research" />
+            </label>
+            <div class="repo-filter-buttons">
+              <button type="button" data-repo-filter="all">All <span>138</span></button>
+              <button type="button" data-repo-filter="public">Public <span>5</span></button>
+              <button type="button" data-repo-filter="private">Private <span>133</span></button>
+            <button type="button" data-repo-filter-lang="Python">Python <span>84</span></button>
+            <button type="button" data-repo-filter-lang="Unknown">Unknown <span>23</span></button>
+            <button type="button" data-repo-filter-lang="HTML">HTML <span>13</span></button>
+            <button type="button" data-repo-filter-lang="TypeScript">TypeScript <span>9</span></button>
+            <button type="button" data-repo-filter-lang="JavaScript">JavaScript <span>7</span></button>
+            <button type="button" data-repo-filter-lang="Shell">Shell <span>1</span></button>
+            <button type="button" data-repo-filter-lang="C#">C# <span>1</span></button>
+            </div>
+          </div>
+          <div class="repo-grid" data-repo-grid>
+            <article class="repo-card" data-repo-card data-search="claw-core claw ai core workspace &amp; logic python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-core</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw AI Core Workspace &amp; Logic</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-05-16</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="fucking_floor  javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>fucking_floor</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-05-13</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="south-coast-sconces  typescript " data-visibility="public" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><a href="https://github.com/dwaynehelena/south-coast-sconces" rel="noopener">south-coast-sconces</a></h3>
+                <span class="repo-visibility public">public</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-05-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><a href="https://github.com/dwaynehelena/south-coast-sconces" rel="noopener">Open repo</a></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="nexus-swarm nexus-ω swarm: continuous topological trading &amp; photonic mev singularity python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>nexus-swarm</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>NEXUS-Ω Swarm: Continuous Topological Trading &amp; Photonic MEV Singularity</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-05-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="go-live-readiness-dashboard  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>go-live-readiness-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-05-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-devika-agentic-ai-proposal claw project: devika-agentic-ai-proposal html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-devika-agentic-ai-proposal</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: devika-agentic-ai-proposal</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-05-11</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="reno-tracker  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>reno-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-05-06</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="free-power  python " data-visibility="public" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><a href="https://github.com/dwaynehelena/free-power" rel="noopener">free-power</a></h3>
+                <span class="repo-visibility public">public</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-05-01</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><a href="https://github.com/dwaynehelena/free-power" rel="noopener">Open repo</a></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="agent-state multi-agent state persistence system shell " data-visibility="public" data-lang="Shell">
+              <div class="repo-card-head">
+                <h3><a href="https://github.com/dwaynehelena/agent-state" rel="noopener">agent-state</a></h3>
+                <span class="repo-visibility public">public</span>
+              </div>
+              <p>Multi-agent state persistence system</p>
+              <div class="repo-meta"><span>Shell</span><span>★ 0</span><span>Updated 2026-04-30</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><a href="https://github.com/dwaynehelena/agent-state" rel="noopener">Open repo</a></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="hft-crypto high frequency crypto python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>HFT-Crypto</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>High Frequency Crypto</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-speedtest-dashboard speedtest dashboard - network performance monitoring html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-speedtest-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Speedtest Dashboard - Network performance monitoring</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-04-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="gateway-dashboard  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>gateway-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-04-18</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-conflict-dashboard claw project: conflict-dashboard unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-conflict-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: conflict-dashboard</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-04-18</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-health-hub unified health hub: apple health integration, daily vitals tracking, gp briefings &amp; correlation engine python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-health-hub</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Unified Health Hub: Apple Health integration, daily vitals tracking, GP briefings &amp; correlation engine</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-18</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-cost-tracker claw project: cost-tracker python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-cost-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: cost-tracker</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-16</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claude-benchmark claw project: claude-benchmark python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claude-benchmark</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: claude-benchmark</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-16</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="ai-hub  javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>ai-hub</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-04-16</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-grocery-arbitrage  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-grocery-arbitrage</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-14</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-db-backups claw project: db-backups python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-db-backups</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: db-backups</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="nexus-equities  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>nexus-equities</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-glass-audit claw project: glass-audit html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-glass-audit</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: glass-audit</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-04-12</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="job-tracker  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>job-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-04-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="openclaw-workspace  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>openclaw-workspace</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-doge-home claw project: doge-home python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-doge-home</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: doge-home</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-context-hub-openclaw claw project: context-hub-openclaw python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-context-hub-openclaw</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: context-hub-openclaw</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-memory claw project: memory python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-memory</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: memory</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-shadow-coder claw project: shadow-coder python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-shadow-coder</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: shadow-coder</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-shadow-coder.shadow claw project: shadow-coder.shadow python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-shadow-coder.shadow</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: shadow-coder.shadow</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claw-proj-health-hub claw project: claw-proj-health-hub python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claw-proj-health-hub</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: claw-proj-health-hub</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-siri-bridge claw project: siri-bridge python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-siri-bridge</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: siri-bridge</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-openethics-protocol claw project: openethics-protocol python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-openethics-protocol</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: openethics-protocol</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-ai-defense-ethics claw project: ai-defense-ethics python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-ai-defense-ethics</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: ai-defense-ethics</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-dev-browser claw project: dev-browser python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-dev-browser</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: dev-browser</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-vehicle-telemetry-logger claw project: vehicle-telemetry-logger python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-vehicle-telemetry-logger</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: vehicle-telemetry-logger</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-c2c-protocol claw project: c2c-protocol python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-c2c-protocol</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: c2c-protocol</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-voice-telemetry claw project: voice-telemetry python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-voice-telemetry</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: voice-telemetry</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-wavespeed-nano-banana-pro claw project: wavespeed-nano-banana-pro javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-wavespeed-nano-banana-pro</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: wavespeed-nano-banana-pro</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claw-evolution-blueprint claw project: claw-evolution-blueprint python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claw-evolution-blueprint</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: claw-evolution-blueprint</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-my-platform claw project: my-platform python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-my-platform</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: my-platform</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-find-skills claw project: find-skills python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-find-skills</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: find-skills</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-arc-agi-harness claw project: arc-agi-harness python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-arc-agi-harness</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: arc-agi-harness</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-local-price-tracker claw project: local-price-tracker python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-local-price-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: local-price-tracker</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-critique-pipeline claw project: critique-pipeline python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-critique-pipeline</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: critique-pipeline</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-shoplift-business claw project: shoplift-business python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-shoplift-business</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: shoplift-business</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-use-chub-cli claw project: use-chub-cli python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-use-chub-cli</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: use-chub-cli</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-privacy-kill-switch claw project: privacy-kill-switch python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-privacy-kill-switch</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: privacy-kill-switch</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-deeprecall claw project: deeprecall python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-deeprecall</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: deeprecall</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-openhealth-node claw project: openhealth-node python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-openhealth-node</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: openhealth-node</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-07</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-autoagent claw project: autoagent unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-autoagent</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: autoagent</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-04-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-rag-knowledge-base claw project: rag-knowledge-base python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-rag-knowledge-base</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: rag-knowledge-base</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-openclaw-autoagent  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-openclaw-autoagent</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="autoresearch ai agents running research on single-gpu nanochat training automatically python " data-visibility="public" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><a href="https://github.com/dwaynehelena/autoresearch" rel="noopener">autoresearch</a></h3>
+                <span class="repo-visibility public">public</span>
+              </div>
+              <p>AI agents running research on single-GPU nanochat training automatically</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><a href="https://github.com/dwaynehelena/autoresearch" rel="noopener">Open repo</a></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="autoagent autonomous harness engineering python " data-visibility="public" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><a href="https://github.com/dwaynehelena/autoagent" rel="noopener">autoagent</a></h3>
+                <span class="repo-visibility public">public</span>
+              </div>
+              <p>autonomous harness engineering</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><a href="https://github.com/dwaynehelena/autoagent" rel="noopener">Open repo</a></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-openai-tts claw project: openai-tts typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-openai-tts</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: openai-tts</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-platform-health claw project: platform-health python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-platform-health</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: platform-health</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-qet-no-score-analysis claw project: qet-no-score-analysis python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-qet-no-score-analysis</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: qet-no-score-analysis</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-agentic-bridge claw project: agentic-bridge python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-agentic-bridge</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: agentic-bridge</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-sovereign-ai-proxy claw project: sovereign-ai-proxy python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-sovereign-ai-proxy</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: sovereign-ai-proxy</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-agent-interface claw project: agent-interface python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-agent-interface</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: agent-interface</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-defense-ai-intel claw project: defense-ai-intel python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-defense-ai-intel</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: defense-ai-intel</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-image-generation claw project: image-generation python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-image-generation</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: image-generation</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-romz claw project: romz python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-RomZ</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: RomZ</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-ai-humanizer claw project: ai-humanizer python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-ai-humanizer</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: ai-humanizer</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-video-generation claw project: video-generation python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-video-generation</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: video-generation</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-ai-defense-digest claw project: ai-defense-digest python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-ai-defense-digest</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: ai-defense-digest</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-food-journal claw project: food-journal python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-food-journal</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: food-journal</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-prompt-guide claw project: prompt-guide python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-prompt-guide</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: prompt-guide</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-04-03</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="docusaurus easy to maintain open source documentation websites. typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>docusaurus</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Easy to maintain open source documentation websites.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="docusaurus-starter  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>docusaurus-starter</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="openai-tts openai-tts  javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>openai-tts</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>openai-tts </p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="idea  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>idea</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="romz  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>RomZ</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-karpathy-autoresearch claw project: karpathy-autoresearch unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-karpathy-autoresearch</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: karpathy-autoresearch</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-voicebox claw project: voicebox typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-voicebox</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: voicebox</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-03-28</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-openclaw-src claw project: openclaw-src typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-openclaw-src</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: openclaw-src</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-03-28</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-_retrieved_gh_projects claw project: _retrieved_gh_projects unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-_retrieved_gh_projects</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: _retrieved_gh_projects</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-28</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-ai-legal-tracker claw project: ai-legal-tracker unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-ai-legal-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: ai-legal-tracker</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-nexus-equities claw project: nexus-equities unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-nexus-equities</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: nexus-equities</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-_archive claw project: _archive unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-_archive</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: _archive</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-living-dashboard claw project: living-dashboard unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-living-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: living-dashboard</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-docusaurus-starter claw project: docusaurus-starter unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-docusaurus-starter</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: docusaurus-starter</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-anthropic-legal-tracker claw project: anthropic-legal-tracker python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-anthropic-legal-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: anthropic-legal-tracker</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-nvidia-agentic-infra claw project: nvidia-agentic-infra python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-nvidia-agentic-infra</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: nvidia-agentic-infra</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-docusaurus claw project: docusaurus unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-docusaurus</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: docusaurus</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-atoms-robotics-monitor claw project: atoms-robotics-monitor python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-atoms-robotics-monitor</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: atoms-robotics-monitor</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-youtube-growth-optimizer claw project: youtube-growth-optimizer python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-youtube-growth-optimizer</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: youtube-growth-optimizer</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-idea claw project: idea unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-idea</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: idea</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-autoresearch claw project: autoresearch unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-autoresearch</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: autoresearch</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-v0-3d-aquarium-simulation claw project: v0-3d-aquarium-simulation unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-v0-3d-aquarium-simulation</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: v0-3d-aquarium-simulation</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-26</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-video-analysis claw project: video-analysis python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-video-analysis</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: video-analysis</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-security-safety claw project: security-safety python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-security-safety</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: security-safety</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-energy-optimizer  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-energy-optimizer</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-colossus-tracker claw project: colossus-tracker python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-colossus-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: colossus-tracker</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-architecture living blueprint: claw ai architecture &amp; evolution python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-architecture</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Living Blueprint: Claw AI Architecture &amp; Evolution</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claw-trader  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claw-trader</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="cryptoairl-2  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>CryptoAIRL-2</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-cryptovision-ai claw project: cryptovision-ai unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-cryptovision-ai</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: cryptovision-ai</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-git-autosync claw project: git-autosync python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-git-autosync</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: git-autosync</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-earnings-reports claw project: earnings-reports python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-earnings-reports</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: earnings-reports</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-evolution  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-evolution</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-insurance-optimizer  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-insurance-optimizer</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-22</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-portfolio main master portfolio management html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-portfolio</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Main Master Portfolio Management</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-21</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="conflict-dashboard  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>conflict-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-21</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="xboxllm local llm chatbot for xbox series x dev mode — phi-3 mini via onnx runtime + directml c# " data-visibility="private" data-lang="C#">
+              <div class="repo-card-head">
+                <h3><span>XboxLLM</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Local LLM chatbot for Xbox Series X Dev Mode — Phi-3 Mini via ONNX Runtime + DirectML</p>
+              <div class="repo-meta"><span>C#</span><span>★ 0</span><span>Updated 2026-03-21</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="retrogalaga  html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>retrogalaga</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-20</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-macrohard-home claw project: macrohard-home python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-macrohard-home</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: macrohard-home</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-20</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="apk2  typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>apk2</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2026-03-11</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-veo-content-gen claw project: veo-content-gen python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-veo-content-gen</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: veo-content-gen</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-scratch claw project: scratch html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-scratch</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: scratch</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-jeep-jk-dashboard claw project: jeep-jk-dashboard javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-jeep-jk-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: jeep-jk-dashboard</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-hello-world claw project: hello-world html " data-visibility="private" data-lang="HTML">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-hello-world</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: hello-world</p>
+              <div class="repo-meta"><span>HTML</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-opengap-layer claw project: opengap-layer python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-opengap-layer</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: opengap-layer</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-optimus-sim claw project: optimus-sim python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-optimus-sim</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: optimus-sim</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-10</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-nexus-control claw project: nexus-control python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-nexus-control</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: nexus-control</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-messaging-setup claw project: messaging-setup python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-messaging-setup</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: messaging-setup</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-home-optimus claw project: home-optimus python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-home-optimus</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: home-optimus</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-google-oauth claw project: google-oauth python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-google-oauth</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: google-oauth</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-bike-wrap  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-bike-wrap</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="cryptoairl  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>CryptoAIRL</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-03-06</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-job-tracker claw project: job-tracker unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-job-tracker</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: job-tracker</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claw-evolution claw project: claw-evolution python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claw-evolution</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: claw-evolution</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-02-25</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-ai-hub claw project: ai-hub unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-ai-hub</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: ai-hub</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-24</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj- claw project: .git unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: .git</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-23</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-gateway-dashboard claw project: gateway-dashboard unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-gateway-dashboard</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: gateway-dashboard</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-23</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-retro-galaga claw project: retro-galaga unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-retro-galaga</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: retro-galaga</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-23</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-nexus-swarm claw project: nexus-swarm unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-nexus-swarm</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: nexus-swarm</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-23</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="claw-proj-claw-architecture claw project: claw-architecture unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>claw-proj-claw-architecture</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Claw Project: claw-architecture</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2026-02-21</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="cryptovisonai_latests  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>cryptovisonai_latests</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2026-02-09</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="automated-arr arr stack automation and dashboard javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>Automated-ARR</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>ARR Stack Automation and Dashboard</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2026-01-05</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="galaga  typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>galaga</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2025-12-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="cryptovisionai  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>cryptovisionai</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2025-12-29</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="ai-eqsv2  unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>ai-eqsv2</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2025-08-27</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="cryptic  python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>cryptic</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2025-06-01</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="conf2mkd confluence to markdown python " data-visibility="private" data-lang="Python">
+              <div class="repo-card-head">
+                <h3><span>conf2mkd</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>Confluence to Markdown</p>
+              <div class="repo-meta"><span>Python</span><span>★ 0</span><span>Updated 2025-05-31</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="crafty  typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>crafty</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2025-05-31</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="defi  unknown " data-visibility="private" data-lang="Unknown">
+              <div class="repo-card-head">
+                <h3><span>defi</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>Unknown</span><span>★ 0</span><span>Updated 2025-05-31</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="minecrafty  javascript " data-visibility="private" data-lang="JavaScript">
+              <div class="repo-card-head">
+                <h3><span>minecrafty</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>JavaScript</span><span>★ 0</span><span>Updated 2025-05-04</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+            <article class="repo-card" data-repo-card data-search="studio  typescript " data-visibility="private" data-lang="TypeScript">
+              <div class="repo-card-head">
+                <h3><span>studio</span></h3>
+                <span class="repo-visibility private">private</span>
+              </div>
+              <p>No public description yet.</p>
+              <div class="repo-meta"><span>TypeScript</span><span>★ 0</span><span>Updated 2025-04-21</span></div>
+              <div class="repo-topics"></div>
+              <div class="repo-cta"><span>Private repo — link withheld</span></div>
+            </article>
+          </div>
+        </section>
 
         <div class="doc">
           <h2 id="quickstart">Quick Start</h2>
@@ -1390,6 +2993,40 @@
         if (systemDark.addEventListener) systemDark.addEventListener("change", onSystemChange);
         else if (systemDark.addListener) systemDark.addListener(onSystemChange);
       }
+
+
+
+      // Repo showcase filtering
+      const repoInput = document.getElementById("repo-filter");
+      const repoCards = Array.from(document.querySelectorAll("[data-repo-card]"));
+      let repoMode = "all";
+      let repoLang = "";
+
+      function applyRepoFilters() {
+        const q = (repoInput?.value || "").trim().toLowerCase();
+        repoCards.forEach((card) => {
+          const textMatch = !q || card.dataset.search.includes(q);
+          const modeMatch = repoMode === "all" || card.dataset.visibility === repoMode;
+          const langMatch = !repoLang || card.dataset.lang === repoLang;
+          card.style.display = textMatch && modeMatch && langMatch ? "block" : "none";
+        });
+      }
+
+      repoInput?.addEventListener("input", applyRepoFilters);
+      document.querySelectorAll("[data-repo-filter]").forEach((button) => {
+        button.addEventListener("click", () => {
+          repoMode = button.dataset.repoFilter || "all";
+          repoLang = "";
+          applyRepoFilters();
+        });
+      });
+      document.querySelectorAll("[data-repo-filter-lang]").forEach((button) => {
+        button.addEventListener("click", () => {
+          repoMode = "all";
+          repoLang = button.dataset.repoFilterLang || "";
+          applyRepoFilters();
+        });
+      });
 
       // Search functionality
       const input = document.getElementById("doc-search");
