@@ -2043,6 +2043,27 @@ describe("workflow", () => {
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 
+  it("allows fix in non-Git roots when the Codex Git check is explicitly skipped", async () => {
+    const root = await fixtureRoot("clawpatch-non-git-fix-skip-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const fixed = await fixCommand(context, { finding, skipGitRepoCheck: true });
+
+    expect(fixed).toMatchObject({ dryRun: false, status: "applied" });
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
   it("fails fix when configured validation fails", async () => {
     const root = await fixtureRoot("clawpatch-validation-fail-");
     await runCommand(

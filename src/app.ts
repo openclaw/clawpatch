@@ -709,7 +709,10 @@ export async function fixCommand(
   const findingId = assertDefined(stringFlag(flags, "finding"), "missing --finding");
   const config = applyProviderFlags(loaded.config, flags);
   const git = await discoverGit(loaded.root);
-  const dirty = await hasSourceDirtyWorktree(loaded.root, loaded.paths.stateDir);
+  const dirty =
+    git.root === null && config.provider.skipGitRepoCheck
+      ? false
+      : await hasSourceDirtyWorktree(loaded.root, loaded.paths.stateDir);
   if (config.git.requireCleanWorktreeForFix && dirty && flags["dryRun"] !== true) {
     throw new ClawpatchError(
       "dirty worktree blocks fix; commit/stash first or use --dry-run",
