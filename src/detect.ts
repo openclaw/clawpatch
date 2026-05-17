@@ -19,6 +19,14 @@ type PackageJson = {
   bin?: unknown;
 };
 
+export type ComposerJson = {
+  name?: unknown;
+  type?: unknown;
+  scripts?: unknown;
+  require?: unknown;
+  "require-dev"?: unknown;
+};
+
 type PythonProjectInfo = {
   dependencies: Set<string>;
   tools: Set<string>;
@@ -28,11 +36,17 @@ type PythonProjectInfo = {
 export async function detectProject(root: string): Promise<ProjectRecord> {
   const git = await discoverGit(root);
   const pkg = await readPackageJson(root);
+  const composer = await readComposerJson(root);
   const packageManagers = await detectPackageManagers(root);
-  const frameworks = await detectFrameworks(root, pkg);
+  const frameworks = await detectFrameworks(root, pkg, composer);
   const languages = await detectLanguages(root);
-  const commands = await detectCommands(root, pkg, languages, packageManagers);
-  const name = typeof pkg?.name === "string" ? pkg.name : projectNameFromRoot(root, git.remoteUrl);
+  const commands = await detectCommands(root, pkg, composer, languages, packageManagers);
+  const name =
+    typeof pkg?.name === "string"
+      ? pkg.name
+      : typeof composer?.name === "string"
+        ? (composer.name.split("/").at(-1) ?? composer.name)
+        : projectNameFromRoot(root, git.remoteUrl);
   const now = new Date().toISOString();
   return {
     schemaVersion: 1,
@@ -96,32 +110,88 @@ export function packageBins(pkg: PackageJson | null): Record<string, string> {
   return bins;
 }
 
+export async function readComposerJson(root: string): Promise<ComposerJson | null> {
+  const path = join(root, "composer.json");
+  if (!(await pathExists(path))) {
+    return null;
+  }
+  const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+  return typeof parsed === "object" && parsed !== null ? (parsed as ComposerJson) : null;
+}
+
+export function composerScripts(composer: ComposerJson | null): Record<string, string> {
+  if (typeof composer?.scripts !== "object" || composer.scripts === null) {
+    return {};
+  }
+  const scripts: Record<string, string> = {};
+  for (const [key, value] of Object.entries(composer.scripts)) {
+    if (typeof value === "string") {
+      scripts[key] = value;
+    } else if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+      scripts[key] = value.join(" && ");
+    }
+  }
+  return scripts;
+}
+
+export function composerDependencyNames(composer: ComposerJson | null): Set<string> {
+  const names = new Set<string>();
+  for (const field of [composer?.require, composer?.["require-dev"]]) {
+    if (typeof field !== "object" || field === null) {
+      continue;
+    }
+    for (const name of Object.keys(field)) {
+      names.add(name);
+    }
+  }
+  return names;
+}
+
 async function detectCommands(
   root: string,
   pkg: PackageJson | null,
+  composer: ComposerJson | null,
   languages: string[],
   packageManagers: string[],
 ): Promise<ProjectCommands> {
   const scripts = packageScripts(pkg);
-  const defaults = await languageDefaultCommands(root, languages);
+  const composerScriptMap = composerScripts(composer);
+  const defaults = await languageDefaultCommands(root, languages, composer);
   const packageManager = packageScriptManager(packageManagers);
+  const composerTestCommand = composerValidationCommand(composerScriptMap, ["test"]);
   return {
     typecheck:
       scripts["typecheck"] !== undefined
         ? packageRunCommand(packageManager, "typecheck")
-        : defaults.typecheck,
-    lint: scripts["lint"] !== undefined ? packageRunCommand(packageManager, "lint") : defaults.lint,
+        : (composerValidationCommand(composerScriptMap, ["typecheck", "analyse", "analyze"]) ??
+          defaults.typecheck),
+    lint:
+      scripts["lint"] !== undefined
+        ? packageRunCommand(packageManager, "lint")
+        : (composerValidationCommand(composerScriptMap, ["lint"]) ?? defaults.lint),
     format:
       scripts["format"] !== undefined
         ? packageRunCommand(packageManager, "format")
-        : defaults.format,
-    test: scripts["test"] !== undefined ? packageRunCommand(packageManager, "test") : defaults.test,
+        : (composerValidationCommand(composerScriptMap, ["format"]) ?? defaults.format),
+    test:
+      scripts["test"] !== undefined
+        ? packageRunCommand(packageManager, "test")
+        : (composerTestCommand ?? defaults.test),
   };
+}
+
+function composerValidationCommand(
+  scripts: Record<string, string>,
+  candidates: string[],
+): string | null {
+  const script = candidates.find((candidate) => scripts[candidate] !== undefined);
+  return script === undefined ? null : `composer ${script}`;
 }
 
 async function languageDefaultCommands(
   root: string,
   languages: string[],
+  composer: ComposerJson | null,
 ): Promise<ProjectCommands> {
   if (languages.includes("go")) {
     return {
@@ -149,6 +219,9 @@ async function languageDefaultCommands(
   }
   if (languages.includes("python")) {
     return pythonDefaultCommands(root);
+  }
+  if (languages.includes("php")) {
+    return phpDefaultCommands(root, composer);
   }
   if (
     (languages.includes("java") || languages.includes("kotlin")) &&
@@ -244,6 +317,9 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("autotools");
   }
+  if (await pathExists(join(root, "composer.json"))) {
+    found.push("composer");
+  }
   const pythonManagers: Array<[string, string]> = [
     ["uv", "uv.lock"],
     ["poetry", "poetry.lock"],
@@ -288,6 +364,34 @@ async function gradleDefaultCommands(root: string): Promise<ProjectCommands> {
     lint: null,
     format: null,
     test: `${runner} test`,
+  };
+}
+
+async function phpDefaultCommands(
+  root: string,
+  composer: ComposerJson | null,
+): Promise<ProjectCommands> {
+  const dependencies = composerDependencyNames(composer);
+  const hasArtisan = await pathExists(join(root, "artisan"));
+  const hasPint = dependencies.has("laravel/pint");
+  const hasPhpStan = dependencies.has("phpstan/phpstan") || dependencies.has("larastan/larastan");
+  const hasPest = dependencies.has("pestphp/pest");
+  const hasPhpunit =
+    dependencies.has("phpunit/phpunit") ||
+    dependencies.has("phpunit/phpunit-selenium") ||
+    (await pathExists(join(root, "phpunit.xml"))) ||
+    (await pathExists(join(root, "phpunit.xml.dist")));
+  return {
+    typecheck: hasPhpStan ? "vendor/bin/phpstan analyse" : null,
+    lint: hasPint ? "vendor/bin/pint --test" : null,
+    format: hasPint ? "vendor/bin/pint --test" : null,
+    test: hasArtisan
+      ? "php artisan test"
+      : hasPest
+        ? "vendor/bin/pest"
+        : hasPhpunit
+          ? "vendor/bin/phpunit"
+          : null,
   };
 }
 
@@ -768,13 +872,27 @@ async function containsSwiftFile(dir: string): Promise<boolean> {
   return false;
 }
 
-async function detectFrameworks(root: string, pkg: PackageJson | null): Promise<string[]> {
+async function detectFrameworks(
+  root: string,
+  pkg: PackageJson | null,
+  composer: ComposerJson | null,
+): Promise<string[]> {
   const deps = dependencyNames(pkg);
+  const composerDeps = composerDependencyNames(composer);
   const frameworks: string[] = [];
   for (const name of ["next", "express", "fastify", "hono", "vitest"]) {
     if (deps.has(name)) {
       frameworks.push(name);
     }
+  }
+  if (composerDeps.has("laravel/framework")) {
+    frameworks.push("laravel");
+  }
+  if (composerDeps.has("symfony/framework-bundle")) {
+    frameworks.push("symfony");
+  }
+  if (composerDeps.has("slim/slim")) {
+    frameworks.push("slim");
   }
   if (await isPythonProject(root)) {
     const info = await pythonProjectInfo(root);
@@ -836,6 +954,8 @@ async function detectLanguages(root: string): Promise<string[]> {
     ["python", "setup.py"],
     ["python", "setup.cfg"],
     ["python", "requirements.txt"],
+    ["php", "composer.json"],
+    ["php", "artisan"],
     ["ruby", "Gemfile"],
     ["ruby", "gems.rb"],
     ["ruby", "Rakefile"],
@@ -876,6 +996,9 @@ async function detectLanguages(root: string): Promise<string[]> {
   }
   if (!languages.includes("cpp") && (await containsCppFile(root))) {
     languages.push("cpp");
+  }
+  if (!languages.includes("php") && (await containsReviewablePhpFile(root))) {
+    languages.push("php");
   }
   return languages;
 }
@@ -949,6 +1072,15 @@ async function containsReviewablePythonFile(root: string): Promise<boolean> {
     }
   }
   return containsFileNamed(root, "__init__.py", 3);
+}
+
+async function containsReviewablePhpFile(root: string): Promise<boolean> {
+  for (const prefix of ["app", "routes", "config", "database", "tests"]) {
+    if (await containsFileWithExtension(join(root, prefix), ".php", 4)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const pythonSourceSearchRoots = ["src", "app", "apps", "lib", "scripts", "web"] as const;

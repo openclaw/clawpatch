@@ -52,6 +52,7 @@ This discovers reviewable features:
 - Rust crates and binaries
 - C/C++ standalone binaries and CMake/autotools targets
 - SwiftPM targets and tests
+- Laravel controllers, requests, jobs, commands, services, models, migrations, and tests
 - Config files
 
 Preview mapping without writing:
