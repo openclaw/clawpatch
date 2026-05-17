@@ -64,6 +64,9 @@ export async function mapFeatures(
             seed.entryPath,
             seed.testCommand ?? project.detected.commands.test,
             seed.testPrefixes ?? [],
+            [seed.command, seed.identityKey].filter(
+              (name): name is string => typeof name === "string",
+            ),
           );
     const tests = uniqueTests([...(seed.tests ?? []), ...discoveredTests]);
     const contextFiles = uniqueFileRefs([

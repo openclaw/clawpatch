@@ -3311,6 +3311,21 @@ add_executable(headerapp include/headers.hpp)
     ]);
   });
 
+  it("attaches CMake tests named after the target", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-target-named-tests-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    await writeFixture(root, "tests/app_test.c", "int main(void) { return 0; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const app = result.features.find((feature) => feature.title === "CMake binary app");
+
+    expect(app?.entrypoints[0]?.path).toBe("src/main.c");
+    expect(app?.tests).toEqual([{ path: "tests/app_test.c", command: null }]);
+    expect(app?.contextFiles).toContainEqual({ path: "tests/app_test.c", reason: "nearby test" });
+  });
+
   it("maps semicolon-separated CMake source lists", async () => {
     const root = await fixtureRoot("clawpatch-cmake-semicolon-sources-");
     await writeFixture(

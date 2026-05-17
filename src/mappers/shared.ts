@@ -14,6 +14,7 @@ export async function nearbyTests(
   entryPath: string,
   testCommand: string | null,
   seedTestPrefixes: string[],
+  seedTestNames: string[] = [],
 ): Promise<TestRef[]> {
   const dir = dirname(entryPath);
   const base = entryPath.replace(/\.[^.]+$/u, "");
@@ -41,6 +42,7 @@ export async function nearbyTests(
       .at(-1)
       ?.replace(/\.[^.]+$/u, "") ?? "";
   const swiftTestPrefixes = seedTestPrefixes.length > 0 ? [] : swiftTestPrefixesForEntry(entryPath);
+  const cOrCppTestNames = seedTestNames.map(testNameToken).filter((name) => name.length > 0);
   const tests = all
     .filter((path) => path !== entryPath)
     .filter(
@@ -61,6 +63,7 @@ export async function nearbyTests(
           rustTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (isCOrCppPath(path) &&
           seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
+        (isCOrCppPath(path) && cOrCppTestNames.some((name) => pathMatchesTestName(path, name))) ||
         (path.endsWith(".swift") &&
           seedTestPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))) ||
         (path.endsWith(".swift") &&
@@ -241,6 +244,24 @@ export function stripSwiftComments(source: string): string {
 export function pathMatchesPrefix(path: string, prefix: string): boolean {
   const normalized = normalize(prefix).replace(/\/$/u, "");
   return normalized === "" || path === normalized || path.startsWith(`${normalized}/`);
+}
+
+function pathMatchesTestName(path: string, name: string): boolean {
+  const normalized = testNameToken(path.replace(/\.[^.]+$/u, ""));
+  return (
+    normalized === name ||
+    normalized.startsWith(`${name}_`) ||
+    normalized.endsWith(`_${name}`) ||
+    normalized.includes(`_${name}_`)
+  );
+}
+
+function testNameToken(name: string): string {
+  return name
+    .replace(/\.[^.]+$/u, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "_")
+    .replace(/^_+|_+$/gu, "");
 }
 
 export async function detectNodePackageManager(root: string): Promise<string> {
