@@ -3,6 +3,7 @@
 ## 0.2.1 - Unreleased
 
 - Added explicit Codex reasoning effort selection via `--reasoning-effort`, `CLAWPATCH_REASONING_EFFORT`, and provider config, with `doctor` reporting the active setting.
+- Added `--skip-git-repo-check` for Codex-backed map, review, fix, and revalidate commands so initialized non-Git roots can run Codex, thanks @im-zayan.
 - Added deterministic Express, Fastify, and Hono route mapping for Node projects, thanks @rohitjavvadi.
 - Fixed provider commands with relative `--root` paths by canonicalizing explicit roots before invoking Codex or other providers.
 - Improved `clawpatch fix` handoff context and patch-attempt changed-file auditing for dirty-worktree fixes.
