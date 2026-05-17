@@ -1,7 +1,8 @@
-import { readdir } from "node:fs/promises";
+import { open, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { ensureDir, pathExists, readJson, writeJson } from "./fs.js";
+import { ClawpatchError } from "./errors.js";
+import { ensureDir, nowIso, pathExists, readJson, writeJson } from "./fs.js";
 import {
   FeatureRecord,
   FindingRecord,
@@ -68,8 +69,94 @@ export async function readFeatures(paths: StatePaths): Promise<FeatureRecord[]> 
   return readRecords(paths.features, featureRecordSchema);
 }
 
+export async function readFeature(paths: StatePaths, id: string): Promise<FeatureRecord | null> {
+  const path = featurePath(paths, id);
+  if (!(await pathExists(path))) {
+    return null;
+  }
+  return readJson(path, featureRecordSchema);
+}
+
 export async function writeFeature(paths: StatePaths, feature: FeatureRecord): Promise<void> {
-  await writeJson(join(paths.features, `${feature.featureId}.json`), feature);
+  await writeJson(featurePath(paths, feature.featureId), feature);
+}
+
+export async function claimFeature(
+  paths: StatePaths,
+  featureId: string,
+  lock: NonNullable<FeatureRecord["lock"]>,
+  options: { allowNonPending?: boolean } = {},
+): Promise<FeatureRecord> {
+  await ensureDir(paths.locks);
+  const lockPath = featureLockPath(paths, featureId);
+  let handle;
+  try {
+    handle = await open(lockPath, "wx");
+    await handle.writeFile(`${JSON.stringify(lock, null, 2)}\n`, "utf8");
+  } catch (error: unknown) {
+    if (isNodeError(error, "EEXIST")) {
+      throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
+    }
+    if (handle !== undefined) {
+      await handle.close();
+      handle = undefined;
+      await releaseFeatureLock(paths, featureId);
+    }
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+
+  try {
+    const feature = await readFeature(paths, featureId);
+    if (feature === null) {
+      throw new ClawpatchError(`feature not found: ${featureId}`, 2, "feature-not-found");
+    }
+    if (feature.lock !== null) {
+      throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
+    }
+    if (options.allowNonPending !== true && !["pending", "error"].includes(feature.status)) {
+      throw new ClawpatchError(`feature not reviewable: ${featureId}`, 7, "lock-conflict");
+    }
+    const claimed: FeatureRecord = {
+      ...feature,
+      status: "claimed",
+      lock,
+      updatedAt: nowIso(),
+    };
+    await writeFeature(paths, claimed);
+    return claimed;
+  } catch (error: unknown) {
+    await releaseFeatureLock(paths, featureId);
+    throw error;
+  }
+}
+
+export async function releaseFeatureLock(paths: StatePaths, featureId: string): Promise<void> {
+  await unlink(featureLockPath(paths, featureId)).catch((error: unknown) => {
+    if (!isNodeError(error, "ENOENT")) {
+      throw error;
+    }
+  });
+}
+
+export async function clearFeatureLockFiles(paths: StatePaths): Promise<number> {
+  const lockIds = await readFeatureLockIds(paths);
+  for (const id of lockIds) {
+    await releaseFeatureLock(paths, id);
+  }
+  return lockIds.length;
+}
+
+export async function readFeatureLockIds(paths: StatePaths): Promise<string[]> {
+  if (!(await pathExists(paths.locks))) {
+    return [];
+  }
+  const names = await readdir(paths.locks);
+  return names
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => name.slice(0, -".json".length))
+    .toSorted();
 }
 
 export async function readFindings(paths: StatePaths): Promise<FindingRecord[]> {
@@ -117,4 +204,16 @@ async function readRecords<T>(dir: string, schema: z.ZodType<T>): Promise<T[]> {
     records.push(await readJson(join(dir, name), schema));
   }
   return records;
+}
+
+function featurePath(paths: StatePaths, featureId: string): string {
+  return join(paths.features, `${featureId}.json`);
+}
+
+function featureLockPath(paths: StatePaths, featureId: string): string {
+  return join(paths.locks, `${featureId}.json`);
+}
+
+function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
 }

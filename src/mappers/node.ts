@@ -1,6 +1,8 @@
+import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { packageBins, packageScripts } from "../detect.js";
 import { pathExists } from "../fs.js";
+import { rubyDependencyNames, rubyGemspecPaths, stripRubyComments } from "../ruby.js";
 import {
   normalize,
   packageKind,
@@ -16,6 +18,7 @@ import {
   projectTargetCommand,
 } from "./projects.js";
 import type { NodePackageJson, NodeProjectInfo } from "./projects.js";
+import type { WorkspaceTaskGraph } from "./task-graph.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 type PackageInfo = NodeProjectInfo & {
@@ -38,8 +41,8 @@ export async function nodeSeeds(root: string, context: MapperContext): Promise<F
   const seeds: FeatureSeed[] = [];
 
   for (const info of packages) {
-    seeds.push(...(await packageSeeds(root, info)));
-    seeds.push(...(await sourceGroupSeeds(root, info)));
+    seeds.push(...(await packageSeeds(root, info, context.taskGraph)));
+    seeds.push(...(await sourceGroupSeeds(root, info, context.taskGraph)));
   }
 
   return seeds;
@@ -49,14 +52,18 @@ function hasNodePackage(project: NodeProjectInfo): project is PackageInfo {
   return project.packageJsonPath !== null && project.packageJson !== null;
 }
 
-async function packageSeeds(root: string, info: PackageInfo): Promise<FeatureSeed[]> {
+async function packageSeeds(
+  root: string,
+  info: PackageInfo,
+  taskGraph: WorkspaceTaskGraph,
+): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
   const packageName = projectDisplayName(info);
   const packageTags = ["node", "package", ...projectTags(info)];
   if (info.root !== ".") {
     packageTags.push("workspace");
   }
-  const testCommand = projectTargetCommand(info, "test");
+  const testCommand = projectTargetCommand(info, "test", taskGraph);
 
   const manifestSeed: FeatureSeed = {
     title: `Node package ${packageName}`,
@@ -128,18 +135,25 @@ async function packageSeeds(root: string, info: PackageInfo): Promise<FeatureSee
   return seeds;
 }
 
-async function sourceGroupSeeds(root: string, info: PackageInfo): Promise<FeatureSeed[]> {
+async function sourceGroupSeeds(
+  root: string,
+  info: PackageInfo,
+  taskGraph: WorkspaceTaskGraph,
+): Promise<FeatureSeed[]> {
   const packageName = projectDisplayName(info);
-  const testCommand = projectTargetCommand(info, "test");
+  const testCommand = projectTargetCommand(info, "test", taskGraph);
   const testFiles = await packageTestFiles(root, info);
+  const railsPackage = await isRailsPackage(root, info.root);
   const seeds: FeatureSeed[] = [];
 
-  for (const sourceRoot of await packageSourceRoots(root, info)) {
+  for (const sourceRoot of packageSourceRoots(info, railsPackage)) {
     if (!(await pathExists(join(root, sourceRoot)))) {
       continue;
     }
     const files = (await walk(root, [sourceRoot])).filter(
-      (path) => isReviewableNodeSourceFile(path) && !isRailsExcludedNodeSourcePath(info, path),
+      (path) =>
+        isReviewableNodeSourceFile(path) &&
+        !isRailsExcludedNodeSourcePath(info, railsPackage, sourceRoot, path),
     );
     if (files.length === 0) {
       continue;
@@ -179,12 +193,11 @@ async function sourceGroupSeeds(root: string, info: PackageInfo): Promise<Featur
   return seeds;
 }
 
-async function packageSourceRoots(root: string, info: PackageInfo): Promise<string[]> {
-  if (await isRailsPackage(root, info.root)) {
-    const railsSourceDirectories = sourceDirectories.filter((dir) => dir !== "app");
+function packageSourceRoots(info: PackageInfo, railsPackage: boolean): string[] {
+  if (railsPackage) {
     return [
       ...new Set(
-        [...railsSourceDirectories, "app/javascript", "app/packs", "app/frontend"].map((dir) =>
+        [...sourceDirectories, "app/javascript", "app/packs", "app/frontend"].map((dir) =>
           packageRelativePath(info.root, dir),
         ),
       ),
@@ -193,13 +206,30 @@ async function packageSourceRoots(root: string, info: PackageInfo): Promise<stri
   return sourceDirectories.map((dir) => packageRelativePath(info.root, dir));
 }
 
-function isRailsExcludedNodeSourcePath(info: PackageInfo, path: string): boolean {
-  return pathMatchesPrefix(path, packageRelativePath(info.root, "app/assets"));
+function isRailsExcludedNodeSourcePath(
+  info: PackageInfo,
+  railsPackage: boolean,
+  sourceRoot: string,
+  path: string,
+): boolean {
+  if (!railsPackage) {
+    return false;
+  }
+  if (pathMatchesPrefix(path, packageRelativePath(info.root, "app/assets"))) {
+    return true;
+  }
+  if (sourceRoot !== packageRelativePath(info.root, "app")) {
+    return false;
+  }
+  return ["app/javascript", "app/packs", "app/frontend"].some((dir) =>
+    pathMatchesPrefix(path, packageRelativePath(info.root, dir)),
+  );
 }
 
 async function packageTestFiles(root: string, info: PackageInfo): Promise<string[]> {
+  const railsPackage = await isRailsPackage(root, info.root);
   const prefixes = [
-    ...(await packageSourceRoots(root, info)),
+    ...packageSourceRoots(info, railsPackage),
     ...testDirectories.map((dir) => packageRelativePath(info.root, dir)),
   ];
   return (await walk(root, prefixes)).filter(isNodeTestPath).slice(0, 200);
@@ -208,9 +238,22 @@ async function packageTestFiles(root: string, info: PackageInfo): Promise<string
 async function isRailsPackage(root: string, packageRoot: string): Promise<boolean> {
   return (
     packageRoot === "." &&
-    (await pathExists(join(root, "Gemfile"))) &&
-    (await pathExists(join(root, "config/application.rb")))
+    (await pathExists(join(root, "config/application.rb"))) &&
+    (await hasRailsDependency(root))
   );
+}
+
+async function hasRailsDependency(root: string): Promise<boolean> {
+  const chunks: string[] = [];
+  for (const path of ["Gemfile", "gems.rb"]) {
+    if (await pathExists(join(root, path))) {
+      chunks.push(await readFile(join(root, path), "utf8"));
+    }
+  }
+  for (const path of await rubyGemspecPaths(root)) {
+    chunks.push(await readFile(join(root, path), "utf8"));
+  }
+  return rubyDependencyNames(stripRubyComments(chunks.join("\n"))).has("rails");
 }
 
 function partitionSourceFiles(

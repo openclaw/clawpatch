@@ -967,7 +967,9 @@ function isPythonTestPath(path: string): boolean {
 function pythonShouldSkip(path: string): boolean {
   return (
     shouldSkip(path) ||
-    /(^|\/)(\.venv|venv|__pycache__|\.mypy_cache|\.ruff_cache|\.pytest_cache)(\/|$)/u.test(path)
+    /(^|\/)(\.venv(?:-[^/]+)?|venv|__pycache__|\.mypy_cache|\.ruff_cache|\.pytest_cache)(\/|$)/u.test(
+      path,
+    )
   );
 }
 
