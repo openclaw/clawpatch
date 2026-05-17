@@ -2491,7 +2491,7 @@ describe("mapFeatures", () => {
       [
         "package com.example.ui",
         "",
-        "import androidx.lifecycle.ViewModel",
+        "import androidx.lifecycle.*",
         "",
         "class MainViewModel : ViewModel()",
         "",
@@ -3270,6 +3270,46 @@ describe("mapFeatures", () => {
     expect(service?.ownedFiles[0]?.reason).toContain("service annotation @Component");
   });
 
+  it("does not treat qualified Kotlin annotations as type imports", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-qualified-annotation-type-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("org.jetbrains.kotlin.jvm") }\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/app/Billing.kt",
+      [
+        "package com.example.app",
+        "",
+        "@org.springframework.stereotype.Service",
+        "class Billing : Service",
+        "interface Service",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/app/Billing.kt",
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-server-role-application-service" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/app/Billing.kt",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("normalizes root Gradle source groups", async () => {
     const root = await fixtureRoot("clawpatch-root-gradle-map-");
     await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
@@ -3614,6 +3654,45 @@ describe("mapFeatures", () => {
       "src/main/java/com/acme/local/LocalCommandAdapter.java",
       "src/main/java/com/google/myapp/GuavaAdapter.java",
     ]);
+  });
+
+  it("does not treat qualified Java annotations as type imports", async () => {
+    const root = await fixtureRoot("clawpatch-java-qualified-annotation-type-map-");
+    await writeFixture(root, "build.gradle.kts", 'plugins { id("java") }\n');
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/app/Billing.java",
+      [
+        "package com.acme.app;",
+        "",
+        "@org.springframework.stereotype.Service",
+        "public class Billing implements Service {}",
+        "interface Service {}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "jvm-role-framework-component" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/java/com/acme/app/Billing.java",
+          ),
+      ),
+    ).toBe(false);
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "jvm-role-application-service" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/java/com/acme/app/Billing.java",
+          ),
+      ),
+    ).toBe(true);
   });
 
   it("ignores vendored SwiftPM manifests during detection", async () => {

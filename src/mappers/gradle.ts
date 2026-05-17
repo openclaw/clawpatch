@@ -173,6 +173,7 @@ type KotlinDeclaration = {
 type KotlinFileInfo = {
   packageName: string | null;
   annotations: Set<string>;
+  annotationImports: Map<string, string>;
   imports: Map<string, string>;
   declarations: KotlinDeclaration[];
   functionReturnTypes: Set<string>;
@@ -724,6 +725,10 @@ function isKotlinServerWebAnnotation(annotation: string, info: KotlinFileInfo): 
   if (!kotlinServerWebAnnotationNames.has(annotation)) {
     return false;
   }
+  const qualified = info.annotationImports.get(annotation);
+  if (qualified !== undefined) {
+    return isKotlinServerWebImport(qualified);
+  }
   const imported = info.imports.get(annotation);
   if (imported !== undefined) {
     return isKotlinServerWebImport(imported);
@@ -779,7 +784,15 @@ function kotlinImportedTypeMatches(info: KotlinFileInfo, type: string, allowed: 
     return true;
   }
   const direct = info.imports.get(type);
-  return direct !== undefined && allowed.includes(direct);
+  if (direct !== undefined && allowed.includes(direct)) {
+    return true;
+  }
+  for (const full of info.imports.values()) {
+    if (full.endsWith(".*") && allowed.includes(`${full.slice(0, -1)}${type}`)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function kotlinFunctionReturnRoleEvidence(
@@ -924,11 +937,7 @@ function parseJavaFile(source: string): JavaFileInfo {
   for (const match of stripped.matchAll(/@([A-Za-z_][A-Za-z0-9_.]*)/gu)) {
     const raw = match[1];
     if (raw !== undefined) {
-      const simple = raw.split(".").at(-1) ?? raw;
-      annotations.add(simple);
-      if (raw.includes(".")) {
-        imports.set(simple, raw);
-      }
+      annotations.add(raw.split(".").at(-1) ?? raw);
     }
   }
 
@@ -969,6 +978,7 @@ function parseKotlinFile(source: string): KotlinFileInfo {
   }
 
   const annotations = new Set<string>();
+  const annotationImports = new Map<string, string>();
   for (const match of stripped.matchAll(
     /@(?:[A-Za-z_][A-Za-z0-9_]*:)?([A-Za-z_][A-Za-z0-9_.]*)/gu,
   )) {
@@ -977,7 +987,7 @@ function parseKotlinFile(source: string): KotlinFileInfo {
       const simple = raw.split(".").at(-1) ?? raw;
       annotations.add(simple);
       if (raw.includes(".")) {
-        imports.set(simple, raw);
+        annotationImports.set(simple, raw);
       }
     }
   }
@@ -995,6 +1005,7 @@ function parseKotlinFile(source: string): KotlinFileInfo {
   return {
     packageName,
     annotations,
+    annotationImports,
     imports,
     declarations: parseKotlinDeclarations(stripped),
     functionReturnTypes,
