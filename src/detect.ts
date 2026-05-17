@@ -517,7 +517,7 @@ async function mixProjectInfo(root: string): Promise<MixProjectInfo> {
   if (!(await pathExists(join(root, "mix.exs")))) {
     return { dependencies: new Set() };
   }
-  const source = await readFile(join(root, "mix.exs"), "utf8");
+  const source = stripLineComments(await readFile(join(root, "mix.exs"), "utf8"), "#");
   return { dependencies: mixDependencyNames(source) };
 }
 
@@ -1476,7 +1476,7 @@ function shouldSkipCOrCppSearchEntry(entry: string): boolean {
   );
 }
 
-function stripLineComments(source: string, marker: "//"): string {
+function stripLineComments(source: string, marker: "#" | "//"): string {
   return source
     .split("\n")
     .map((line) => stripLineComment(line, marker))
@@ -1536,7 +1536,7 @@ function stripBlockComments(source: string): string {
   return output;
 }
 
-function stripLineComment(line: string, marker: "//"): string {
+function stripLineComment(line: string, marker: "#" | "//"): string {
   let inString = false;
   let escaped = false;
   for (let index = 0; index < line.length; index += 1) {

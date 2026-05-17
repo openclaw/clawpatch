@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathExists } from "../fs.js";
-import { packageKind, pathMatchesPrefix, walk } from "./shared.js";
+import { packageKind, pathMatchesPrefix, stripLineComments, walk } from "./shared.js";
 import { FeatureSeed, SeedTestRef } from "./types.js";
 
 const elixirSourceGroupMaxOwnedFiles = 24;
@@ -173,7 +173,7 @@ async function mixProjectMetadata(root: string): Promise<MixProjectMetadata> {
   if (!(await pathExists(join(root, "mix.exs")))) {
     return { appName: null, dependencies: new Set() };
   }
-  const source = await readFile(join(root, "mix.exs"), "utf8");
+  const source = stripLineComments(await readFile(join(root, "mix.exs"), "utf8"), "#");
   return {
     appName: extractAppName(source),
     dependencies: dependencyNames(source),

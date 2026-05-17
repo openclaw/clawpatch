@@ -12803,6 +12803,7 @@ let package = Package(
 
   def project do
     [
+      # app: :wrong_app,
       app: :sample_app,
       version: "0.1.0",
       elixir: "~> 1.18",
@@ -12812,6 +12813,7 @@ let package = Package(
 
   defp deps do
     [
+      # {:ecto_sql, "~> 3.13"},
       {:phoenix, "~> 1.8"},
       {:phoenix_live_view, "~> 1.1"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
@@ -12825,6 +12827,7 @@ end
 
     expect(project.detected.languages).toContain("elixir");
     expect(project.detected.frameworks).toEqual(expect.arrayContaining(["mix", "phoenix"]));
+    expect(project.detected.frameworks).not.toContain("ecto_sql");
     expect(project.detected.packageManagers).toContain("mix");
     expect(project.detected.commands).toEqual({
       typecheck: "mix compile --warnings-as-errors",
@@ -12843,7 +12846,12 @@ end
   use Mix.Project
 
   def project do
-    [app: :sample_app, version: "0.1.0", deps: deps()]
+    [
+      # app: :wrong_app,
+      app: :sample_app,
+      version: "0.1.0",
+      deps: deps()
+    ]
   end
 
   defp deps do
