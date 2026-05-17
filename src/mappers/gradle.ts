@@ -1836,7 +1836,7 @@ function hasAppliedAndroidPlugin(
   androidAliases: Set<string>,
   isKotlinDsl: boolean,
 ): boolean {
-  const source = isKotlinDsl ? stripKotlinComments(buildSource) : stripJavaComments(buildSource);
+  const source = stripGradleBuildComments(buildSource, isKotlinDsl);
   const lines = source.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
@@ -1858,6 +1858,67 @@ function hasAppliedAndroidPlugin(
     }
   }
   return hasDirectAndroidApplyPlugin(source);
+}
+
+function stripGradleBuildComments(source: string, supportsNestedBlockComments: boolean): string {
+  let stripped = "";
+  let index = 0;
+  let quote: "'" | '"' | null = null;
+  let blockDepth = 0;
+  while (index < source.length) {
+    const char = source[index] ?? "";
+    const pair = source.slice(index, index + 2);
+    if (blockDepth > 0) {
+      if (supportsNestedBlockComments && pair === "/*") {
+        blockDepth += 1;
+        stripped += "  ";
+        index += 2;
+      } else if (pair === "*/") {
+        blockDepth = Math.max(0, blockDepth - 1);
+        stripped += "  ";
+        index += 2;
+      } else {
+        stripped += char === "\n" ? "\n" : " ";
+        index += 1;
+      }
+      continue;
+    }
+    if (quote !== null) {
+      stripped += char;
+      if (char === "\\") {
+        stripped += source[index + 1] ?? "";
+        index += 2;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      index += 1;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      stripped += char;
+      index += 1;
+      continue;
+    }
+    if (pair === "//") {
+      while (index < source.length && source[index] !== "\n") {
+        stripped += " ";
+        index += 1;
+      }
+      continue;
+    }
+    if (pair === "/*") {
+      blockDepth = 1;
+      stripped += "  ";
+      index += 2;
+      continue;
+    }
+    stripped += char;
+    index += 1;
+  }
+  return stripped;
 }
 
 function hasDirectAndroidApplyPlugin(source: string): boolean {

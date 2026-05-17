@@ -3424,6 +3424,44 @@ describe("mapFeatures", () => {
     ).toBe(false);
   });
 
+  it("detects root Android apply plugin after Gradle URL strings", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-apply-url-string-");
+    await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
+    await writeFixture(
+      root,
+      "build.gradle",
+      [
+        "subprojects {",
+        "  repositories {",
+        "    maven { url 'https://example.com/repo' }",
+        "  }",
+        "}",
+        "apply plugin: 'com.android.library'",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/ui/MainViewModel.kt",
+      [
+        "package com.example.ui",
+        "",
+        "import androidx.lifecycle.ViewModel",
+        "",
+        "class MainViewModel : ViewModel()",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const viewModel = result.features.find((feature) =>
+      feature.title.startsWith("Kotlin Android role view model "),
+    );
+
+    expect(viewModel?.source).toBe("kotlin-android-role-view-model");
+  });
+
   it("does not treat subproject Android apply blocks as root Android modules", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-android-subprojects-apply-");
     await writeFixture(root, "settings.gradle", "pluginManagement {}\n");
