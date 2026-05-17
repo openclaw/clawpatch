@@ -222,7 +222,7 @@ function expressRouteChains(
 function routeTargetNames(source: string, framework: ServerFramework): Set<string> {
   if (framework === "express") {
     return declaredTargetNames(source, [
-      /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:express\s*\(\s*\)|express\s*\.\s*Router\s*\(\s*\)|Router\s*\(\s*\))/gu,
+      /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:express\s*\(|express\s*\.\s*Router\s*\(|Router\s*\()/gu,
     ]);
   }
   if (framework === "fastify") {
@@ -392,8 +392,16 @@ function readHandlerSymbol(source: string, start: number): string | null {
 }
 
 function isInsideCommentOrString(source: string, index: number): boolean {
-  let state: "code" | "line-comment" | "block-comment" | "single" | "double" | "template" = "code";
+  let state:
+    | "code"
+    | "line-comment"
+    | "block-comment"
+    | "single"
+    | "double"
+    | "template"
+    | "regex" = "code";
   let escaped = false;
+  let regexCharClass = false;
   for (let cursor = 0; cursor < index; cursor += 1) {
     const char = source[cursor];
     const next = source[cursor + 1];
@@ -424,12 +432,29 @@ function isInsideCommentOrString(source: string, index: number): boolean {
       }
       continue;
     }
+    if (state === "regex") {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === "[") {
+        regexCharClass = true;
+      } else if (char === "]") {
+        regexCharClass = false;
+      } else if (char === "/" && !regexCharClass) {
+        state = "code";
+      }
+      continue;
+    }
     if (char === "/" && next === "/") {
       cursor += 1;
       state = "line-comment";
     } else if (char === "/" && next === "*") {
       cursor += 1;
       state = "block-comment";
+    } else if (startsRegexLiteral(source, cursor)) {
+      state = "regex";
+      regexCharClass = false;
     } else if (char === "'") {
       state = "single";
     } else if (char === '"') {
@@ -439,6 +464,29 @@ function isInsideCommentOrString(source: string, index: number): boolean {
     }
   }
   return state !== "code";
+}
+
+function startsRegexLiteral(source: string, index: number): boolean {
+  const char = source[index];
+  const next = source[index + 1];
+  if (char !== "/" || next === "/" || next === "*" || next === undefined) {
+    return false;
+  }
+  const previous = previousSignificantChar(source, index);
+  return previous === null || /[([{=,:;!&|?*~^]/u.test(previous);
+}
+
+function previousSignificantChar(source: string, index: number): string | null {
+  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+    const char = source[cursor];
+    if (char === undefined) {
+      return null;
+    }
+    if (!/\s/u.test(char)) {
+      return char;
+    }
+  }
+  return null;
 }
 
 async function packageSourceFiles(root: string, project: NodeProjectInfo): Promise<string[]> {

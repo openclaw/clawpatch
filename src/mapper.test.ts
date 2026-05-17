@@ -1521,20 +1521,28 @@ describe("mapFeatures", () => {
         "",
         "const app = express();",
         "const router = Router();",
+        "const projectRouter = Router({ mergeParams: true });",
+        "let hitCount = 0;",
+        "const normalized = hitCount++ / 100;",
         "app.get('/health', health);",
+        "app.get('/after-postfix-division', afterPostfixDivision);",
         "app.all('/proxy', proxy);",
         "router.post('/admin/jobs', createJob);",
         "router.route('/users').get(listUsers).delete(deleteUsers);",
         "router.route('/reports').get(listReports);",
+        "projectRouter.get('/projects/:projectId/items', listProjectItems);",
+        "const routePattern = /app.get('\\/regex-health')/;",
         "db.delete('/not-a-route');",
         "// app.get('/commented', ignored);",
         "const text = \"router.post('/string', ignored)\";",
         "function health() {}",
+        "function afterPostfixDivision() {}",
         "function proxy() {}",
         "function createJob() {}",
         "function listUsers() {}",
         "function deleteUsers() {}",
         "function listReports() {}",
+        "function listProjectItems() {}",
         "",
       ].join("\n"),
     );
@@ -1569,6 +1577,19 @@ describe("mapFeatures", () => {
     await writeFixture(root, "src/server.test.ts", "test('server', () => {});\n");
     await writeFixture(root, "src/fastify.test.ts", "test('fastify', () => {});\n");
     await writeFixture(root, "src/hono.test.ts", "test('hono', () => {});\n");
+    await writeFixture(
+      root,
+      "src/mixed.tsx",
+      [
+        "import express from 'express';",
+        "",
+        "const app = express();",
+        "const view = <div></div>;",
+        "app.get('/after-jsx-close', afterJsxClose);",
+        "function afterJsxClose() {}",
+        "",
+      ].join("\n"),
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -1589,11 +1610,14 @@ describe("mapFeatures", () => {
     expect(titles).toEqual(
       expect.arrayContaining([
         "Express route GET /health",
+        "Express route GET /after-postfix-division",
         "Express route ALL /proxy",
         "Express route POST /admin/jobs",
         "Express route GET /users",
         "Express route DELETE /users",
         "Express route GET /reports",
+        "Express route GET /projects/:projectId/items",
+        "Express route GET /after-jsx-close",
         "Fastify route GET /status",
         "Fastify route POST /webhook/github",
         "Hono route GET /api/items",
@@ -1602,6 +1626,7 @@ describe("mapFeatures", () => {
     );
     expect(titles).not.toContain("Express route GET /commented");
     expect(titles).not.toContain("Express route POST /string");
+    expect(titles).not.toContain("Express route GET /regex-health");
     expect(titles).not.toContain("Express route DELETE /reports");
     expect(admin?.source).toBe("express-route");
     expect(admin?.entrypoints[0]).toMatchObject({
