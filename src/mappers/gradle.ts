@@ -2024,8 +2024,11 @@ function parseAndroidPluginAliases(source: string): Set<string> {
     }
     const section = /^\[([^\]]+)\]$/u.exec(line)?.[1];
     if (section !== undefined) {
-      inPlugins = section === "plugins" || section.startsWith("plugins.");
-      pluginTableAlias = section.startsWith("plugins.") ? section.slice("plugins.".length) : null;
+      const sectionKey = tomlDottedKey(section);
+      inPlugins = sectionKey === "plugins" || sectionKey.startsWith("plugins.");
+      pluginTableAlias = sectionKey.startsWith("plugins.")
+        ? sectionKey.slice("plugins.".length)
+        : null;
       continue;
     }
     const topLevelPluginAlias = androidTopLevelPluginAliasForLine(line);
@@ -2068,6 +2071,41 @@ function androidPluginAliasForLine(
 
 function tomlPluginAliasKey(match: RegExpExecArray | null): string | undefined {
   return match?.[1] ?? match?.[2] ?? match?.[3];
+}
+
+function tomlDottedKey(key: string): string {
+  const segments: string[] = [];
+  let current = "";
+  let quote: "'" | '"' | null = null;
+  for (let index = 0; index < key.length; index += 1) {
+    const char = key[index] ?? "";
+    if (quote !== null) {
+      if (char === "\\" && quote === '"') {
+        current += char;
+        index += 1;
+        current += key[index] ?? "";
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+      continue;
+    }
+    if (char === ".") {
+      segments.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  segments.push(current.trim());
+  return segments.filter((segment) => segment.length > 0).join(".");
 }
 
 function hasAppliedAndroidPlugin(
