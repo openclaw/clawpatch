@@ -28,9 +28,36 @@ export function renderReport(
   features: FeatureRecord[] = [],
   options: { includeNext?: boolean } = {},
 ): string {
-  const lines = ["# clawpatch report", "", `findings: ${findings.length}`, ""];
   const featureById = new Map(features.map((feature) => [feature.featureId, feature]));
-  for (const finding of findings) {
+  const clusters = findingClusters(findings);
+  const clusterRankByFindingId = clusterRankMap(clusters);
+  const orderedFindings = findings.toSorted((a, b) => {
+    const leftCluster = clusterRankByFindingId.get(a.findingId) ?? Number.MAX_SAFE_INTEGER;
+    const rightCluster = clusterRankByFindingId.get(b.findingId) ?? Number.MAX_SAFE_INTEGER;
+    return leftCluster - rightCluster || compareFindings(a, b);
+  });
+  const lines = ["# clawpatch report", "", `findings: ${findings.length}`];
+  if (clusters.length > 0) {
+    lines.push(`clusters: ${clusters.length}`);
+  }
+  lines.push("");
+  if (clusters.length > 0) {
+    lines.push("## action clusters");
+    lines.push("");
+    for (const [index, cluster] of clusters.entries()) {
+      lines.push(
+        `### cluster ${index + 1}: ${cluster.area} ${cluster.patternLabel} (${cluster.findings.length} findings)`,
+      );
+      lines.push("");
+      for (const finding of cluster.findings) {
+        lines.push(
+          `- ${finding.severity}/${finding.confidence} ${finding.findingId}: ${finding.title}`,
+        );
+      }
+      lines.push("");
+    }
+  }
+  for (const finding of orderedFindings) {
     lines.push(`## ${finding.severity}: ${finding.title}`);
     lines.push("");
     lines.push(`id: ${finding.findingId}`);
@@ -79,6 +106,46 @@ export function renderReport(
     lines.push("");
   }
   return `${lines.join("\n")}\n`;
+}
+
+type FindingCluster = {
+  area: string;
+  pattern: string;
+  patternLabel: string;
+  findings: FindingRecord[];
+};
+
+export function findingClusters(findings: FindingRecord[]): FindingCluster[] {
+  const clusterable = findings.filter(isClusterableFinding);
+  const groups = new Map<string, FindingCluster>();
+  for (const finding of clusterable) {
+    const pattern = slopPattern(finding);
+    const area = evidenceArea(finding);
+    const key = `${pattern.id}:${area}`;
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, {
+        area,
+        pattern: pattern.id,
+        patternLabel: pattern.label,
+        findings: [finding],
+      });
+    } else {
+      group.findings.push(finding);
+    }
+  }
+  return [...groups.values()]
+    .filter((cluster) => cluster.findings.length > 1)
+    .map((cluster) => ({
+      ...cluster,
+      findings: cluster.findings.toSorted(compareFindings),
+    }))
+    .toSorted(
+      (a, b) =>
+        clusterRank(a) - clusterRank(b) ||
+        a.area.localeCompare(b.area) ||
+        a.pattern.localeCompare(b.pattern),
+    );
 }
 
 export function renderFindingDetail(
@@ -221,4 +288,99 @@ export function evidenceLabel(evidence: FindingRecord["evidence"][number]): stri
 
 export function featureLabel(featureId: string, feature: FeatureRecord | undefined): string {
   return feature === undefined ? featureId : `${feature.title} (${featureId})`;
+}
+
+function clusterRank(cluster: FindingCluster): number {
+  const bestFindingRank = Math.min(...cluster.findings.map(findingReportRank));
+  return bestFindingRank * 1000 - cluster.findings.length;
+}
+
+function clusterRankMap(clusters: FindingCluster[]): Map<string, number> {
+  const ranks = new Map<string, number>();
+  for (const [index, cluster] of clusters.entries()) {
+    for (const finding of cluster.findings) {
+      ranks.set(finding.findingId, index);
+    }
+  }
+  return ranks;
+}
+
+function isClusterableFinding(finding: FindingRecord): boolean {
+  return finding.category === "maintainability" || finding.category === "performance";
+}
+
+function findingReportRank(finding: FindingRecord): number {
+  const severityRank = { critical: 0, high: 1, medium: 2, low: 3 }[finding.severity];
+  const confidenceRank = { high: 0, medium: 1, low: 2 }[finding.confidence];
+  return severityRank * 100 + confidenceRank * 10;
+}
+
+function compareFindings(a: FindingRecord, b: FindingRecord): number {
+  return (
+    findingReportRank(a) - findingReportRank(b) ||
+    a.title.localeCompare(b.title) ||
+    a.findingId.localeCompare(b.findingId)
+  );
+}
+
+function evidenceArea(finding: FindingRecord): string {
+  const path = finding.evidence[0]?.path ?? finding.featureId;
+  const parts = path.split("/").filter((part) => part.length > 0);
+  if (parts.length <= 1) {
+    return parts[0] ?? "unknown";
+  }
+  if (parts.length === 2) {
+    return parts[0] ?? "unknown";
+  }
+  return `${parts[0]}/${parts[1]}`;
+}
+
+function slopPattern(finding: FindingRecord): { id: string; label: string } {
+  const text = `${finding.title} ${finding.reasoning} ${finding.recommendation}`.toLowerCase();
+  if (hasAny(text, ["duplicate", "duplicated", "copy", "copied", "repeated", "parallel"])) {
+    return { id: "duplication", label: "duplication" };
+  }
+  if (hasAny(text, ["wrapper", "pass-through", "forward", "alias", "shim"])) {
+    return { id: "wrapper", label: "wrapper bloat" };
+  }
+  if (hasAny(text, ["boilerplate", "generated", "registry", "manual", "bloat", "mass"])) {
+    return { id: "bloat", label: "code bloat" };
+  }
+  if (hasAny(text, ["test", "fixture", "fake", "mock", "harness"])) {
+    return { id: "test", label: "test coupling" };
+  }
+  if (isBandAidPattern(text)) {
+    return { id: "band-aid", label: "band-aid" };
+  }
+  if (hasAny(text, ["try/catch", "fallback", "warning", "suppress", "swallow", "defensive"])) {
+    return { id: "defensive", label: "defensive bloat" };
+  }
+  if (hasAny(text, ["dead", "unused", "obsolete", "legacy", "deprecated", "no-op"])) {
+    return { id: "dead", label: "dead code" };
+  }
+  if (finding.category === "performance") {
+    return { id: "performance", label: "performance waste" };
+  }
+  return { id: "slop", label: "slop cleanup" };
+}
+
+function hasAny(text: string, terms: string[]): boolean {
+  return terms.some((term) => text.includes(term));
+}
+
+function isBandAidPattern(text: string): boolean {
+  return (
+    hasAny(text, [
+      "type-ignore",
+      "timeout",
+      "sleep",
+      "sys.path",
+      "silenc",
+      " as any",
+      ": any",
+      "<any>",
+      "any[]",
+      "array<any",
+    ]) || /\bany\b/.test(text)
+  );
 }

@@ -17,6 +17,8 @@ clawpatch report --feature <featureId>
 
 Markdown output includes:
 
+- ranked action clusters when related maintainability/performance findings share
+  a slop pattern and evidence area
 - finding ID
 - severity, category, confidence, triage, and status
 - feature ID and title when available
@@ -26,6 +28,12 @@ Markdown output includes:
 - suggested regression test and minimum fix scope when available
 - recommendation and reproduction text when available
 - next inspection command for status-filtered queues
+
+Action clusters are report-only. They do not change finding IDs, status, triage,
+or fix commands. They are intended to make deslopify-style reports easier to
+scan by grouping repeated root causes such as duplication, dead code, wrapper
+bloat, test coupling, defensive bloat, band-aid fixes, and concrete code bloat.
+The full finding details remain in the report beneath the cluster summary.
 
 `review` also writes a Markdown report for each run under:
 
