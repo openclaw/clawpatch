@@ -928,6 +928,7 @@ function applyProviderFlags(
       name: providerName ?? config.provider.name,
       model: model ?? config.provider.model,
       reasoningEffort: reasoningEffort ?? config.provider.reasoningEffort,
+      skipGitRepoCheck: flags["skipGitRepoCheck"] === true,
     },
   };
 }
@@ -936,6 +937,7 @@ function providerOptions(config: ReturnType<typeof applyProviderFlags>) {
   return {
     model: config.provider.model,
     reasoningEffort: config.provider.reasoningEffort,
+    skipGitRepoCheck: config.provider.skipGitRepoCheck,
   };
 }
 

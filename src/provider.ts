@@ -28,6 +28,7 @@ export { extractJson } from "./provider-json.js";
 export type ProviderOptions = {
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
+  skipGitRepoCheck: boolean;
 };
 export type Provider = {
   name: string;
@@ -348,6 +349,9 @@ async function runCodexJson(
 }
 
 function addCodexModelArgs(args: string[], options: ProviderOptions): void {
+  if (options.skipGitRepoCheck) {
+    args.push("--skip-git-repo-check");
+  }
   if (options.model !== null) {
     args.push("--model", options.model);
   }

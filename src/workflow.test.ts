@@ -230,6 +230,9 @@ describe("workflow", () => {
       dryRun: true,
       reasoningEffort: "xhigh",
     });
+    expect(parseArgs(["review", "--skip-git-repo-check"]).flags).toMatchObject({
+      skipGitRepoCheck: true,
+    });
     expect(parseArgs(["fix", "--finding", "f", "--dry-run"]).flags).toMatchObject({
       dryRun: true,
       finding: "f",
@@ -1167,13 +1170,13 @@ describe("workflow", () => {
     const first = await mapWithSource(root, project, [], heuristic, {
       source: "agent",
       provider,
-      providerOptions: { model: null, reasoningEffort: null },
+      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
     });
     title = "Background worker package";
     const second = await mapWithSource(root, project, first.features, heuristic, {
       source: "agent",
       provider,
-      providerOptions: { model: null, reasoningEffort: null },
+      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
     });
 
     expect(first.features).toHaveLength(1);

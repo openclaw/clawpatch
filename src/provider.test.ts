@@ -129,15 +129,27 @@ describe("Codex provider args", () => {
   it("passes model and reasoning effort through explicit CLI config", () => {
     const args = ["exec"];
 
-    addCodexModelArgs(args, { model: "gpt-5.5", reasoningEffort: "xhigh" });
+    addCodexModelArgs(args, {
+      model: "gpt-5.5",
+      reasoningEffort: "xhigh",
+      skipGitRepoCheck: false,
+    });
 
     expect(args).toEqual(["exec", "--model", "gpt-5.5", "-c", 'model_reasoning_effort="xhigh"']);
+  });
+
+  it("passes the Git repo check bypass to Codex when requested", () => {
+    const args = ["exec"];
+
+    addCodexModelArgs(args, { model: null, reasoningEffort: null, skipGitRepoCheck: true });
+
+    expect(args).toEqual(["exec", "--skip-git-repo-check"]);
   });
 
   it("leaves Codex defaults untouched when unset", () => {
     const args = ["exec"];
 
-    addCodexModelArgs(args, { model: null, reasoningEffort: null });
+    addCodexModelArgs(args, { model: null, reasoningEffort: null, skipGitRepoCheck: false });
 
     expect(args).toEqual(["exec"]);
   });

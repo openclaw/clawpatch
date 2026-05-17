@@ -137,6 +137,7 @@ Useful flags:
 - `--provider <name>`
 - `--model <name>`
 - `--reasoning-effort <none|minimal|low|medium|high|xhigh>`
+- `--skip-git-repo-check`
 - `--output <path>` / `-o <path>`
 - `--dry-run`
 - `--force`
