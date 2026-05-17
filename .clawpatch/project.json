@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "projectId": "prj_https-github-com-danielmarbach-c_9c64f3f999",
+  "name": "clawpatch",
+  "rootPath": "/Users/danielmarbach/Projects/clawpatch",
+  "git": {
+    "remoteUrl": "https://github.com/danielmarbach/clawpatch.git",
+    "defaultBranch": "main",
+    "currentBranch": "feat/dotnet-mapper",
+    "headSha": "604f7febaeb948e7cae3e22aa8c97940df49fb80"
+  },
+  "detected": {
+    "languages": ["typescript", "javascript"],
+    "frameworks": ["vitest"],
+    "packageManagers": ["pnpm"],
+    "commands": {
+      "typecheck": "pnpm typecheck",
+      "lint": "pnpm lint",
+      "format": "pnpm format",
+      "test": "pnpm test"
+    }
+  },
+  "createdAt": "2026-05-17T12:52:06.186Z",
+  "updatedAt": "2026-05-17T12:52:06.186Z"
+}

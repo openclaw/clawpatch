@@ -205,14 +205,27 @@ function parseSlnProjects(content: string, solutionDir: string): string[] {
   ]
     .map((m) => m[1]?.replace(/\\/gu, "/"))
     .filter((v): v is string => v !== undefined && v.length > 0)
-    .map((p) => (solutionDir === "" ? p : `${solutionDir}/${p}`));
+    .map((p) => resolveRelativePath(solutionDir === "" ? p : `${solutionDir}/${p}`));
 }
 
 function parseSlnxProjects(content: string, solutionDir: string): string[] {
   return [...content.matchAll(/Path="([^"]+\.(?:cs|fs|vb)proj)"/gu)]
     .map((m) => m[1]?.replace(/\\/gu, "/"))
     .filter((v): v is string => v !== undefined && v.length > 0)
-    .map((p) => (solutionDir === "" ? p : `${solutionDir}/${p}`));
+    .map((p) => resolveRelativePath(solutionDir === "" ? p : `${solutionDir}/${p}`));
+}
+
+function resolveRelativePath(path: string): string {
+  const parts = path.split("/");
+  const resolved: string[] = [];
+  for (const part of parts) {
+    if (part === ".." && resolved.length > 0 && resolved.at(-1) !== "..") {
+      resolved.pop();
+    } else if (part !== "." && part.length > 0) {
+      resolved.push(part);
+    }
+  }
+  return resolved.join("/");
 }
 
 // ── Source file discovery ──────────────────────────────────────
