@@ -50,6 +50,9 @@ Supported deterministic mappers today:
   Rails configs, routes, views, assets, and database files
 - Rust Cargo commands, libraries, workspace crates, and integration tests
 - C/C++ standalone `main()` files, CMake targets, and autotools targets
+- C#/.NET projects from `.sln`, `.slnx`, `.csproj`, `.fsproj`, and `.vbproj`,
+  ASP.NET Core controllers, minimal API endpoints, C#/F#/Visual Basic source
+  groups, and .NET test projects
 - SwiftPM executable targets, library targets, and test suites
 - nested SwiftPM packages
 - Apple/Xcode projects from `project.yml`, `.xcodeproj`, or `.xcworkspace`
@@ -128,6 +131,14 @@ Android UI entrypoints, ViewModels, data boundaries, or dependency injection.
 Kotlin dependency-injection evidence includes Hilt, Dagger, Koin, and Metro
 annotations and imports.
 
+C#/.NET mapping reads solution/project files and C#/F#/Visual Basic source
+without executing MSBuild. It emits project records, bounded source groups,
+test-project records, ASP.NET Core controller routes, and minimal API routes. Default
+validation commands are only generated when there is a single clear solution or
+project target; ambiguous workspaces stay command-null rather than guessing.
+Common generated outputs such as `bin/`, `obj/`, `TestResults/`, and `.g.cs`
+files are skipped.
+
 C/C++ mapping covers generic project shapes only: standalone source files with
 `main()`, CMake `add_executable` / `add_library`, and autotools `bin_PROGRAMS` /
 `lib_LTLIBRARIES`. It deliberately avoids project-specific C dialects such as
@@ -156,5 +167,7 @@ Known gaps:
 - no Django route mapper yet
 - Laravel route parsing is convention-based, does not execute Laravel route discovery,
   and may omit prefixes applied by `Route::group(...)` wrappers
+- C#/.NET mapping does not evaluate MSBuild conditions, imported props/targets,
+  or runtime route conventions
 - no import graph expansion beyond nearby tests yet
 - agent mapping depends on provider quality and validates paths but not semantic intent

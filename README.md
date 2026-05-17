@@ -67,6 +67,10 @@ validation commands and records a patch attempt under `.clawpatch/`.
   imports, interfaces, inheritance, supertypes, and method signatures
 - Kotlin Android semantic roles for UI entrypoints, ViewModels, data
   boundaries, external clients, and dependency injection, including Metro
+- C#/.NET projects from `.sln`, `.slnx`, `.csproj`, `.fsproj`, and `.vbproj`
+  files, with conservative `dotnet build` / `dotnet test` defaults
+- ASP.NET Core controllers, minimal API endpoints, C#/F#/Visual Basic source
+  groups, and .NET test projects
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Elixir Mix/Phoenix projects, contexts, Phoenix web slices, runtime config,
   Ecto migrations, project scripts, and ExUnit suites

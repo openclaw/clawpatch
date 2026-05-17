@@ -9,6 +9,7 @@ import {
   rubyGemspecPaths,
   stripRubyComments,
 } from "./ruby.js";
+import { shellQuotePath } from "./shell.js";
 import { ProjectRecord, ProjectCommands } from "./types.js";
 
 type PackageJson = {
@@ -236,6 +237,12 @@ async function languageDefaultCommands(
   if (languages.includes("elixir")) {
     return elixirDefaultCommands(root);
   }
+  if (languages.some((language) => dotnetLanguages.has(language))) {
+    const dotnetCommands = await dotnetDefaultCommands(root);
+    if (hasValidationCommand(dotnetCommands)) {
+      return dotnetCommands;
+    }
+  }
   if (languages.includes("ruby")) {
     return rubyDefaultCommands(root);
   }
@@ -246,6 +253,15 @@ async function languageDefaultCommands(
     format: null,
     test: null,
   };
+}
+
+function hasValidationCommand(commands: ProjectCommands): boolean {
+  return (
+    commands.typecheck !== null ||
+    commands.lint !== null ||
+    commands.format !== null ||
+    commands.test !== null
+  );
 }
 
 function packageScriptManager(packageManagers: string[]): string {
@@ -327,6 +343,9 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("autotools");
   }
+  if (!found.includes("dotnet") && (await hasDotnetBuildManifest(root))) {
+    found.push("dotnet");
+  }
   if (await pathExists(join(root, "composer.json"))) {
     found.push("composer");
   }
@@ -357,6 +376,7 @@ async function detectPackageManagers(root: string): Promise<string[]> {
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
 const rubyPackageManagers = new Set(["bundler", "ruby"]);
+const dotnetLanguages = new Set(["csharp", "fsharp", "visual-basic"]);
 
 async function elixirDefaultCommands(root: string): Promise<ProjectCommands> {
   const info = await mixProjectInfo(root);
@@ -385,6 +405,55 @@ async function gradleDefaultCommands(root: string): Promise<ProjectCommands> {
     format: null,
     test: `${runner} test`,
   };
+}
+
+async function dotnetDefaultCommands(root: string): Promise<ProjectCommands> {
+  const target = await dotnetValidationTarget(root);
+  const testTarget = await dotnetTestTarget(root, target);
+  return {
+    typecheck: target === null ? null : `dotnet build ${shellQuotePath(target)}`,
+    lint: null,
+    format: null,
+    test: testTarget === null ? null : `dotnet test ${shellQuotePath(testTarget)}`,
+  };
+}
+
+async function dotnetValidationTarget(root: string): Promise<string | null> {
+  const solutions = (await collectDotnetFiles(root, isDotnetSolutionFileName, 4)).toSorted();
+  const rootSolutions = solutions.filter((path) => !path.includes("/"));
+  if (rootSolutions.length === 1) {
+    return rootSolutions[0] ?? null;
+  }
+  if (rootSolutions.length === 0 && solutions.length === 1) {
+    return solutions[0] ?? null;
+  }
+
+  const projects = (await collectDotnetFiles(root, isDotnetProjectFileName, 5)).toSorted();
+  const rootProjects = projects.filter((path) => !path.includes("/"));
+  if (rootProjects.length === 1) {
+    return rootProjects[0] ?? null;
+  }
+  return projects.length === 1 ? (projects[0] ?? null) : null;
+}
+
+async function dotnetTestTarget(root: string, buildTarget: string | null): Promise<string | null> {
+  const testProjects: string[] = [];
+  for (const project of await collectDotnetFiles(root, isDotnetProjectFileName, 5)) {
+    const source = await readFile(join(root, project), "utf8").catch(() => "");
+    if (isStrongDotnetTestProject(source)) {
+      testProjects.push(project);
+    }
+  }
+  if (testProjects.length === 0) {
+    return null;
+  }
+  if (
+    buildTarget !== null &&
+    (isDotnetSolutionFileName(buildTarget) || testProjects.includes(buildTarget))
+  ) {
+    return buildTarget;
+  }
+  return testProjects.length === 1 ? (testProjects[0] ?? null) : null;
 }
 
 async function phpDefaultCommands(
@@ -956,6 +1025,26 @@ async function detectFrameworks(
       frameworks.push(name);
     }
   }
+  for (const name of await detectDotnetFrameworks(root)) {
+    if (!frameworks.includes(name)) {
+      frameworks.push(name);
+    }
+  }
+  return uniqueStrings(frameworks);
+}
+
+async function detectDotnetFrameworks(root: string): Promise<string[]> {
+  const frameworks: string[] = [];
+  for (const project of await collectDotnetFiles(root, isDotnetProjectFileName, 5)) {
+    const source = await readFile(join(root, project), "utf8").catch(() => "");
+    const activeSource = stripXmlComments(source);
+    if (isDotnetWebProject(activeSource)) {
+      frameworks.push("aspnetcore");
+    }
+    if (/MSTest\.Sdk|Microsoft\.NET\.Test\.Sdk|xunit|NUnit/iu.test(activeSource)) {
+      frameworks.push("dotnet-test");
+    }
+  }
   return uniqueStrings(frameworks);
 }
 
@@ -1059,7 +1148,51 @@ async function detectLanguages(root: string): Promise<string[]> {
   if (!languages.includes("php") && (await containsReviewablePhpFile(root))) {
     languages.push("php");
   }
+  const dotnetProjectFiles = await collectDotnetFiles(root, isDotnetProjectFileName, 5);
+  if (
+    !languages.includes("csharp") &&
+    (dotnetProjectFiles.some((path) => path.toLowerCase().endsWith(".csproj")) ||
+      (await containsReviewableCsharpFile(root)))
+  ) {
+    languages.push("csharp");
+  }
+  if (
+    !languages.includes("fsharp") &&
+    dotnetProjectFiles.some((path) => path.toLowerCase().endsWith(".fsproj"))
+  ) {
+    languages.push("fsharp");
+  }
+  if (
+    !languages.includes("visual-basic") &&
+    dotnetProjectFiles.some((path) => path.toLowerCase().endsWith(".vbproj"))
+  ) {
+    languages.push("visual-basic");
+  }
   return languages;
+}
+
+async function hasDotnetBuildManifest(root: string): Promise<boolean> {
+  return (
+    (await containsFileMatching(root, 5, isDotnetProjectFileName, shouldSkipDotnetSearchEntry)) ||
+    (await containsFileMatching(root, 4, isDotnetSolutionFileName, shouldSkipDotnetSearchEntry))
+  );
+}
+
+async function containsReviewableCsharpFile(root: string): Promise<boolean> {
+  for (const prefix of ["src", "app", "apps", "lib", "test", "tests"]) {
+    if (
+      await containsFileWithExtension(
+        join(root, prefix),
+        ".cs",
+        6,
+        shouldSkipDotnetSearchEntry,
+        prefix,
+      )
+    ) {
+      return true;
+    }
+  }
+  return containsFileWithExtension(root, ".cs", 1, shouldSkipDotnetSearchEntry);
 }
 
 async function containsCFile(root: string): Promise<boolean> {
@@ -1467,12 +1600,99 @@ function shouldSkipSearchEntry(entry: string, relativePath = entry): boolean {
   ].includes(entry);
 }
 
+function shouldSkipDotnetSearchEntry(entry: string, relativePath = entry): boolean {
+  return (
+    shouldSkipSearchEntry(entry, relativePath) ||
+    ["bin", "obj", "TestResults", ".vs"].includes(entry) ||
+    isDotnetPackageCachePath(relativePath)
+  );
+}
+
+function isDotnetPackageCachePath(path: string): boolean {
+  return /(^|\/)\.nuget\/(?:packages|fallbackpackages)(\/|$)/iu.test(path);
+}
+
 function shouldSkipCOrCppSearchEntry(entry: string): boolean {
   return (
     shouldSkipSearchEntry(entry) ||
     entry === "vendor" ||
     entry === "CMakeFiles" ||
     /^cmake-build-[^/]+$/u.test(entry)
+  );
+}
+
+async function collectDotnetFiles(
+  root: string,
+  predicate: (entry: string) => boolean,
+  maxDepth: number,
+): Promise<string[]> {
+  const files: string[] = [];
+  await collectDotnetFilesAt(root, maxDepth, predicate, files);
+  return [...new Set(files)].toSorted();
+}
+
+async function collectDotnetFilesAt(
+  dir: string,
+  remainingDepth: number,
+  predicate: (entry: string) => boolean,
+  files: string[],
+  relativeDir = "",
+): Promise<void> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return;
+  }
+  for (const entry of await readdir(dir)) {
+    const relativePath = relativeDir.length === 0 ? entry : `${relativeDir}/${entry}`;
+    if (shouldSkipDotnetSearchEntry(entry, relativePath)) {
+      continue;
+    }
+    const full = join(dir, entry);
+    const info = await lstat(full);
+    if (info.isSymbolicLink()) {
+      continue;
+    }
+    if (info.isFile() && predicate(entry)) {
+      files.push(relativePath);
+    } else if (info.isDirectory()) {
+      await collectDotnetFilesAt(full, remainingDepth - 1, predicate, files, relativePath);
+    }
+  }
+}
+
+function isDotnetProjectFileName(entry: string): boolean {
+  return /\.(?:cs|fs|vb)proj$/iu.test(entry);
+}
+
+function isDotnetSolutionFileName(entry: string): boolean {
+  return /\.(?:sln|slnx)$/iu.test(entry);
+}
+
+function isStrongDotnetTestProject(source: string): boolean {
+  const activeSource = stripXmlComments(source);
+  return (
+    /<IsTestProject>\s*true\s*<\/IsTestProject>/iu.test(activeSource) ||
+    /<Project\b[^>]*\bSdk\s*=\s*["']MSTest\.Sdk(?:\/|["'])/iu.test(activeSource) ||
+    /<Sdk\b[^>]*\bName\s*=\s*["']MSTest\.Sdk["']/iu.test(activeSource) ||
+    /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|xunit\.v3|NUnit|NUnit3TestAdapter|MSTest\.TestFramework|Microsoft\.Testing\.Platform\.MSBuild)["']/iu.test(
+      activeSource,
+    )
+  );
+}
+
+function stripXmlComments(source: string): string {
+  return source.replace(/<!--[\s\S]*?-->/gu, "");
+}
+
+function isDotnetWebProject(source: string): boolean {
+  return (
+    /<Project\b[^>]*\bSdk\s*=\s*["']Microsoft\.NET\.Sdk\.Web(?:\/|["'])/iu.test(source) ||
+    /<Sdk\b[^>]*\bName\s*=\s*["']Microsoft\.NET\.Sdk\.Web["']/iu.test(source) ||
+    /<FrameworkReference\b[^>]*\bInclude\s*=\s*["']Microsoft\.AspNetCore\.App["']/iu.test(source) ||
+    /<PackageReference\b[^>]*\bInclude\s*=\s*["']Microsoft\.AspNetCore\./iu.test(source)
   );
 }
 
