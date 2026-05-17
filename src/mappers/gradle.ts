@@ -775,6 +775,9 @@ function kotlinDeclarationRoleEvidence(
 }
 
 function kotlinImportedTypeMatches(info: KotlinFileInfo, type: string, allowed: string[]): boolean {
+  if (allowed.includes(type)) {
+    return true;
+  }
   const direct = info.imports.get(type);
   return direct !== undefined && allowed.includes(direct);
 }
@@ -804,6 +807,9 @@ function kotlinImportForType(
   projectTypes: Set<string>,
   projectPackages: Set<string>,
 ): string | undefined {
+  if (type.includes(".")) {
+    return type.startsWith("kotlin.") ? undefined : type;
+  }
   const direct = info.imports.get(type);
   if (direct !== undefined) {
     return direct.startsWith("kotlin.") ? undefined : direct;
@@ -968,7 +974,11 @@ function parseKotlinFile(source: string): KotlinFileInfo {
   )) {
     const raw = match[1];
     if (raw !== undefined) {
-      annotations.add(raw.split(".").at(-1) ?? raw);
+      const simple = raw.split(".").at(-1) ?? raw;
+      annotations.add(simple);
+      if (raw.includes(".")) {
+        imports.set(simple, raw);
+      }
     }
   }
 
@@ -1251,9 +1261,7 @@ function baseKotlinTypeName(raw: string): string {
     raw
       .replace(/\([^()]*\)/gu, "")
       .replace(/\?.*$/su, "")
-      .split(".")
-      .at(-1)
-      ?.replace(/[^A-Za-z0-9_]/gu, "")
+      .replace(/[^A-Za-z0-9_.]/gu, "")
       .trim() ?? ""
   );
 }

@@ -2482,6 +2482,11 @@ describe("mapFeatures", () => {
     );
     await writeFixture(
       root,
+      "app/src/main/kotlin/com/example/ui/SettingsActivity.kt",
+      "package com.example.ui\nclass SettingsActivity : androidx.activity.ComponentActivity()\n",
+    );
+    await writeFixture(
+      root,
       "app/src/main/kotlin/com/example/ui/MainViewModel.kt",
       [
         "package com.example.ui",
@@ -2609,6 +2614,9 @@ describe("mapFeatures", () => {
     expect(ui?.ownedFiles.map((file) => file.path)).toContain(
       "app/src/main/kotlin/com/example/ui/ProfileFragment.kt",
     );
+    expect(ui?.ownedFiles.map((file) => file.path)).toContain(
+      "app/src/main/kotlin/com/example/ui/SettingsActivity.kt",
+    );
     expect(ui?.tests).toEqual([
       { path: "app/src/test/kotlin/com/example/ui/MainActivityTest.kt", command: null },
     ]);
@@ -2650,6 +2658,17 @@ describe("mapFeatures", () => {
         '  @GetMapping("/orders")',
         '  fun list(): String = "ok"',
         "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/api/QualifiedController.kt",
+      [
+        "package com.example.api",
+        "",
+        "@org.springframework.web.bind.annotation.RestController",
+        "class QualifiedController",
         "",
       ].join("\n"),
     );
@@ -2759,6 +2778,9 @@ describe("mapFeatures", () => {
     expect(web?.source).toBe("kotlin-server-role-web-entrypoint");
     expect(web?.ownedFiles.map((file) => file.path)).not.toContain(
       "src/main/kotlin/com/example/client/GitHubApi.kt",
+    );
+    expect(web?.ownedFiles.map((file) => file.path)).toContain(
+      "src/main/kotlin/com/example/api/QualifiedController.kt",
     );
     expect(web?.tests).toEqual([
       { path: "src/test/kotlin/com/example/api/OrderControllerTest.kt", command: null },
@@ -3184,6 +3206,16 @@ describe("mapFeatures", () => {
         "",
       ].join("\n"),
     );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/jobs/QualifiedHandler.kt",
+      [
+        "package com.example.jobs",
+        "",
+        "class QualifiedHandler : org.framework.FrameworkBase()",
+        "",
+      ].join("\n"),
+    );
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -3201,6 +3233,9 @@ describe("mapFeatures", () => {
     );
     expect(framework?.ownedFiles.map((file) => file.path)).toContain(
       "src/main/kotlin/com/example/jobs/InternalHandler.kt",
+    );
+    expect(framework?.ownedFiles.map((file) => file.path)).toContain(
+      "src/main/kotlin/com/example/jobs/QualifiedHandler.kt",
     );
   });
 
