@@ -830,11 +830,14 @@ function kotlinImportForType(
     }
     return type.startsWith("kotlin.") ? undefined : type;
   }
+  if (info.declarations.some((declaration) => declaration.name === type)) {
+    return undefined;
+  }
   const direct = info.imports.get(type);
   if (direct !== undefined) {
     return direct.startsWith("kotlin.") ? undefined : direct;
   }
-  if (projectTypes.has(type) || isKotlinImplicitType(type)) {
+  if (isKotlinImplicitType(type)) {
     return undefined;
   }
   for (const full of info.imports.values()) {
@@ -847,6 +850,9 @@ function kotlinImportForType(
         return candidate;
       }
     }
+  }
+  if (projectTypes.has(type)) {
+    return undefined;
   }
   return undefined;
 }
@@ -1505,10 +1511,15 @@ async function gradleTags(
 }
 
 function appliesAndroidGradlePlugin(source: string): boolean {
+  const androidPluginId = String.raw`com\.android\.(?:application|library|test|dynamic-feature)`;
   const androidPluginPattern =
-    String.raw`\bid\s*(?:\(\s*)?["']com\.android\.(?:application|library|test|dynamic-feature)["']\s*\)?` +
+    String.raw`\bid\s*(?:\(\s*)?["']${androidPluginId}["']\s*\)?` +
     "|" +
-    String.raw`\balias\s*\(\s*libs\.plugins\.[A-Za-z0-9_.]*android[A-Za-z0-9_.]*\s*\)`;
+    String.raw`\balias\s*\(\s*libs\.plugins\.[A-Za-z0-9_.]*android[A-Za-z0-9_.]*\s*\)` +
+    "|" +
+    String.raw`\bapply\s+plugin\s*:\s*["']${androidPluginId}["']` +
+    "|" +
+    String.raw`\bapply\s*\(\s*plugin\s*=\s*["']${androidPluginId}["']\s*\)`;
   const disabledAndroidPlugin = new RegExp(
     String.raw`(?:${androidPluginPattern})(?:\s*\.version\s*\([^)]*\)|\s+version\s+["'][^"']+["'])?\s*(?:\.apply\s*\(\s*false\s*\)|\bapply\s+false\b)`,
     "giu",

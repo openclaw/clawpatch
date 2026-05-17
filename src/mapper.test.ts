@@ -2896,6 +2896,40 @@ describe("mapFeatures", () => {
     ).not.toContain("android");
   });
 
+  it("detects legacy Android Gradle plugin application syntax", async () => {
+    const root = await fixtureRoot("clawpatch-kotlin-android-legacy-gradle-map-");
+    await writeFixture(root, "settings.gradle.kts", "pluginManagement {}\n");
+    await writeFixture(root, "build.gradle", 'apply plugin: "com.android.library"\n');
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/ui/MainActivity.kt",
+      [
+        "package com.example.ui",
+        "",
+        "import androidx.activity.ComponentActivity",
+        "",
+        "class MainActivity : ComponentActivity()",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.find((feature) => feature.title === "Gradle module .")?.tags).toContain(
+      "android",
+    );
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.source === "kotlin-android-role-ui-entrypoint" &&
+          feature.ownedFiles.some(
+            (file) => file.path === "src/main/kotlin/com/example/ui/MainActivity.kt",
+          ),
+      ),
+    ).toBe(true);
+  });
+
   it("does not treat non-entrypoint Android framework imports as UI roles", async () => {
     const root = await fixtureRoot("clawpatch-kotlin-android-non-ui-import-");
     await writeFixture(root, "settings.gradle.kts", 'pluginManagement {}\ninclude(":app")\n');
@@ -3050,6 +3084,11 @@ describe("mapFeatures", () => {
       root,
       "src/main/kotlin/com/example/ports/PaymentPort.kt",
       "package com.example.ports\nfun interface PaymentPort { fun pay() }\n",
+    );
+    await writeFixture(
+      root,
+      "src/main/kotlin/com/example/domain/Job.kt",
+      "package com.example.domain\nclass Job\n",
     );
     await writeFixture(
       root,
