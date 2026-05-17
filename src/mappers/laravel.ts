@@ -36,6 +36,22 @@ const composerScriptNames = [
 ];
 const groupedMaxOwnedFiles = 12;
 const maxAssociatedTests = 8;
+const routeMethods = new Set([
+  "get",
+  "post",
+  "put",
+  "patch",
+  "delete",
+  "options",
+  "any",
+  "resource",
+  "apiResource",
+]);
+
+type RouteCall = {
+  name: string;
+  args: string[];
+};
 
 export async function laravelSeeds(root: string): Promise<FeatureSeed[]> {
   const composer = await readComposerJson(root);
@@ -389,79 +405,353 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
   for (const file of routeFiles) {
     const source = stripPhpComments(await readFile(join(root, file), "utf8"));
     const imports = phpUseMap(source);
-    for (const match of source.matchAll(
-      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any|resource|apiResource)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(?:\[\s*)?(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class(?:\s*,\s*(['"])([^'"]+)\6)?/gmsu,
-    )) {
-      const chain = match[1] ?? "";
-      const method = match[2];
-      const uri = match[4];
-      const controllerClass = resolveImportedClassName(imports, match[5] ?? "");
-      if (method === undefined || uri === undefined || controllerClass === null) {
-        continue;
+    for (const statement of routeStatements(source)) {
+      const calls = parseRouteCalls(statement);
+      const route = routeFromCalls(file, imports, calls, fileDefaultRoutePrefixes(file));
+      if (route !== null) {
+        routes.push(route);
       }
-      routes.push({
-        file,
-        method,
-        uri: routeUriWithPrefixes(
-          [...fileDefaultRoutePrefixes(file), ...fluentRoutePrefixes(chain)],
-          uri,
-        ),
-        controllerClass,
-        action: match[7] ?? null,
-      });
+      routes.push(...controllerGroupRoutes(file, imports, calls));
     }
-    routes.push(...controllerGroupRoutes(file, source, imports));
   }
   return routes;
 }
 
 function controllerGroupRoutes(
   file: string,
-  source: string,
   imports: Map<string, string>,
+  calls: RouteCall[],
 ): RouteRef[] {
   const routes: RouteRef[] = [];
-  for (const group of source.matchAll(
-    /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)controller\s*\(\s*(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class\s*\)\s*->\s*((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)group\s*\(\s*function\s*\([^)]*\)\s*\{(?<body>.*?)\}\s*\)\s*;/gmsu,
-  )) {
-    const controllerClass = resolveImportedClassName(imports, group[2] ?? "");
-    const body = group.groups?.["body"];
-    if (controllerClass === null || body === undefined) {
-      continue;
-    }
-    const groupPrefixes = [
-      ...fileDefaultRoutePrefixes(file),
-      ...fluentRoutePrefixes(group[1] ?? ""),
-      ...fluentRoutePrefixes(group[3] ?? ""),
-    ];
-    for (const route of body.matchAll(
-      /Route::((?:[A-Za-z_][A-Za-z0-9_]*\s*\([^;]*?\)\s*->\s*)*)(get|post|put|patch|delete|options|any)\s*\(\s*(['"])([^'"]*)\3\s*,\s*(['"])([^'"]+)\5/gmsu,
-    )) {
-      const method = route[2];
-      const uri = route[4];
-      if (method === undefined || uri === undefined) {
-        continue;
-      }
-      routes.push({
-        file,
-        method,
-        uri: routeUriWithPrefixes([...groupPrefixes, ...fluentRoutePrefixes(route[1] ?? "")], uri),
-        controllerClass,
-        action: route[6] ?? null,
-      });
+  const controllerIndex = calls.findIndex((call) => call.name === "controller");
+  const groupIndex = calls.findIndex((call) => call.name === "group");
+  if (controllerIndex < 0 || groupIndex < 0) {
+    return routes;
+  }
+  const controllerClass = resolveImportedClassName(
+    imports,
+    classLiteralName(calls[controllerIndex]?.args[0] ?? "") ?? "",
+  );
+  const body = closureBody(calls[groupIndex]?.args[0] ?? "");
+  if (controllerClass === null || body === null) {
+    return routes;
+  }
+  const groupPrefixes = [
+    ...fileDefaultRoutePrefixes(file),
+    ...routePrefixesFromCalls(calls.slice(0, groupIndex)),
+  ];
+  for (const statement of routeStatements(body)) {
+    const route = routeFromCalls(
+      file,
+      imports,
+      parseRouteCalls(statement),
+      groupPrefixes,
+      controllerClass,
+    );
+    if (route !== null) {
+      routes.push(route);
     }
   }
   return routes;
 }
 
-function fileDefaultRoutePrefixes(file: string): string[] {
-  return file === "routes/api.php" ? ["api"] : [];
+function routeFromCalls(
+  file: string,
+  imports: Map<string, string>,
+  calls: RouteCall[],
+  basePrefixes: string[],
+  controllerClassOverride: string | null = null,
+): RouteRef | null {
+  const routeIndex = calls.findLastIndex((call) => routeMethods.has(call.name));
+  const call = routeIndex < 0 ? undefined : calls[routeIndex];
+  const uri = stringLiteralValue(call?.args[0] ?? "");
+  if (call === undefined || uri === null) {
+    return null;
+  }
+  const target =
+    controllerClassOverride === null
+      ? routeTarget(call.args.slice(1), imports)
+      : {
+          controllerClass: controllerClassOverride,
+          action: stringLiteralValue(call.args[1] ?? ""),
+        };
+  if (target === null) {
+    return null;
+  }
+  return {
+    file,
+    method: call.name,
+    uri: routeUriWithPrefixes(
+      [...basePrefixes, ...routePrefixesFromCalls(calls.slice(0, routeIndex))],
+      uri,
+    ),
+    controllerClass: target.controllerClass,
+    action: target.action,
+  };
 }
 
-function fluentRoutePrefixes(chain: string): string[] {
-  return [...chain.matchAll(/\bprefix\s*\(\s*(['"])([^'"]*)\1\s*\)/gmu)]
-    .map((match) => match[2])
-    .filter((prefix) => prefix !== undefined);
+function routeTarget(
+  args: string[],
+  imports: Map<string, string>,
+): { controllerClass: string; action: string | null } | null {
+  const targetArgs = arrayArgs(args[0] ?? "") ?? args;
+  const controllerClass = resolveImportedClassName(
+    imports,
+    classLiteralName(targetArgs[0] ?? "") ?? "",
+  );
+  if (controllerClass === null) {
+    return null;
+  }
+  return {
+    controllerClass,
+    action: stringLiteralValue(targetArgs[1] ?? args[1] ?? ""),
+  };
+}
+
+function routeStatements(source: string): string[] {
+  const statements: string[] = [];
+  let offset = 0;
+  while (offset < source.length) {
+    const start = source.indexOf("Route::", offset);
+    if (start < 0) {
+      break;
+    }
+    const end = statementEnd(source, start);
+    if (end === null) {
+      break;
+    }
+    statements.push(source.slice(start, end + 1));
+    offset = end + 1;
+  }
+  return statements;
+}
+
+function statementEnd(source: string, start: number): number | null {
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+    } else if (char === "(") {
+      parens += 1;
+    } else if (char === ")") {
+      parens = Math.max(0, parens - 1);
+    } else if (char === "[") {
+      brackets += 1;
+    } else if (char === "]") {
+      brackets = Math.max(0, brackets - 1);
+    } else if (char === "{") {
+      braces += 1;
+    } else if (char === "}") {
+      braces = Math.max(0, braces - 1);
+    } else if (char === ";" && parens === 0 && brackets === 0 && braces === 0) {
+      return index;
+    }
+  }
+  return null;
+}
+
+function parseRouteCalls(statement: string): RouteCall[] {
+  const calls: RouteCall[] = [];
+  let offset = statement.indexOf("Route::");
+  if (offset < 0) {
+    return calls;
+  }
+  offset += "Route::".length;
+  while (offset < statement.length) {
+    offset = skipRouteSeparators(statement, offset);
+    const nameStart = offset;
+    if (!isIdentifierStart(statement[offset])) {
+      break;
+    }
+    offset += 1;
+    while (isIdentifierPart(statement[offset])) {
+      offset += 1;
+    }
+    const name = statement.slice(nameStart, offset);
+    offset = skipWhitespace(statement, offset);
+    if (statement[offset] !== "(") {
+      break;
+    }
+    const end = matchingDelimiter(statement, offset, "(", ")");
+    if (end === null) {
+      break;
+    }
+    calls.push({ name, args: splitTopLevelArgs(statement.slice(offset + 1, end)) });
+    offset = end + 1;
+  }
+  return calls;
+}
+
+function skipRouteSeparators(source: string, offset: number): number {
+  let index = skipWhitespace(source, offset);
+  if (source.startsWith("->", index)) {
+    index = skipWhitespace(source, index + 2);
+  }
+  return index;
+}
+
+function skipWhitespace(source: string, offset: number): number {
+  let index = offset;
+  while (/\s/u.test(source[index] ?? "")) {
+    index += 1;
+  }
+  return index;
+}
+
+function splitTopLevelArgs(source: string): string[] {
+  const args: string[] = [];
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  let start = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+    } else if (char === "(") {
+      parens += 1;
+    } else if (char === ")") {
+      parens = Math.max(0, parens - 1);
+    } else if (char === "[") {
+      brackets += 1;
+    } else if (char === "]") {
+      brackets = Math.max(0, brackets - 1);
+    } else if (char === "{") {
+      braces += 1;
+    } else if (char === "}") {
+      braces = Math.max(0, braces - 1);
+    } else if (char === "," && parens === 0 && brackets === 0 && braces === 0) {
+      args.push(source.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  args.push(source.slice(start).trim());
+  return args.filter((arg) => arg.length > 0);
+}
+
+function matchingDelimiter(
+  source: string,
+  openIndex: number,
+  open: "(" | "{" | "[",
+  close: ")" | "}" | "]",
+): number | null {
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+  let depth = 0;
+  for (let index = openIndex; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+    } else if (char === open) {
+      depth += 1;
+    } else if (char === close) {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return null;
+}
+
+function routePrefixesFromCalls(calls: RouteCall[]): string[] {
+  return calls
+    .filter((call) => call.name === "prefix")
+    .map((call) => stringLiteralValue(call.args[0] ?? ""))
+    .filter((prefix) => prefix !== null);
+}
+
+function arrayArgs(source: string): string[] | null {
+  const trimmed = source.trim();
+  if (!trimmed.startsWith("[")) {
+    return null;
+  }
+  const end = matchingDelimiter(trimmed, 0, "[", "]");
+  if (end === null) {
+    return null;
+  }
+  return splitTopLevelArgs(trimmed.slice(1, end));
+}
+
+function closureBody(source: string): string | null {
+  const open = source.indexOf("{");
+  if (open < 0) {
+    return null;
+  }
+  const close = matchingDelimiter(source, open, "{", "}");
+  return close === null ? null : source.slice(open + 1, close);
+}
+
+function classLiteralName(source: string): string | null {
+  const match = /^(\\?[A-Za-z_][A-Za-z0-9_\\]*)::class$/u.exec(source.trim());
+  return match?.[1] ?? null;
+}
+
+function stringLiteralValue(source: string): string | null {
+  const trimmed = source.trim();
+  const quote = trimmed[0];
+  if ((quote !== "'" && quote !== '"') || !trimmed.endsWith(quote)) {
+    return null;
+  }
+  return trimmed.slice(1, -1);
+}
+
+function isIdentifierStart(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z_]/u.test(char);
+}
+
+function isIdentifierPart(char: string | undefined): boolean {
+  return char !== undefined && /[A-Za-z0-9_]/u.test(char);
+}
+
+function fileDefaultRoutePrefixes(file: string): string[] {
+  return file === "routes/api.php" ? ["api"] : [];
 }
 
 function stripPhpComments(source: string): string {
