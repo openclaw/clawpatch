@@ -2,6 +2,7 @@
 
 ## 0.2.1 - Unreleased
 
+- Added deterministic .NET mapper for C#, F#, and Visual Basic projects discovered from `.sln` and `.slnx` solution files with standalone fallback. Maps console apps, ASP.NET Core web apps, libraries, and test suites. Detects test projects by naming convention and framework packages (xUnit, NUnit, MSTest, TUnit). Default commands: `dotnet build`, `dotnet format --verify-no-changes`, `dotnet format`, `dotnet test`.
 - Added explicit Codex reasoning effort selection via `--reasoning-effort`, `CLAWPATCH_REASONING_EFFORT`, and provider config, with `doctor` reporting the active setting.
 - Added deterministic Express, Fastify, and Hono route mapping for Node projects, thanks @rohitjavvadi.
 - Fixed provider commands with relative `--root` paths by canonicalizing explicit roots before invoking Codex or other providers.

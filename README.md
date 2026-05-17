@@ -67,6 +67,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - Kotlin Android semantic roles for UI entrypoints, ViewModels, data
   boundaries, external clients, and dependency injection, including Metro
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites
+- .NET C#, F#, and Visual Basic console apps, web apps, libraries, and test
+  suites from `.sln`/`.slnx` solution files or standalone project files
 - Rust `src/main.rs`, `src/bin/*.rs`, `src/lib.rs`, `crates/*`, and
   `tests/*.rs`
 - C/C++ standalone `main()` files, CMake `add_executable` / `add_library`
