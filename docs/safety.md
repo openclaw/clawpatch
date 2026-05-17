@@ -14,8 +14,8 @@ Current safety rules:
 - `.clawpatch/` state changes are allowed during runs.
 - review and revalidate provider calls use a read-only sandbox.
 - provider output must pass runtime schema validation.
-- feature locks are stored in feature records and can be cleared with
-  `clawpatch clean-locks`.
+- feature locks are stored in feature records and `.clawpatch/locks/`; `status`
+  surfaces both, and `clean-locks` clears both.
 - the mapper skips symlinked directories and common generated directories.
 
 Not implemented today:
