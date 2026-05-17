@@ -127,7 +127,7 @@ export async function elixirSeeds(root: string): Promise<FeatureSeed[]> {
       route: null,
       command: null,
       ownedFiles: migrationFiles.map((path) => ({ path, reason: "Ecto migration" })),
-      contextFiles: (await existingFiles(root, ["mix.exs", "lib/repo.ex"])).map((path) => ({
+      contextFiles: (await migrationContextFiles(root, metadata.appName)).map((path) => ({
         path,
         reason: "migration context",
       })),
@@ -210,26 +210,43 @@ async function elixirContextGroups(
 ): Promise<ElixirSourceGroup[]> {
   const appRoot = appName === null ? null : `lib/${appName}`;
   const roots = appRoot !== null && (await pathExists(join(root, appRoot))) ? [appRoot] : ["lib"];
-  const groups: ElixirSourceGroup[] = [];
+  const groups = new Map<string, Set<string>>();
 
   for (const sourceRoot of roots) {
     for (const entry of await safeReadDir(join(root, sourceRoot))) {
-      if (!entry.isDirectory() || entry.name.endsWith("_web")) {
+      if (entry.isDirectory() && entry.name.endsWith("_web")) {
         continue;
       }
-      const prefix = `${sourceRoot}/${entry.name}`;
-      const nested = (await walk(root, [prefix])).filter(isElixirSourceFile);
-      const rootFile = `${sourceRoot}/${entry.name}.ex`;
+
+      const label = entry.isFile() ? entry.name.replace(/\.ex$/u, "") : entry.name;
+      if (!entry.isDirectory() && label === entry.name) {
+        continue;
+      }
+
+      const prefix = `${sourceRoot}/${label}`;
+      const nested = entry.isDirectory()
+        ? (await walk(root, [prefix])).filter(isElixirSourceFile)
+        : [];
+      const rootFile = `${sourceRoot}/${label}.ex`;
       const files = [...new Set([...(await existingFiles(root, [rootFile])), ...nested])]
         .toSorted()
         .slice(0, elixirSourceGroupMaxOwnedFiles);
       if (files.length > 0) {
-        groups.push({ label: entry.name, files });
+        const groupFiles = groups.get(label) ?? new Set<string>();
+        for (const file of files) {
+          groupFiles.add(file);
+        }
+        groups.set(label, groupFiles);
       }
     }
   }
 
-  return groups;
+  return [...groups.entries()]
+    .map(([label, files]) => ({
+      label,
+      files: [...files].toSorted().slice(0, elixirSourceGroupMaxOwnedFiles),
+    }))
+    .toSorted((left, right) => left.label.localeCompare(right.label));
 }
 
 async function phoenixWebGroups(
@@ -285,7 +302,9 @@ function testPrefixesForSource(path: string): string[] {
   if (!path.startsWith("lib/")) {
     return [];
   }
-  const withoutExtension = path.replace(/\.(?:exs?|heex)$/u, "");
+  const withoutExtension = path.endsWith(".heex")
+    ? path.replace(/\.[^.]+\.heex$/u, "")
+    : path.replace(/\.exs?$/u, "");
   const parts = withoutExtension.split("/");
   if (parts.length < 3) {
     return [];
@@ -294,6 +313,19 @@ function testPrefixesForSource(path: string): string[] {
   const rest = parts.slice(2);
   const testApp = app?.endsWith("_web") === true ? `${app}` : app;
   return [`test/${testApp}/${rest.join("/")}_test.exs`, `test/${testApp}/${rest[0]}`];
+}
+
+async function migrationContextFiles(root: string, appName: string | null): Promise<string[]> {
+  const candidates = ["mix.exs", "lib/repo.ex"];
+  if (appName !== null) {
+    candidates.push(`lib/${appName}/repo.ex`);
+  }
+
+  const repoFiles = (await walk(root, ["lib"]))
+    .filter((path) => path === "lib/repo.ex" || path.endsWith("/repo.ex"))
+    .toSorted();
+
+  return [...new Set([...(await existingFiles(root, candidates)), ...repoFiles])];
 }
 
 async function phoenixWebContextFiles(root: string, files: string[]) {

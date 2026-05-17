@@ -12858,6 +12858,7 @@ end
       "priv/repo/migrations/20260517000000_create_users.exs",
       "defmodule SampleApp.Repo.Migrations.CreateUsers do\nend\n",
     );
+    await writeFixture(root, "lib/sample_app/repo.ex", "defmodule SampleApp.Repo do\nend\n");
     await writeFixture(
       root,
       "lib/sample_app/accounts.ex",
@@ -12872,6 +12873,12 @@ end
       root,
       "test/sample_app/accounts_test.exs",
       "defmodule SampleApp.AccountsTest do\nuse ExUnit.Case\nend\n",
+    );
+    await writeFixture(root, "lib/sample_app/billing.ex", "defmodule SampleApp.Billing do\nend\n");
+    await writeFixture(
+      root,
+      "test/sample_app/billing_test.exs",
+      "defmodule SampleApp.BillingTest do\nuse ExUnit.Case\nend\n",
     );
     await writeFixture(
       root,
@@ -12893,6 +12900,12 @@ end
       "lib/sample_app_web/live/dashboard_live.ex",
       "defmodule SampleAppWeb.DashboardLive do\nend\n",
     );
+    await writeFixture(root, "lib/sample_app_web/live/page_live.html.heex", "<div />\n");
+    await writeFixture(
+      root,
+      "test/sample_app_web/live/page_live_test.exs",
+      "defmodule SampleAppWeb.PageLiveTest do\nuse ExUnit.Case\nend\n",
+    );
     await writeFixture(
       root,
       "lib/sample_app_web/components/layouts.ex",
@@ -12904,13 +12917,17 @@ end
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
     const accounts = result.features.find((feature) => feature.title === "Elixir context accounts");
+    const billing = result.features.find((feature) => feature.title === "Elixir context billing");
     const controllers = result.features.find(
       (feature) => feature.title === "Phoenix web controllers",
     );
+    const live = result.features.find((feature) => feature.title === "Phoenix web live");
+    const migrations = result.features.find((feature) => feature.title === "Ecto migrations");
 
     expect(titles).toEqual(
       expect.arrayContaining([
         "Elixir context accounts",
+        "Elixir context billing",
         "Phoenix web controllers",
         "Phoenix web live",
         "Phoenix web components",
@@ -12929,6 +12946,13 @@ end
         command: "mix test test/sample_app/accounts_test.exs",
       },
     ]);
+    expect(billing?.ownedFiles.map((file) => file.path)).toEqual(["lib/sample_app/billing.ex"]);
+    expect(billing?.tests).toEqual([
+      {
+        path: "test/sample_app/billing_test.exs",
+        command: "mix test test/sample_app/billing_test.exs",
+      },
+    ]);
     expect(controllers?.contextFiles.map((file) => file.path)).toContain(
       "lib/sample_app_web/router.ex",
     );
@@ -12937,6 +12961,14 @@ end
         path: "test/sample_app_web/controllers/page_controller_test.exs",
         command: "mix test test/sample_app_web/controllers/page_controller_test.exs",
       },
+    ]);
+    expect(live?.tests).toContainEqual({
+      path: "test/sample_app_web/live/page_live_test.exs",
+      command: "mix test test/sample_app_web/live/page_live_test.exs",
+    });
+    expect(migrations?.contextFiles.map((file) => file.path)).toEqual([
+      "mix.exs",
+      "lib/sample_app/repo.ex",
     ]);
   });
 
@@ -12949,11 +12981,19 @@ end
     );
     await writeFixture(root, "lib/sample_app/core.ex", "defmodule SampleApp.Core do\nend\n");
     await writeFixture(root, "deps/native/src/noise.c", "int main(void) { return 0; }\n");
+    await writeFixture(
+      root,
+      "apps/web/deps/native/src/nested_noise.c",
+      "int main(void) { return 0; }\n",
+    );
 
     const result = await mapFeatures(root, await detectProject(root), []);
 
-    expect(result.features.map((feature) => feature.entrypoints[0]?.path)).not.toContain(
-      "deps/native/src/noise.c",
+    expect(result.features.map((feature) => feature.entrypoints[0]?.path)).toEqual(
+      expect.not.arrayContaining([
+        "deps/native/src/noise.c",
+        "apps/web/deps/native/src/nested_noise.c",
+      ]),
     );
   });
 });
