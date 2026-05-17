@@ -64,7 +64,7 @@ async function dispatch(
     case "revalidate":
       return revalidateCommand(context, flags);
     case "doctor":
-      return doctorCommand(context);
+      return doctorCommand(context, flags);
     case "clean-locks":
       return cleanLocksCommand(context);
     default:
@@ -167,7 +167,7 @@ const commandFlags = {
     "provider",
     "model",
   ]),
-  doctor: new Set<string>(),
+  doctor: new Set(["provider", "model"]),
   "clean-locks": new Set<string>(),
 } satisfies Record<string, Set<string>>;
 
@@ -502,6 +502,8 @@ Usage:
   clawpatch doctor [flags]
 
 Flags:
+  --provider <name>
+  --model <name>
   --json
 `);
     return;
