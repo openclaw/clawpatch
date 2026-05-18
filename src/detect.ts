@@ -424,14 +424,18 @@ async function dotnetValidationTarget(root: string): Promise<string | null> {
   if (rootSolutions.length === 1) {
     return rootSolutions[0] ?? null;
   }
-  if (rootSolutions.length === 0 && solutions.length === 1) {
-    return solutions[0] ?? null;
-  }
 
   const projects = (await collectDotnetFiles(root, isDotnetProjectFileName, 5)).toSorted();
   const rootProjects = projects.filter((path) => !path.includes("/"));
   if (rootProjects.length === 1) {
     return rootProjects[0] ?? null;
+  }
+  if (
+    rootSolutions.length === 0 &&
+    solutions.length === 1 &&
+    (await dotnetSolutionIncludesProjects(root, solutions[0] ?? "", projects))
+  ) {
+    return solutions[0] ?? null;
   }
   return projects.length === 1 ? (projects[0] ?? null) : null;
 }

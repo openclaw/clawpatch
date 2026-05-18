@@ -13436,6 +13436,25 @@ EndProject
     expect(project.detected.commands.test).toBe("dotnet test tests/App.Tests/App.Tests.csproj");
   });
 
+  it("prefers a root .NET project over an unrelated nested solution", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-root-project-nested-solution-");
+    await writeFixture(root, "App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "Program.cs", "public sealed class Program {}\n");
+    await writeFixture(
+      root,
+      "tools/Tool.sln",
+      `Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{00000000-0000-0000-0000-000000000000}") = "Tool", "Tool.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+`,
+    );
+    await writeFixture(root, "tools/Tool.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+
+    const project = await detectProject(root);
+
+    expect(project.detected.commands.typecheck).toBe("dotnet build App.csproj");
+  });
+
   it("ignores .NET test metadata inside XML comments", async () => {
     const root = await fixtureRoot("clawpatch-dotnet-commented-test-metadata-");
     await writeFixture(
