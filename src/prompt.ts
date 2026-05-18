@@ -1,5 +1,6 @@
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
+import { formatCrossRepoContext, loadCrossRepoContext } from "./crossrepo.js";
 import { ClawpatchConfig, FeatureRecord, FindingRecord, ProjectRecord } from "./types.js";
 
 export type ReviewMode = "default" | "deslopify";
@@ -135,6 +136,31 @@ ${customPrompt.trim()}
 
 `
       : "";
+  const focus = config.review.focus ?? [];
+  const deadCodeInstructions = focus.includes("dead-code")
+    ? `
+Dead code and refactoring (zero-tech-debt):
+- Search for real callers before preserving compatibility. If a mode, prop, wrapper, route alias, or fallback has no current caller, flag it as dead-code.
+- Flag unused exports, unreachable branches, and compatibility paths that appear to have no callers.
+- Flag code that exists only to support deprecated or removed features.
+- Prefer findings that reduce lines: a deletion or simplification is more valuable than a refactor that adds abstraction.
+- Do NOT flag unused imports or variables (linters handle that). Focus on dead features, dead branches, dead compatibility layers, and over-abstracted code with one consumer.
+`
+    : "";
+  const deadServiceInstructions = focus.includes("dead-service")
+    ? `
+Dead service and cross-repo analysis:
+- Check if API endpoints have known callers (from cross-repo context below)
+- Flag endpoints where data is written but never read
+- Flag tables that are populated but never queried
+- Flag pipelines (DAGs, cron jobs) that produce data nobody consumes
+- Consider: an endpoint with no tests AND no known callers is likely dead
+- Consider: an endpoint returning empty lists in prod is likely dead
+- Distinguish between "no caller found" (maybe in unscanned repo) and "confirmed no caller" (audited all known repos)
+`
+    : "";
+  const crossRepoContext = await loadCrossRepoContext(root);
+  const crossRepoBlock = formatCrossRepoContext(crossRepoContext);
   const promptContext = {
     maxOwnedFiles: config.review.maxOwnedFiles,
     maxContextFiles: config.review.maxContextFiles,
@@ -169,6 +195,7 @@ ${customBlock}Review categories:
 - missing/weak tests
 - release/build hazards
 - maintainability risks with concrete impact
+- dead code and unnecessary compatibility layers${deadCodeInstructions}${deadServiceInstructions}
 
 ${reviewModeInstructions(mode)}
 
@@ -189,7 +216,7 @@ JSON shape:
   "findings": [
     {
       "title": "string",
-      "category": "bug|security|performance|concurrency|api-contract|data-loss|test-gap|docs-gap|build-release|maintainability",
+      "category": "bug|security|performance|concurrency|api-contract|data-loss|test-gap|docs-gap|build-release|maintainability|dead-code|dead-service",
       "severity": "critical|high|medium|low",
       "confidence": "high|medium|low",
       "evidence": [{"path":"string","startLine":1,"endLine":1,"symbol":null,"quote":null}],
@@ -205,7 +232,7 @@ JSON shape:
 }
 
 Files:
-${fileBlocks.join("\n\n")}`;
+${fileBlocks.join("\n\n")}${crossRepoBlock.length > 0 ? `\n\n${crossRepoBlock}` : ""}`;
   const promptBytes = Buffer.byteLength(prompt, "utf8");
   return {
     prompt,

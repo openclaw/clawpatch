@@ -11,6 +11,8 @@ export const findingCategories = [
   "docs-gap",
   "build-release",
   "maintainability",
+  "dead-code",
+  "dead-service",
 ] as const;
 
 export const findingTriages = [
@@ -19,6 +21,8 @@ export const findingTriages = [
   "risk",
   "test-gap",
   "docs-gap",
+  "dead-code",
+  "dead-service",
 ] as const;
 
 export function deriveFindingTriage(
@@ -30,6 +34,12 @@ export function deriveFindingTriage(
   }
   if (category === "docs-gap") {
     return "docs-gap";
+  }
+  if (category === "dead-code") {
+    return "dead-code";
+  }
+  if (category === "dead-service") {
+    return "dead-service";
   }
   if (category === "api-contract") {
     return "contract-mismatch";
@@ -135,6 +145,7 @@ export const configSchema = z.object({
     maxOwnedFiles: z.number().int().positive(),
     maxFindingsPerFeature: z.number().int().positive(),
     minConfidenceToFix: z.enum(["high", "medium", "low"]),
+    focus: z.array(z.enum(["bugs", "security", "dead-code", "dead-service", "maintainability"])).optional(),
   }),
   git: z.object({
     requireCleanWorktreeForFix: z.boolean(),
