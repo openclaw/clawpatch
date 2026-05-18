@@ -204,7 +204,7 @@ const piProvider: Provider = {
     if (result.exitCode !== 0) {
       throw new ClawpatchError("pi CLI not available", 4, "provider-auth");
     }
-    return (result.stdout.trim() || result.stderr.trim());
+    return result.stdout.trim() || result.stderr.trim();
   },
   async map(root: string, prompt: string, options: ProviderOptions): Promise<AgentMapOutput> {
     const output = await runPiJson(root, prompt, options, agentMapJsonSchema, true);
