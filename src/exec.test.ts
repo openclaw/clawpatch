@@ -83,6 +83,7 @@ describe("runCommandArgs", () => {
         [
           "import { writeFileSync } from 'node:fs';",
           "process.on('SIGTERM', () => {});",
+          "process.send?.('ready');",
           `setTimeout(() => writeFileSync(${JSON.stringify(marker)}, 'alive'), 1000);`,
           "setInterval(() => {}, 1000);",
         ].join("\n"),
@@ -93,9 +94,9 @@ describe("runCommandArgs", () => {
         [
           "import { writeFileSync } from 'node:fs';",
           "import { spawn } from 'node:child_process';",
-          `const child = spawn(process.execPath, [${JSON.stringify(childScript)}], { stdio: ['ignore', 'inherit', 'inherit'] });`,
+          `const child = spawn(process.execPath, [${JSON.stringify(childScript)}], { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });`,
           "child.on('error', () => {});",
-          `writeFileSync(${JSON.stringify(ready)}, 'ready');`,
+          `child.on('message', (message) => { if (message === 'ready') writeFileSync(${JSON.stringify(ready)}, 'ready'); });`,
           "setInterval(() => {}, 1000);",
         ].join("\n"),
         "utf8",
