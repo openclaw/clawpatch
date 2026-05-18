@@ -541,6 +541,44 @@ describe("workflow", () => {
     expect(reviewed).toMatchObject({ next: "no features touched by diff" });
   });
 
+  it("writes an empty tribunal ledger when --since touches no review features", async () => {
+    const root = await sinceFixture("clawpatch-since-empty-tribunal-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "empty-tribunal.jsonl");
+    const reviewed = await reviewCommand(context, {
+      since: "HEAD",
+      exportTribunalLedger: exportPath,
+    });
+
+    expect(reviewed).toMatchObject({
+      exportTribunalLedger: exportPath,
+      next: "no features touched by diff",
+    });
+    expect(await readFile(exportPath, "utf8")).toBe("");
+  });
+
+  it("does not write a tribunal ledger during no-op review dry-runs", async () => {
+    const root = await sinceFixture("clawpatch-since-empty-tribunal-dry-run-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "dry-run-tribunal.jsonl");
+    await writeFixture(root, "dry-run-tribunal.jsonl", "keep\n");
+    const reviewed = await reviewCommand(context, {
+      since: "HEAD",
+      dryRun: true,
+      exportTribunalLedger: exportPath,
+    });
+
+    expect(reviewed).toMatchObject({ next: "no features touched by diff" });
+    expect(Object.hasOwn(reviewed as Record<string, unknown>, "exportTribunalLedger")).toBe(false);
+    expect(await readFile(exportPath, "utf8")).toBe("keep\n");
+  });
+
   it("rejects invalid --since refs before running git diff", async () => {
     const root = await sinceFixture("clawpatch-since-invalid-");
     const context = await makeContext(testOptions(root));
@@ -2584,7 +2622,7 @@ describe("workflow", () => {
     const exportPath = join(root, "tribunal-export.jsonl");
     const reviewed = (await reviewCommand(context, {
       limit: "1",
-      "export-tribunal-ledger": exportPath,
+      exportTribunalLedger: exportPath,
     })) as { findings: number; exportTribunalLedger?: string };
 
     expect(reviewed.findings).toBeGreaterThan(0);
@@ -2629,6 +2667,45 @@ describe("workflow", () => {
     expect(parseArgs(["review", "--export-tribunal-ledger", "/tmp/out.jsonl"]).flags).toMatchObject(
       { exportTribunalLedger: "/tmp/out.jsonl" },
     );
+  });
+
+  it("runs review --export-tribunal-ledger through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-cli-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "export-tribunal-cli",
+        bin: { app: "src/index.ts" },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+
+    try {
+      await runCli(["--root", root, "--json", "--quiet", "init"]);
+      await runCli(["--root", root, "--json", "--quiet", "map"]);
+      const exportPath = join(root, "tribunal-cli.jsonl");
+      const reviewed = await runCli([
+        "--root",
+        root,
+        "--json",
+        "--quiet",
+        "review",
+        "--limit",
+        "1",
+        "--export-tribunal-ledger",
+        exportPath,
+      ]);
+
+      expect(JSON.parse(reviewed.stdout)).toMatchObject({
+        findings: 1,
+        exportTribunalLedger: exportPath,
+      });
+      expect(await readFile(exportPath, "utf8")).toContain('"kind":"clawpatch-review"');
+    } finally {
+      delete process.env["CLAWPATCH_PROVIDER"];
+    }
   });
 
   it("filters non-simplification findings in deslopify mode", async () => {

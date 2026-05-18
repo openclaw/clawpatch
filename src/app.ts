@@ -241,7 +241,20 @@ export async function reviewCommand(
   const mode = reviewMode(flags);
   const features = await selectReviewFeatures(loaded, flags);
   if (features.length === 0 && typeof flags["since"] === "string") {
-    return { next: "no features touched by diff" };
+    if (flags["dryRun"] === true) {
+      return { next: "no features touched by diff" };
+    }
+    const exportPath = await maybeExportTribunalLedger(
+      flags,
+      loaded.paths,
+      [],
+      runId(),
+      config.provider.name,
+    );
+    return {
+      ...(exportPath === null ? {} : { exportTribunalLedger: exportPath }),
+      next: "no features touched by diff",
+    };
   }
   if (flags["dryRun"] === true) {
     return {
@@ -384,7 +397,7 @@ async function maybeExportTribunalLedger(
   currentRunId: string,
   providerName: string,
 ): Promise<string | null> {
-  const path = stringFlag(flags, "export-tribunal-ledger");
+  const path = stringFlag(flags, "exportTribunalLedger");
   if (path === undefined) {
     return null;
   }
