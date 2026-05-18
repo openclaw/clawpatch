@@ -709,8 +709,6 @@ function endOfCall(source: string, start: number): number | null {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (quote === "`" && char === "$" && source[index + 1] === "{") {
-        return null;
       } else if (char === quote) {
         quote = null;
       }
@@ -744,8 +742,6 @@ function endOfObject(source: string, start: number): number | null {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (quote === "`" && char === "$" && source[index + 1] === "{") {
-        return null;
       } else if (char === quote) {
         quote = null;
       }
@@ -779,8 +775,6 @@ function endOfArray(source: string, start: number): number | null {
         escaped = false;
       } else if (char === "\\") {
         escaped = true;
-      } else if (quote === "`" && char === "$" && source[index + 1] === "{") {
-        return null;
       } else if (char === quote) {
         quote = null;
       }

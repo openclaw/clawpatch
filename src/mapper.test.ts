@@ -2154,12 +2154,16 @@ describe("mapFeatures", () => {
         "fastify.route({ method: [configuredMethod], url: '/dynamic-only', handler: dynamicOnly });",
         "fastify.route({ method: [200], url: '/numeric-only', handler: numericOnly });",
         "fastify.route({ method: [`PATCH`], url: '/template-static', handler: templateStatic });",
+        "fastify.route({ method: ['GET', `POST-${suffix}`], url: '/template-mixed', handler: templateMixed });",
+        "fastify.route({ method: [`PUT-${suffix}`, 'HEAD'], url: '/template-mixed-tail', handler: templateMixedTail });",
         "fastify.route({ method: [`PATCH-${suffix}`], url: '/template-dynamic', handler: templateDynamic });",
         "function items() {}",
         "function mixed() {}",
         "function dynamicOnly() {}",
         "function numericOnly() {}",
         "function templateStatic() {}",
+        "function templateMixed() {}",
+        "function templateMixedTail() {}",
         "function templateDynamic() {}",
         "",
       ].join("\n"),
@@ -2178,10 +2182,18 @@ describe("mapFeatures", () => {
         "Fastify route POST /items",
         "Fastify route DELETE /mixed",
         "Fastify route PATCH /template-static",
+        "Fastify route GET /template-mixed",
+        "Fastify route HEAD /template-mixed-tail",
       ]),
     );
     expect(routes.some((route) => route.endsWith(" /dynamic-only"))).toBe(false);
     expect(routes.some((route) => route.endsWith(" /numeric-only"))).toBe(false);
+    expect(routes.filter((route) => route.endsWith(" /template-mixed"))).toEqual([
+      "GET /template-mixed",
+    ]);
+    expect(routes.filter((route) => route.endsWith(" /template-mixed-tail"))).toEqual([
+      "HEAD /template-mixed-tail",
+    ]);
     expect(routes.some((route) => route.endsWith(" /template-dynamic"))).toBe(false);
   });
 
