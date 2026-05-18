@@ -2058,9 +2058,22 @@ describe("workflow", () => {
     await mapCommand(context);
     const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths))[0];
+    await writeFeature(paths, {
+      ...feature!,
+      tests: [
+        {
+          path: "src/index.test.ts",
+          command: "node -e \"require('node:fs').appendFileSync('src/index.ts','// fixed\\n')\"",
+        },
+      ],
+    });
     const fixed = await fixCommand(context, { finding, skipGitRepoCheck: true });
+    const patches = await readPatchAttempts(paths);
 
-    expect(fixed).toMatchObject({ dryRun: false, status: "applied" });
+    expect(fixed).toMatchObject({ dryRun: false, status: "applied", filesChanged: 1 });
+    expect(patches[0]?.filesChanged).toEqual(["src/index.ts"]);
     delete process.env["CLAWPATCH_PROVIDER"];
   });
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { lstat, readlink } from "node:fs/promises";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { runCommand } from "./exec.js";
 
@@ -13,10 +13,8 @@ export async function sourceChangedSnapshots(
   root: string,
   stateDir: string,
 ): Promise<Map<string, string> | null> {
-  const paths = await sourceChangedPaths(root, stateDir);
-  if (paths === null) {
-    return null;
-  }
+  const paths =
+    (await sourceChangedPaths(root, stateDir)) ?? (await sourceSnapshotPaths(root, stateDir));
   const snapshots = new Map<string, string>();
   for (const path of [...paths].toSorted()) {
     snapshots.set(path, await pathFingerprint(root, path));
@@ -94,6 +92,49 @@ function isStatePath(path: string, relativeStateDir: string): boolean {
     return false;
   }
   return path === relativeStateDir || path.startsWith(`${relativeStateDir}/`);
+}
+
+async function sourceSnapshotPaths(root: string, stateDir: string): Promise<Set<string>> {
+  const relativeStateDir = normalizePath(relative(root, stateDir));
+  const paths = new Set<string>();
+  await collectSnapshotPaths(root, root, relativeStateDir, paths);
+  return paths;
+}
+
+async function collectSnapshotPaths(
+  root: string,
+  dir: string,
+  relativeStateDir: string,
+  paths: Set<string>,
+): Promise<void> {
+  const entries = await readdir(dir).catch(() => []);
+  for (const entry of entries) {
+    const full = resolve(dir, entry);
+    const path = normalizePath(relative(root, full));
+    if (shouldSkipSnapshotPath(path, relativeStateDir)) {
+      continue;
+    }
+    const info = await lstat(full).catch(() => null);
+    if (info === null || info.isSymbolicLink()) {
+      continue;
+    }
+    if (info.isDirectory()) {
+      await collectSnapshotPaths(root, full, relativeStateDir, paths);
+    } else if (info.isFile()) {
+      paths.add(path);
+    }
+  }
+}
+
+function shouldSkipSnapshotPath(path: string, relativeStateDir: string): boolean {
+  return (
+    isStatePath(path, relativeStateDir) ||
+    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
+      path,
+    ) ||
+    path === "target" ||
+    path.startsWith("target/")
+  );
 }
 
 function normalizePath(path: string): string {
