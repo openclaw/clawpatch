@@ -97,7 +97,10 @@ export async function initCommand(
   if (previous !== null && flags["force"] !== true) {
     throw new ClawpatchError("project already initialized; use --force", 2, "already-initialized");
   }
-  await writeProject(paths, { ...project, createdAt: previous?.createdAt ?? project.createdAt });
+  await writeProject(paths, {
+    ...project,
+    createdAt: previous?.createdAt ?? project.createdAt,
+  });
   if (previous === null || flags["force"] === true) {
     await writeJson(paths.config, detectedConfig);
   }
@@ -167,7 +170,9 @@ export async function mapCommand(
       reason: result.decision.reason,
     };
   }
-  emitProgress(context, "map", "write-start", { features: result.features.length });
+  emitProgress(context, "map", "write-start", {
+    features: result.features.length,
+  });
   for (const feature of result.features) {
     await writeFeature(loaded.paths, feature);
   }
@@ -253,7 +258,11 @@ export async function reviewCommand(
   run.claimedFeatureIds = features.map((feature) => feature.featureId);
   await writeRun(loaded.paths, run);
   const findingIds: string[] = [];
-  const errors: Array<{ message: string; code: string | null; error: unknown }> = [];
+  const errors: Array<{
+    message: string;
+    code: string | null;
+    error: unknown;
+  }> = [];
   const jobs = Math.min(reviewJobs(flags), Math.max(features.length, 1));
   let cursor = 0;
   emitProgress(context, "review", "start", {
@@ -302,7 +311,10 @@ export async function reviewCommand(
       findingIds,
       errors: errors.map(({ message, code }) => ({ message, code })),
     });
-    emitProgress(context, "review", "failed", { run: currentRunId, errors: errors.length });
+    emitProgress(context, "review", "failed", {
+      run: currentRunId,
+      errors: errors.length,
+    });
     throw errors[0]?.error ?? new ClawpatchError("review failed", 1, "review-failed");
   }
   const finished: RunRecord = {
@@ -323,14 +335,94 @@ export async function reviewCommand(
     await readFindings(loaded.paths),
     await readFeatures(loaded.paths),
   );
+  const exportPath = await maybeExportTribunalLedger(
+    flags,
+    loaded.paths,
+    findingIds,
+    currentRunId,
+    config.provider.name,
+  );
   return {
     run: currentRunId,
     reviewed: features.length,
     findings: findingIds.length,
     jobs,
     report: reportPath,
+    ...(exportPath === null ? {} : { exportTribunalLedger: exportPath }),
     next: findingIds.length > 0 ? `clawpatch fix --finding ${findingIds[0]}` : "clawpatch status",
   };
+}
+
+/**
+ * Tribunal-style ledger export entry shape. Each line of the emitted
+ * JSONL file is one of these. Schema is documented inline so downstream
+ * consumers don't need to read clawpatch's source to map their fields:
+ *
+ *   kind         literal "clawpatch-review" — discriminates from
+ *                Tribunal's own "finding" / "resolution" kinds
+ *   finding_id   the clawpatch finding ID (stable across runs)
+ *   plan_id      always null (clawpatch has no Tribunal plan concept)
+ *   round        always 1 (this is the first lens-pass)
+ *   agent_pubkey null (Tribunal signs on ingest, not clawpatch)
+ *   agent_label  clawpatch-<provider> — gives the consumer a stable
+ *                source attribution without leaking model identity
+ *   severity     clawpatch's 4-tier severity (consumer maps it)
+ *   category     clawpatch's category (consumer maps it)
+ *   claim_hash   the clawpatch finding signature (stable dedup key)
+ *   claim_uri    null (clawpatch keeps the body internal)
+ *   stake        null (clawpatch has no stake economy)
+ *   timestamp    finding.updatedAt (ISO-8601)
+ *   signature    null (Tribunal signs on ingest)
+ *
+ * Opt-in only — when --export-tribunal-ledger is omitted nothing is
+ * written and no extra work runs.
+ */
+async function maybeExportTribunalLedger(
+  flags: Record<string, string | boolean>,
+  paths: ReturnType<typeof statePaths>,
+  findingIds: string[],
+  currentRunId: string,
+  providerName: string,
+): Promise<string | null> {
+  const path = stringFlag(flags, "export-tribunal-ledger");
+  if (path === undefined) {
+    return null;
+  }
+  if (path === "") {
+    throw new ClawpatchError(
+      "--export-tribunal-ledger requires a non-empty path",
+      2,
+      "invalid-usage",
+    );
+  }
+  const findings = await readFindings(paths);
+  const wanted = new Set(findingIds);
+  const lines: string[] = [];
+  for (const finding of findings) {
+    if (!wanted.has(finding.findingId)) {
+      continue;
+    }
+    const entry = {
+      kind: "clawpatch-review",
+      finding_id: finding.findingId,
+      plan_id: null,
+      round: 1,
+      agent_pubkey: null,
+      agent_label: `clawpatch-${providerName}`,
+      severity: finding.severity,
+      category: finding.category,
+      claim_hash: finding.signature,
+      claim_uri: null,
+      stake: null,
+      timestamp: finding.updatedAt,
+      signature: null,
+      run_id: currentRunId,
+    };
+    lines.push(JSON.stringify(entry));
+  }
+  const resolved = resolve(path);
+  await writeFile(resolved, lines.length === 0 ? "" : `${lines.join("\n")}\n`, "utf8");
+  return resolved;
 }
 
 export async function reportCommand(
@@ -624,8 +716,11 @@ export async function revalidateCommand(
   const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
   run.findingIds = findings.map((finding) => finding.findingId);
   await writeRun(loaded.paths, run);
-  const results: Array<{ finding: string; outcome: FindingRecord["status"]; reasoning: string }> =
-    [];
+  const results: Array<{
+    finding: string;
+    outcome: FindingRecord["status"];
+    reasoning: string;
+  }> = [];
   emitProgress(context, "revalidate", "start", {
     run: currentRunId,
     findings: findings.length,
@@ -712,7 +807,11 @@ export async function revalidateCommand(
     };
   }
   const first = assertDefined(results[0], "missing revalidation result");
-  return { finding: first.finding, outcome: first.outcome, reasoning: first.reasoning };
+  return {
+    finding: first.finding,
+    outcome: first.outcome,
+    reasoning: first.reasoning,
+  };
 }
 
 export async function fixCommand(
@@ -1023,9 +1122,17 @@ async function refreshFeatureStatus(
     ["open", "uncertain"].includes(finding.status),
   );
   if (!hasUnresolved && featureFindings.length > 0) {
-    await writeFeature(paths, { ...feature, status: "fixed", updatedAt: nowIso() });
+    await writeFeature(paths, {
+      ...feature,
+      status: "fixed",
+      updatedAt: nowIso(),
+    });
   } else if (hasUnresolved && ["fixed", "revalidated", "reviewed"].includes(feature.status)) {
-    await writeFeature(paths, { ...feature, status: "needs-fix", updatedAt: nowIso() });
+    await writeFeature(paths, {
+      ...feature,
+      status: "needs-fix",
+      updatedAt: nowIso(),
+    });
   }
 }
 

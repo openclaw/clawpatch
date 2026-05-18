@@ -190,11 +190,16 @@ describe("workflow", () => {
   it("rejects unknown commands and missing required flags before context setup", () => {
     expect(() => parseArgs(["nope"])).toThrow("unknown command: nope");
     expect(() => parseArgs(["constructor"])).toThrow("unknown command: constructor");
-    expect(parseArgs(["revie", "--help"])).toMatchObject({ command: "revie", help: true });
+    expect(parseArgs(["revie", "--help"])).toMatchObject({
+      command: "revie",
+      help: true,
+    });
     expect(() => parseArgs(["show"])).toThrow("missing --finding");
     expect(() => parseArgs(["triage", "--status", "fixed"])).toThrow("missing --finding");
     expect(() => parseArgs(["revalidate"])).toThrow("missing --finding or --all");
-    expect(parseArgs(["revalidate", "--all"]).flags).toMatchObject({ all: true });
+    expect(parseArgs(["revalidate", "--all"]).flags).toMatchObject({
+      all: true,
+    });
   });
 
   it("rejects value flags followed by another option token", () => {
@@ -221,7 +226,9 @@ describe("workflow", () => {
     expect(() => parseArgs(["--dry-run", "clean-locks"])).toThrow(
       "unsupported flag for clean-locks: --dry-run",
     );
-    expect(parseArgs(["map", "--dry-run"]).flags).toMatchObject({ dryRun: true });
+    expect(parseArgs(["map", "--dry-run"]).flags).toMatchObject({
+      dryRun: true,
+    });
     expect(parseArgs(["map", "--source", "auto", "--provider", "mock"]).flags).toMatchObject({
       source: "auto",
       provider: "mock",
@@ -305,7 +312,9 @@ describe("workflow", () => {
   it("rejects nonexistent explicit roots before init", async () => {
     const root = join(await fixtureRoot("clawpatch-missing-root-parent-"), "missing");
 
-    await expect(makeContext(testOptions(root))).rejects.toMatchObject({ exitCode: 2 });
+    await expect(makeContext(testOptions(root))).rejects.toMatchObject({
+      exitCode: 2,
+    });
   });
 
   it("resolves relative explicit roots before provider commands use them", async () => {
@@ -363,8 +372,12 @@ describe("workflow", () => {
     expect(reviewed).toMatchObject({ findings: 1, jobs: 1 });
     expect(status).toMatchObject({ openFindings: 1 });
     expect(report).toMatchObject({ findings: 1 });
-    expect(report).toMatchObject({ markdown: expect.stringContaining("src/index.ts:1") });
-    expect(report).toMatchObject({ markdown: expect.stringContaining("test analysis:") });
+    expect(report).toMatchObject({
+      markdown: expect.stringContaining("src/index.ts:1"),
+    });
+    expect(report).toMatchObject({
+      markdown: expect.stringContaining("test analysis:"),
+    });
     expect(jsonReport).toMatchObject({
       findings: 1,
       items: [
@@ -474,7 +487,11 @@ describe("workflow", () => {
     await commitAll(root, "change two");
     const paths = statePaths(join(root, ".clawpatch"));
     const features = await readFeatures(paths);
-    const reviewed = await reviewCommand(context, { since: "base", limit: "20", dryRun: true });
+    const reviewed = await reviewCommand(context, {
+      since: "base",
+      limit: "20",
+      dryRun: true,
+    });
 
     expect(reviewed).toMatchObject({
       dryRun: true,
@@ -492,7 +509,11 @@ describe("workflow", () => {
     await commitAll(root, "change test");
     const paths = statePaths(join(root, ".clawpatch"));
     const features = await readFeatures(paths);
-    const reviewed = await reviewCommand(context, { since: "base", limit: "20", dryRun: true });
+    const reviewed = await reviewCommand(context, {
+      since: "base",
+      limit: "20",
+      dryRun: true,
+    });
     const selectedIds = (reviewed as { featureIds: string[] }).featureIds;
 
     expect(selectedIds).toEqual(expectedFeatureIds(features, new Set(["tests/one.test.ts"]), true));
@@ -512,7 +533,10 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = await reviewCommand(context, { since: "HEAD", dryRun: true });
+    const reviewed = await reviewCommand(context, {
+      since: "HEAD",
+      dryRun: true,
+    });
 
     expect(reviewed).toMatchObject({ next: "no features touched by diff" });
   });
@@ -541,7 +565,11 @@ describe("workflow", () => {
     await commitAll(root, "change two and three");
     const paths = statePaths(join(root, ".clawpatch"));
     const features = await readFeatures(paths);
-    const reviewed = await reviewCommand(context, { since: "base", limit: "2", dryRun: true });
+    const reviewed = await reviewCommand(context, {
+      since: "base",
+      limit: "2",
+      dryRun: true,
+    });
 
     expect(reviewed).toMatchObject({
       dryRun: true,
@@ -771,7 +799,10 @@ describe("workflow", () => {
       "REVALIDATE_UNCERTAIN",
     ];
     for (const [index, finding] of findings.entries()) {
-      await writeFinding(paths, { ...finding, reasoning: markers[index] ?? "" });
+      await writeFinding(paths, {
+        ...finding,
+        reasoning: markers[index] ?? "",
+      });
     }
 
     let progress = "";
@@ -779,7 +810,11 @@ describe("workflow", () => {
       progress += String(chunk);
       return true;
     });
-    const result = await revalidateCommand(context, { all: true, status: "open", limit: "4" });
+    const result = await revalidateCommand(context, {
+      all: true,
+      status: "open",
+      limit: "4",
+    });
     stderr.mockRestore();
     const updated = await readFindings(paths);
     const features = await readFeatures(paths);
@@ -827,7 +862,10 @@ describe("workflow", () => {
     expect(finding).toBeDefined();
 
     await expect(
-      revalidateCommand(context, { finding: finding!.findingId, provider: "mock-fail" }),
+      revalidateCommand(context, {
+        finding: finding!.findingId,
+        provider: "mock-fail",
+      }),
     ).rejects.toThrow("mock revalidate failure");
     const runs = await readRuns(paths);
     const failed = runs.find((run) => run.command === "revalidate");
@@ -844,7 +882,10 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "parallel", bin: { one: "src/one.ts", two: "src/two.ts" } }),
+      JSON.stringify({
+        name: "parallel",
+        bin: { one: "src/one.ts", two: "src/two.ts" },
+      }),
     );
     await writeFixture(root, "src/one.ts", "export const one = 'TODO_BUG';\n");
     await writeFixture(root, "src/two.ts", "export const two = 'TODO_BUG';\n");
@@ -916,7 +957,10 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "lock-write-fail", bin: { lock: "src/index.ts" } }),
+      JSON.stringify({
+        name: "lock-write-fail",
+        bin: { lock: "src/index.ts" },
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");
     const context = await makeContext(testOptions(root));
@@ -1094,7 +1138,9 @@ describe("workflow", () => {
     await runCli(["--root", root, "--json", "--quiet", "init"]);
     const mapped = await runCli(["--root", root, "--json", "map"]);
 
-    expect(JSON.parse(mapped.stdout)).toMatchObject({ features: expect.any(Number) });
+    expect(JSON.parse(mapped.stdout)).toMatchObject({
+      features: expect.any(Number),
+    });
     expect(mapped.stderr).toContain("clawpatch map start");
     expect(mapped.stderr).toContain("clawpatch map mapper-start mapper=rust");
     expect(mapped.stderr).toContain("clawpatch map mapper-done mapper=rust");
@@ -1113,7 +1159,9 @@ describe("workflow", () => {
     await runCli(["--root", root, "--json", "--quiet", "init"]);
     const mapped = await runCli(["--root", root, "--json", "--quiet", "map"]);
 
-    expect(JSON.parse(mapped.stdout)).toMatchObject({ features: expect.any(Number) });
+    expect(JSON.parse(mapped.stdout)).toMatchObject({
+      features: expect.any(Number),
+    });
     expect(mapped.stderr).toBe("");
   });
 
@@ -1126,7 +1174,10 @@ describe("workflow", () => {
     const context = await makeContext(testOptions(root));
 
     await initCommand(context, {});
-    const mapped = await mapCommand(context, { source: "auto", provider: "mock" });
+    const mapped = await mapCommand(context, {
+      source: "auto",
+      provider: "mock",
+    });
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
     const agentFeature = features.find((feature) => feature.source === "agent-mapper");
 
@@ -1173,7 +1224,10 @@ describe("workflow", () => {
     const context = await makeContext(testOptions(root));
 
     await initCommand(context, {});
-    const mapped = await mapCommand(context, { source: "auto", provider: "mock" });
+    const mapped = await mapCommand(context, {
+      source: "auto",
+      provider: "mock",
+    });
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
 
     expect(mapped).toMatchObject({
@@ -1195,7 +1249,10 @@ describe("workflow", () => {
     const context = await makeContext(testOptions(root));
 
     await initCommand(context, {});
-    const mapped = await mapCommand(context, { source: "auto", provider: "mock" });
+    const mapped = await mapCommand(context, {
+      source: "auto",
+      provider: "mock",
+    });
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
 
     expect(mapped).toMatchObject({
@@ -1226,7 +1283,10 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "fallback-cli", bin: { fallback: "src/index.ts" } }),
+      JSON.stringify({
+        name: "fallback-cli",
+        bin: { fallback: "src/index.ts" },
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");
     const context = await makeContext(testOptions(root));
@@ -1255,13 +1315,21 @@ describe("workflow", () => {
     const first = await mapWithSource(root, project, [], heuristic, {
       source: "agent",
       provider,
-      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+      providerOptions: {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      },
     });
     title = "Background worker package";
     const second = await mapWithSource(root, project, first.features, heuristic, {
       source: "agent",
       provider,
-      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+      providerOptions: {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      },
     });
 
     expect(first.features).toHaveLength(1);
@@ -1284,10 +1352,17 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const mapped = await mapCommand(context, { source: "agent", provider: "mock" });
+    const mapped = await mapCommand(context, {
+      source: "agent",
+      provider: "mock",
+    });
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
 
-    expect(mapped).toMatchObject({ source: "agent", usedAgent: true, stale: 0 });
+    expect(mapped).toMatchObject({
+      source: "agent",
+      usedAgent: true,
+      stale: 0,
+    });
     expect(features.some((feature) => feature.source === "package-json-bin")).toBe(true);
     expect(features.some((feature) => feature.source === "agent-mapper")).toBe(true);
     expect(features.some((feature) => feature.status === "skipped")).toBe(false);
@@ -1370,7 +1445,10 @@ describe("workflow", () => {
       const doctor = await doctorCommand(context, {});
 
       expect(config.provider.reasoningEffort).toBe("xhigh");
-      expect(doctor).toMatchObject({ provider: "mock", reasoningEffort: "xhigh" });
+      expect(doctor).toMatchObject({
+        provider: "mock",
+        reasoningEffort: "xhigh",
+      });
     } finally {
       if (previousProvider === undefined) {
         delete process.env["CLAWPATCH_PROVIDER"];
@@ -1406,7 +1484,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding, dryRun: true });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1574,7 +1654,10 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "file-lock-status", bin: { clean: "src/index.ts" } }),
+      JSON.stringify({
+        name: "file-lock-status",
+        bin: { clean: "src/index.ts" },
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");
     const context = await makeContext(testOptions(root));
@@ -1595,7 +1678,10 @@ describe("workflow", () => {
       })}\n`,
     );
 
-    expect(await statusCommand(context)).toMatchObject({ activeLocks: 1, lockFiles: 1 });
+    expect(await statusCommand(context)).toMatchObject({
+      activeLocks: 1,
+      lockFiles: 1,
+    });
   });
 
   it("cleans interrupted review locks through the CLI entrypoint", async () => {
@@ -1603,7 +1689,10 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "clean-locks-cli", bin: { clean: "src/index.ts" } }),
+      JSON.stringify({
+        name: "clean-locks-cli",
+        bin: { clean: "src/index.ts" },
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");
 
@@ -1623,7 +1712,10 @@ describe("workflow", () => {
     const output = await runCli(["--root", root, "clean-locks", "--json"]);
     const cleaned = (await readFeatures(paths))[0];
 
-    expect(JSON.parse(output.stdout)).toMatchObject({ cleared: 1, lockFilesCleared: 1 });
+    expect(JSON.parse(output.stdout)).toMatchObject({
+      cleared: 1,
+      lockFilesCleared: 1,
+    });
     expect(cleaned?.status).toBe("pending");
     expect(cleaned?.lock).toBeNull();
     expect(await readdir(paths.locks)).toEqual([]);
@@ -1650,7 +1742,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1674,7 +1768,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0];
@@ -1707,7 +1803,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const findingId = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0]!;
@@ -1721,7 +1819,13 @@ describe("workflow", () => {
     const findingWithUnownedEvidence = {
       ...finding,
       evidence: [
-        { path: ".env", startLine: 1, endLine: 1, symbol: null, quote: "SECRET" },
+        {
+          path: ".env",
+          startLine: 1,
+          endLine: 1,
+          symbol: null,
+          quote: "SECRET",
+        },
         ...finding.evidence,
       ],
     };
@@ -1784,7 +1888,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1817,7 +1923,11 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" }, scripts: {} }),
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {},
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
     await checkCommand(root, "git add clawpatch.config.json package.json src/index.ts");
@@ -1827,7 +1937,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1861,7 +1973,11 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" }, scripts: {} }),
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {},
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
     await checkCommand(root, "git add clawpatch.config.json package.json src/index.ts");
@@ -1871,7 +1987,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1905,7 +2023,11 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" }, scripts: {} }),
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {},
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
     await writeFixture(root, "script.sh", "#!/bin/sh\necho before\n");
@@ -1916,7 +2038,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1955,7 +2079,11 @@ describe("workflow", () => {
     await writeFixture(
       root,
       "package.json",
-      JSON.stringify({ name: "buggy", bin: { buggy: "src/index.ts" }, scripts: {} }),
+      JSON.stringify({
+        name: "buggy",
+        bin: { buggy: "src/index.ts" },
+        scripts: {},
+      }),
     );
     await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
     await checkCommand(root, "git add clawpatch.config.json package.json src/index.ts");
@@ -1965,7 +2093,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const fixed = await fixCommand(context, { finding });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
@@ -1995,7 +2125,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0];
@@ -2031,7 +2163,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0];
@@ -2040,7 +2174,9 @@ describe("workflow", () => {
       ...feature!,
       tests: [{ path: "src/index.test.ts", command: featureCommand }],
     });
-    await expect(fixCommand(context, { finding })).rejects.toMatchObject({ exitCode: 6 });
+    await expect(fixCommand(context, { finding })).rejects.toMatchObject({
+      exitCode: 6,
+    });
     const [patches, updatedFinding] = await Promise.all([
       readPatchAttempts(paths),
       readFinding(paths, finding),
@@ -2048,7 +2184,10 @@ describe("workflow", () => {
 
     expect(patches[0]?.status).toBe("failed");
     expect(patches[0]?.commandsRun).toHaveLength(1);
-    expect(patches[0]?.commandsRun[0]).toMatchObject({ command: featureCommand, exitCode: 7 });
+    expect(patches[0]?.commandsRun[0]).toMatchObject({
+      command: featureCommand,
+      exitCode: 7,
+    });
     expect(updatedFinding?.status).toBe("open");
     delete process.env["CLAWPATCH_PROVIDER"];
   });
@@ -2081,7 +2220,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0];
@@ -2119,7 +2260,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     await expect(fixCommand(context, { finding })).rejects.toMatchObject({
       code: "dirty-worktree",
@@ -2141,7 +2284,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     const paths = statePaths(join(root, ".clawpatch"));
     const feature = (await readFeatures(paths))[0];
@@ -2154,10 +2299,17 @@ describe("workflow", () => {
         },
       ],
     });
-    const fixed = await fixCommand(context, { finding, skipGitRepoCheck: true });
+    const fixed = await fixCommand(context, {
+      finding,
+      skipGitRepoCheck: true,
+    });
     const patches = await readPatchAttempts(paths);
 
-    expect(fixed).toMatchObject({ dryRun: false, status: "applied", filesChanged: 1 });
+    expect(fixed).toMatchObject({
+      dryRun: false,
+      status: "applied",
+      filesChanged: 1,
+    });
     expect(patches[0]?.filesChanged).toEqual(["src/index.ts"]);
     delete process.env["CLAWPATCH_PROVIDER"];
   });
@@ -2187,9 +2339,13 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
-    await expect(fixCommand(context, { finding })).rejects.toMatchObject({ exitCode: 6 });
+    await expect(fixCommand(context, { finding })).rejects.toMatchObject({
+      exitCode: 6,
+    });
     const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
 
     expect(patches[0]?.status).toBe("failed");
@@ -2341,6 +2497,74 @@ describe("workflow", () => {
     expect(prompt).toContain("do not report correctness, security, API contract");
   });
 
+  it("writes a tribunal-shaped JSONL ledger when --export-tribunal-ledger is set", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "export-tribunal",
+        bin: { app: "src/index.ts" },
+        scripts: { test: "vitest run" },
+      }),
+    );
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "tribunal-export.jsonl");
+    const reviewed = (await reviewCommand(context, {
+      limit: "1",
+      "export-tribunal-ledger": exportPath,
+    })) as { findings: number; exportTribunalLedger?: string };
+
+    expect(reviewed.findings).toBeGreaterThan(0);
+    expect(reviewed.exportTribunalLedger).toBe(exportPath);
+
+    const contents = await readFile(exportPath, "utf8");
+    const lines = contents.trim().split("\n");
+    expect(lines).toHaveLength(reviewed.findings);
+    const first = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(first).toMatchObject({
+      kind: "clawpatch-review",
+      plan_id: null,
+      round: 1,
+      agent_pubkey: null,
+      agent_label: expect.stringMatching(/^clawpatch-/u),
+      claim_uri: null,
+      stake: null,
+      signature: null,
+    });
+    expect(first["finding_id"]).toEqual(expect.stringMatching(/^fnd_/u));
+    expect(first["claim_hash"]).toEqual(expect.any(String));
+    expect(first["timestamp"]).toEqual(expect.any(String));
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("omits exportTribunalLedger from the result when the flag is absent", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-omit-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "export-omit" }));
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(root, "src/index.ts", "export const value = 'ok';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as Record<string, unknown>;
+    expect(Object.hasOwn(reviewed, "exportTribunalLedger")).toBe(false);
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("parses --export-tribunal-ledger as a review value flag", () => {
+    expect(parseArgs(["review", "--export-tribunal-ledger", "/tmp/out.jsonl"]).flags).toMatchObject(
+      { exportTribunalLedger: "/tmp/out.jsonl" },
+    );
+  });
+
   it("filters non-simplification findings in deslopify mode", async () => {
     const root = await fixtureRoot("clawpatch-deslopify-filter-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "deslopify-filter" }));
@@ -2350,7 +2574,10 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = await reviewCommand(context, { limit: "1", mode: "deslopify" });
+    const reviewed = await reviewCommand(context, {
+      limit: "1",
+      mode: "deslopify",
+    });
     const paths = statePaths(join(root, ".clawpatch"));
     const findings = await readFindings(paths);
 
@@ -2455,7 +2682,9 @@ describe("workflow", () => {
 
     await initCommand(context, {});
     await mapCommand(context);
-    const reviewed = (await reviewCommand(context, { limit: "1" })) as { next: string };
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as {
+      next: string;
+    };
     const finding = reviewed.next.split(" ").at(-1) ?? "";
     await expect(fixCommand(context, { finding, provider: "mock-fail" })).rejects.toThrow(
       "mock fix failure",

@@ -160,6 +160,7 @@ const commandFlags = {
     "reasoningEffort",
     "skipGitRepoCheck",
     "dryRun",
+    "exportTribunalLedger",
   ]),
   report: new Set(["status", "severity", "feature", "project", "category", "triage", "output"]),
   show: new Set(["finding"]),
@@ -205,6 +206,7 @@ const valueFlagNames = new Set([
   "provider",
   "model",
   "reasoning-effort",
+  "export-tribunal-ledger",
   "output",
   "status",
   "severity",
@@ -389,6 +391,11 @@ Flags:
   --reasoning-effort <none|minimal|low|medium|high|xhigh>
   --skip-git-repo-check
   --dry-run
+  --export-tribunal-ledger <path>
+                          after the review completes, emit a single
+                          JSONL file with one line per finding shaped
+                          for downstream Tribunal-style signed-ledger
+                          ingest. Opt-in; no effect when omitted.
   --json
   -q, --quiet
 `);
