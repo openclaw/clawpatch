@@ -125,6 +125,38 @@ describe("reporting", () => {
     );
   });
 
+  it("keeps unclustered critical findings ahead of low-severity cluster details", () => {
+    const report = renderReport([
+      finding({
+        id: "fnd_low_one",
+        title: "CLI one duplicates a helper",
+        path: "scripts/cli/one.py",
+        reasoning: "This duplicate helper is low risk.",
+        recommendation: "Share the helper.",
+      }),
+      finding({
+        id: "fnd_low_two",
+        title: "CLI two duplicates a helper",
+        path: "scripts/cli/two.py",
+        reasoning: "This duplicate helper is low risk.",
+        recommendation: "Share the helper.",
+      }),
+      finding({
+        id: "fnd_critical",
+        title: "Data export deletes unrelated files",
+        category: "data-loss",
+        severity: "critical",
+        path: "core/export.ts",
+        reasoning: "Cleanup can delete files outside the export directory.",
+        recommendation: "Constrain deletion to the export directory.",
+      }),
+    ]);
+
+    expect(report.indexOf("## critical: Data export deletes")).toBeLessThan(
+      report.indexOf("## low: CLI one duplicates"),
+    );
+  });
+
   it("does not treat ordinary words containing any as type-silencing slop", () => {
     const report = renderReport([
       finding({

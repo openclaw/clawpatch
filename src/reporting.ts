@@ -30,12 +30,7 @@ export function renderReport(
 ): string {
   const featureById = new Map(features.map((feature) => [feature.featureId, feature]));
   const clusters = findingClusters(findings);
-  const clusterRankByFindingId = clusterRankMap(clusters);
-  const orderedFindings = findings.toSorted((a, b) => {
-    const leftCluster = clusterRankByFindingId.get(a.findingId) ?? Number.MAX_SAFE_INTEGER;
-    const rightCluster = clusterRankByFindingId.get(b.findingId) ?? Number.MAX_SAFE_INTEGER;
-    return leftCluster - rightCluster || compareFindings(a, b);
-  });
+  const orderedFindings = findings.toSorted(compareFindings);
   const lines = ["# clawpatch report", "", `findings: ${findings.length}`];
   if (clusters.length > 0) {
     lines.push(`clusters: ${clusters.length}`);
@@ -293,16 +288,6 @@ export function featureLabel(featureId: string, feature: FeatureRecord | undefin
 function clusterRank(cluster: FindingCluster): number {
   const bestFindingRank = Math.min(...cluster.findings.map(findingReportRank));
   return bestFindingRank * 1000 - cluster.findings.length;
-}
-
-function clusterRankMap(clusters: FindingCluster[]): Map<string, number> {
-  const ranks = new Map<string, number>();
-  for (const [index, cluster] of clusters.entries()) {
-    for (const finding of cluster.findings) {
-      ranks.set(finding.findingId, index);
-    }
-  }
-  return ranks;
 }
 
 function isClusterableFinding(finding: FindingRecord): boolean {
