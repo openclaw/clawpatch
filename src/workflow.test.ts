@@ -1279,7 +1279,7 @@ describe("workflow", () => {
     await mapWithSource(root, project, [], heuristic, {
       source: "agent",
       provider,
-      providerOptions: { model: null, reasoningEffort: null },
+      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
     });
 
     expect(prompt).toContain('"src/FsLib/Library.fs"');
