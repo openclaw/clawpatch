@@ -1155,6 +1155,9 @@ describe("workflow", () => {
       "test/sample_app/accounts_test.exs",
       "defmodule SampleApp.AccountsTest do\nend\n",
     );
+    for (let index = 1; index <= 20; index += 1) {
+      await writeFixture(root, `deps/noise/lib/noise_${index}.ex`, "defmodule Noise do\nend\n");
+    }
     const context = await makeContext(testOptions(root));
 
     await initCommand(context, {});
@@ -1168,6 +1171,42 @@ describe("workflow", () => {
     });
     expect(features.map((feature) => feature.title)).toContain("Elixir context accounts");
     expect(features.some((feature) => feature.source === "agent-mapper")).toBe(false);
+  });
+
+  it("does not invoke agent mapping for dependency-only C source gaps", async () => {
+    const root = await fixtureRoot("clawpatch-c-deps-auto-map-");
+    await writeFixture(root, "CMakeLists.txt", "add_executable(app src/main.c)\n");
+    await writeFixture(root, "src/main.c", "int main(void) { return 0; }\n");
+    for (let index = 1; index <= 20; index += 1) {
+      await writeFixture(root, `deps/native/noise_${index}.c`, "int noise(void) { return 0; }\n");
+    }
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    const mapped = await mapCommand(context, { source: "auto", provider: "mock" });
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+
+    expect(mapped).toMatchObject({
+      source: "auto",
+      usedAgent: false,
+      reason: "heuristic map is meaningful",
+    });
+    expect(features.map((feature) => feature.title)).toContain("CMake binary app");
+    expect(features.some((feature) => feature.source === "agent-mapper")).toBe(false);
+  });
+
+  it("does not accept agent mapped C dependency paths when heuristics are empty", async () => {
+    const root = await fixtureRoot("clawpatch-c-deps-agent-map-");
+    await writeFixture(root, "CMakeLists.txt", "project(unsupported)\n");
+    await writeFixture(root, "deps/agent/worker.custom", "dependency agent source\n");
+    await writeFixture(root, "deps/native/noise.c", "int noise(void) { return 0; }\n");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+
+    await expect(mapCommand(context, { source: "agent", provider: "mock" })).rejects.toThrow(
+      "agent mapper returned no valid features",
+    );
   });
 
   it("fails forced agent mapping when the provider returns no valid features", async () => {

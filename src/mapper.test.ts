@@ -8864,6 +8864,7 @@ add_executable(headerapp include/headers.hpp)
     await writeFixture(root, "include/headers.hpp", "int header_only(void);\n");
     await writeFixture(root, "vendor/dep.hpp", "int dep(void);\n");
     await writeFixture(root, "tests/myapp_test.cpp", "int main() { return 0; }\n");
+    await writeFixture(root, "src/deps/myapp_test.cpp", "int main() { return 0; }\n");
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -13003,5 +13004,16 @@ end
         "apps/web/deps/native/src/nested_noise.c",
       ]),
     );
+  });
+
+  it("still maps non-Elixir source directories named deps", async () => {
+    const root = await fixtureRoot("clawpatch-deps-source-dir-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "deps-source" }));
+    await writeFixture(root, "lib/deps/client.ts", "export function client() { return true; }\n");
+
+    const result = await mapFeatures(root, await detectProject(root), []);
+    const owned = result.features.flatMap((feature) => feature.ownedFiles.map((file) => file.path));
+
+    expect(owned).toContain("lib/deps/client.ts");
   });
 });

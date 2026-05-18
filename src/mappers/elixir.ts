@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathExists } from "../fs.js";
-import { packageKind, pathMatchesPrefix, stripLineComments, walk } from "./shared.js";
+import { packageKind, pathMatchesPrefix, shouldSkip, stripLineComments, walk } from "./shared.js";
 import { FeatureSeed, SeedTestRef } from "./types.js";
 
 const elixirSourceGroupMaxOwnedFiles = 24;
@@ -90,7 +90,7 @@ export async function elixirSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
-  const configFiles = await walk(root, ["config"]).then((files) =>
+  const configFiles = await walk(root, ["config"], shouldSkipMixPath).then((files) =>
     files.filter((path) => path.endsWith(".exs")),
   );
   if (configFiles.length > 0) {
@@ -112,8 +112,8 @@ export async function elixirSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
-  const migrationFiles = await walk(root, ["priv/repo/migrations"]).then((files) =>
-    files.filter((path) => path.endsWith(".exs")),
+  const migrationFiles = await walk(root, ["priv/repo/migrations"], shouldSkipMixPath).then(
+    (files) => files.filter((path) => path.endsWith(".exs")),
   );
   if (migrationFiles.length > 0) {
     seeds.push({
@@ -137,7 +137,7 @@ export async function elixirSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
-  const scriptFiles = await walk(root, ["scripts"]).then((files) =>
+  const scriptFiles = await walk(root, ["scripts"], shouldSkipMixPath).then((files) =>
     files.filter((path) => path.endsWith(".exs") || path.endsWith(".sh")),
   );
   if (scriptFiles.length > 0) {
@@ -225,7 +225,7 @@ async function elixirContextGroups(
 
       const prefix = `${sourceRoot}/${label}`;
       const nested = entry.isDirectory()
-        ? (await walk(root, [prefix])).filter(isElixirSourceFile)
+        ? (await walk(root, [prefix], shouldSkipMixPath)).filter(isElixirSourceFile)
         : [];
       const rootFile = `${sourceRoot}/${label}.ex`;
       const files = [...new Set([...(await existingFiles(root, [rootFile])), ...nested])]
@@ -261,7 +261,7 @@ async function phoenixWebGroups(
   for (const sourceRoot of roots) {
     for (const label of labels) {
       const prefix = `${sourceRoot}/${label}`;
-      const files = (await walk(root, [prefix]))
+      const files = (await walk(root, [prefix], shouldSkipMixPath))
         .filter((path) => isElixirSourceFile(path) || path.endsWith(".heex"))
         .toSorted()
         .slice(0, elixirSourceGroupMaxOwnedFiles);
@@ -282,12 +282,18 @@ async function safeReadDir(path: string) {
   }
 }
 
+function shouldSkipMixPath(path: string): boolean {
+  return shouldSkip(path) || /(^|\/)deps(\/|$)/u.test(path);
+}
+
 function isElixirSourceFile(path: string): boolean {
   return path.endsWith(".ex") || path.endsWith(".exs");
 }
 
 async function elixirTestFiles(root: string): Promise<string[]> {
-  return (await walk(root, ["test"])).filter((path) => path.endsWith("_test.exs")).toSorted();
+  return (await walk(root, ["test"], shouldSkipMixPath))
+    .filter((path) => path.endsWith("_test.exs"))
+    .toSorted();
 }
 
 function associatedTests(files: string[], testFiles: string[]): SeedTestRef[] {
@@ -321,7 +327,7 @@ async function migrationContextFiles(root: string, appName: string | null): Prom
     candidates.push(`lib/${appName}/repo.ex`);
   }
 
-  const repoFiles = (await walk(root, ["lib"]))
+  const repoFiles = (await walk(root, ["lib"], shouldSkipMixPath))
     .filter((path) => path === "lib/repo.ex" || path.endsWith("/repo.ex"))
     .toSorted();
 

@@ -1086,7 +1086,7 @@ function expandCMakeDirVariables(
 }
 
 function isCOrCppDependencyPath(path: string): boolean {
-  return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
+  return /(^|\/)(deps|vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
 function shouldSkipCOrCppPath(path: string): boolean {

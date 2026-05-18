@@ -193,7 +193,7 @@ export function shouldSkip(path: string): boolean {
     return false;
   }
   return (
-    /(^|\/)(node_modules|deps|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
+    /(^|\/)(node_modules|dist|build|coverage|\.build|\.git|\.clawpatch|\.worktrees|\.turbo|\.next|\.vercel|\.venv(?:-[^/]+)?|venv|Pods|Carthage|SourcePackages|DerivedData|__pycache__)(\/|$)/u.test(
       path,
     ) ||
     path === "target" ||
@@ -341,7 +341,7 @@ function shouldSkipCOrCppNearbyPath(path: string): boolean {
 }
 
 function isCOrCppDependencyPath(path: string): boolean {
-  return /(^|\/)(vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
+  return /(^|\/)(deps|vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
 function swiftTestPrefixesForEntry(entryPath: string): string[] {

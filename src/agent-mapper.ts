@@ -3,9 +3,10 @@ import { buildAgentMapPrompt } from "./prompt.js";
 import { ClawpatchError } from "./errors.js";
 import { Provider, ProviderOptions } from "./provider.js";
 import { AgentMapOutput, FeatureRecord, ProjectRecord } from "./types.js";
+import { pathExists } from "./fs.js";
 import { mapFeatureSeeds, MapResult } from "./mapper.js";
 import { FeatureSeed, SeedFileRef, SeedTestRef } from "./mappers/types.js";
-import { isSafeFile, normalize, walk } from "./mappers/shared.js";
+import { isSafeFile, normalize, shouldSkip, walk } from "./mappers/shared.js";
 
 type AgentMapMode = "heuristic" | "auto" | "agent";
 
@@ -100,7 +101,7 @@ export async function mapWithSource(
 ): Promise<AgentMapResult> {
   const inventoryStarted = Date.now();
   options.onProgress?.("inventory-start", {});
-  const inventory = await repoInventory(root, heuristic.features);
+  const inventory = await repoInventory(root, project, heuristic.features);
   options.onProgress?.("inventory-done", {
     files: inventory.files,
     sourceFiles: inventory.sourceFiles,
@@ -364,8 +365,12 @@ async function validRelativeFile(root: string, path: string): Promise<boolean> {
   return isSafeFile(root, join(root, path));
 }
 
-async function repoInventory(root: string, features: FeatureRecord[]): Promise<RepoInventory> {
-  const files = await walk(root, [""]);
+async function repoInventory(
+  root: string,
+  project: ProjectRecord,
+  features: FeatureRecord[],
+): Promise<RepoInventory> {
+  const files = await walk(root, [""], await inventorySkipPath(root, project, features));
   const sourceFiles = files.filter(isSourceFile).filter((path) => !isTestFile(path));
   const testFiles = files.filter(isTestFile);
   const ownedSource = new Set(
@@ -390,6 +395,44 @@ async function repoInventory(root: string, features: FeatureRecord[]): Promise<R
     sourceFileSamples: sourceFiles.slice(0, 500),
     testFileSamples: testFiles.slice(0, 200),
   };
+}
+
+async function inventorySkipPath(
+  root: string,
+  project: ProjectRecord,
+  features: FeatureRecord[],
+): Promise<(path: string) => boolean> {
+  if (
+    (await pathExists(join(root, "mix.exs"))) ||
+    hasDependencySkippingProject(project) ||
+    hasDependencySkippingFeatures(features)
+  ) {
+    return shouldSkipDependencyPath;
+  }
+  return shouldSkip;
+}
+
+function hasDependencySkippingProject(project: ProjectRecord): boolean {
+  return (
+    project.detected.languages.some((language) => language === "c" || language === "cpp") ||
+    project.detected.packageManagers.some(
+      (manager) => manager === "cmake" || manager === "autotools",
+    )
+  );
+}
+
+function hasDependencySkippingFeatures(features: FeatureRecord[]): boolean {
+  return features.some(
+    (feature) =>
+      feature.tags.some((tag) => tag === "c" || tag === "cpp") ||
+      ["autotools-bin", "autotools-lib", "cmake-bin", "cmake-lib", "cmake-test", "c-main"].includes(
+        feature.source,
+      ),
+  );
+}
+
+function shouldSkipDependencyPath(path: string): boolean {
+  return shouldSkip(path) || /(^|\/)deps(\/|$)/u.test(path);
 }
 
 function weakMap(
