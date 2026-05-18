@@ -161,6 +161,7 @@ const commandFlags = {
     "skipGitRepoCheck",
     "dryRun",
     "promptFile",
+    "exportTribunalLedger",
   ]),
   report: new Set(["status", "severity", "feature", "project", "category", "triage", "output"]),
   show: new Set(["finding"]),
@@ -207,6 +208,7 @@ const valueFlagNames = new Set([
   "model",
   "reasoning-effort",
   "prompt-file",
+  "export-tribunal-ledger",
   "output",
   "status",
   "severity",
@@ -393,6 +395,11 @@ Flags:
   --dry-run
   --prompt-file <path>    appends extra reviewer guidance to the prompt;
                           use "-" to read from stdin
+  --export-tribunal-ledger <path>
+                          after the review completes, emit a single
+                          JSONL file with one line per finding shaped
+                          for downstream Tribunal-style signed-ledger
+                          ingest. Opt-in; no effect when omitted.
   --json
   -q, --quiet
 `);

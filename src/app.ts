@@ -242,7 +242,20 @@ export async function reviewCommand(
   const customPrompt = await loadCustomReviewPrompt(flags);
   const features = await selectReviewFeatures(loaded, flags);
   if (features.length === 0 && typeof flags["since"] === "string") {
-    return { next: "no features touched by diff" };
+    if (flags["dryRun"] === true) {
+      return { next: "no features touched by diff" };
+    }
+    const exportPath = await maybeExportTribunalLedger(
+      flags,
+      loaded.paths,
+      [],
+      runId(),
+      config.provider.name,
+    );
+    return {
+      ...(exportPath === null ? {} : { exportTribunalLedger: exportPath }),
+      next: "no features touched by diff",
+    };
   }
   if (flags["dryRun"] === true) {
     return {
@@ -337,14 +350,94 @@ export async function reviewCommand(
     await readFindings(loaded.paths),
     await readFeatures(loaded.paths),
   );
+  const exportPath = await maybeExportTribunalLedger(
+    flags,
+    loaded.paths,
+    findingIds,
+    currentRunId,
+    config.provider.name,
+  );
   return {
     run: currentRunId,
     reviewed: features.length,
     findings: findingIds.length,
     jobs,
     report: reportPath,
+    ...(exportPath === null ? {} : { exportTribunalLedger: exportPath }),
     next: findingIds.length > 0 ? `clawpatch fix --finding ${findingIds[0]}` : "clawpatch status",
   };
+}
+
+/**
+ * Tribunal-style ledger export entry shape. Each line of the emitted
+ * JSONL file is one of these. Schema is documented inline so downstream
+ * consumers don't need to read clawpatch's source to map their fields:
+ *
+ *   kind         literal "clawpatch-review" — discriminates from
+ *                Tribunal's own "finding" / "resolution" kinds
+ *   finding_id   the clawpatch finding ID (stable across runs)
+ *   plan_id      always null (clawpatch has no Tribunal plan concept)
+ *   round        always 1 (this is the first lens-pass)
+ *   agent_pubkey null (Tribunal signs on ingest, not clawpatch)
+ *   agent_label  clawpatch-<provider> — gives the consumer a stable
+ *                source attribution without leaking model identity
+ *   severity     clawpatch's 4-tier severity (consumer maps it)
+ *   category     clawpatch's category (consumer maps it)
+ *   claim_hash   the clawpatch finding signature (stable dedup key)
+ *   claim_uri    null (clawpatch keeps the body internal)
+ *   stake        null (clawpatch has no stake economy)
+ *   timestamp    finding.updatedAt (ISO-8601)
+ *   signature    null (Tribunal signs on ingest)
+ *
+ * Opt-in only — when --export-tribunal-ledger is omitted nothing is
+ * written and no extra work runs.
+ */
+async function maybeExportTribunalLedger(
+  flags: Record<string, string | boolean>,
+  paths: ReturnType<typeof statePaths>,
+  findingIds: string[],
+  currentRunId: string,
+  providerName: string,
+): Promise<string | null> {
+  const path = stringFlag(flags, "exportTribunalLedger");
+  if (path === undefined) {
+    return null;
+  }
+  if (path === "") {
+    throw new ClawpatchError(
+      "--export-tribunal-ledger requires a non-empty path",
+      2,
+      "invalid-usage",
+    );
+  }
+  const findings = await readFindings(paths);
+  const wanted = new Set(findingIds);
+  const lines: string[] = [];
+  for (const finding of findings) {
+    if (!wanted.has(finding.findingId)) {
+      continue;
+    }
+    const entry = {
+      kind: "clawpatch-review",
+      finding_id: finding.findingId,
+      plan_id: null,
+      round: 1,
+      agent_pubkey: null,
+      agent_label: `clawpatch-${providerName}`,
+      severity: finding.severity,
+      category: finding.category,
+      claim_hash: finding.signature,
+      claim_uri: null,
+      stake: null,
+      timestamp: finding.updatedAt,
+      signature: null,
+      run_id: currentRunId,
+    };
+    lines.push(JSON.stringify(entry));
+  }
+  const resolved = resolve(path);
+  await writeFile(resolved, lines.length === 0 ? "" : `${lines.join("\n")}\n`, "utf8");
+  return resolved;
 }
 
 export async function reportCommand(
@@ -1116,7 +1209,7 @@ function reviewMode(flags: Record<string, string | boolean>): ReviewMode {
 async function loadCustomReviewPrompt(
   flags: Record<string, string | boolean>,
 ): Promise<string | null> {
-  const path = stringFlag(flags, "prompt-file");
+  const path = stringFlag(flags, "promptFile");
   if (path === undefined) {
     return null;
   }

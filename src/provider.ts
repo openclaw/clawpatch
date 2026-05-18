@@ -452,13 +452,12 @@ async function runCodexJson(
       "exec",
       "--cd",
       root,
-      "--sandbox",
-      sandbox,
       "--output-schema",
       schemaPath,
       "--output-last-message",
       outputPath,
     ];
+    addCodexSandboxArgs(args, sandbox);
     addCodexModelArgs(args, options);
     args.push("-");
     const result = await runCommandArgs("codex", args, root, prompt);
@@ -477,6 +476,15 @@ async function runCodexJson(
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+function addCodexSandboxArgs(args: string[], sandbox: string): void {
+  const override = process.env["CLAWPATCH_CODEX_SANDBOX"]?.trim();
+  if (override === "bypass" || override === "none") {
+    args.push("--dangerously-bypass-approvals-and-sandbox");
+    return;
+  }
+  args.push("--sandbox", override && override.length > 0 ? override : sandbox);
 }
 
 function addCodexModelArgs(args: string[], options: ProviderOptions): void {
@@ -974,6 +982,7 @@ function acpxTimeoutMs(): number {
 export const __testing = {
   acpxFailureMessage,
   addCodexModelArgs,
+  addCodexSandboxArgs,
   extractAcpxJson,
   extractOpencodeJson,
   parseAcpxAgent,

@@ -541,6 +541,44 @@ describe("workflow", () => {
     expect(reviewed).toMatchObject({ next: "no features touched by diff" });
   });
 
+  it("writes an empty tribunal ledger when --since touches no review features", async () => {
+    const root = await sinceFixture("clawpatch-since-empty-tribunal-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "empty-tribunal.jsonl");
+    const reviewed = await reviewCommand(context, {
+      since: "HEAD",
+      exportTribunalLedger: exportPath,
+    });
+
+    expect(reviewed).toMatchObject({
+      exportTribunalLedger: exportPath,
+      next: "no features touched by diff",
+    });
+    expect(await readFile(exportPath, "utf8")).toBe("");
+  });
+
+  it("does not write a tribunal ledger during no-op review dry-runs", async () => {
+    const root = await sinceFixture("clawpatch-since-empty-tribunal-dry-run-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "dry-run-tribunal.jsonl");
+    await writeFixture(root, "dry-run-tribunal.jsonl", "keep\n");
+    const reviewed = await reviewCommand(context, {
+      since: "HEAD",
+      dryRun: true,
+      exportTribunalLedger: exportPath,
+    });
+
+    expect(reviewed).toMatchObject({ next: "no features touched by diff" });
+    expect(Object.hasOwn(reviewed as Record<string, unknown>, "exportTribunalLedger")).toBe(false);
+    expect(await readFile(exportPath, "utf8")).toBe("keep\n");
+  });
+
   it("rejects invalid --since refs before running git diff", async () => {
     const root = await sinceFixture("clawpatch-since-invalid-");
     const context = await makeContext(testOptions(root));
@@ -1276,6 +1314,72 @@ describe("workflow", () => {
     await expect(mapCommand(context, { source: "agent", provider: "mock" })).rejects.toThrow(
       "agent mapper returned no valid features",
     );
+  });
+
+  it("includes F# and Visual Basic sources in agent mapper inventory", async () => {
+    const root = await fixtureRoot("clawpatch-agent-map-dotnet-inventory-");
+    await writeFixture(root, "src/FsLib/FsLib.fsproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/FsLib/Library.fs", 'module Library\nlet hello = "world"\n');
+    await writeFixture(root, "src/FsLib/Signature.fsi", "module Library\nval hello: string\n");
+    await writeFixture(root, "src/VbApp/VbApp.vbproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/VbApp/Program.vb", "Module Program\nEnd Module\n");
+    const context = await makeContext(testOptions(root));
+    let prompt = "";
+    const provider: Provider = {
+      name: "capture-agent-map",
+      async check() {
+        return "capture-agent-map";
+      },
+      async map(_root, nextPrompt) {
+        prompt = nextPrompt;
+        return {
+          features: [
+            {
+              title: "F# library",
+              summary: "Provider grouped F# source.",
+              kind: "library",
+              confidence: "medium",
+              entrypoints: [
+                { path: "src/FsLib/Library.fs", symbol: null, route: null, command: null },
+              ],
+              ownedFiles: [{ path: "src/FsLib/Library.fs", reason: "F# source" }],
+              contextFiles: [],
+              tests: [],
+              tags: ["dotnet"],
+              trustBoundaries: [],
+              reason: "inventory fixture",
+            },
+          ],
+          notes: [],
+        };
+      },
+      async review() {
+        throw new Error("unused");
+      },
+      async fix() {
+        throw new Error("unused");
+      },
+      async revalidate() {
+        throw new Error("unused");
+      },
+    };
+
+    await initCommand(context, {});
+    const paths = statePaths(join(root, ".clawpatch"));
+    const project = await readProject(paths);
+    if (project === null) {
+      throw new Error("missing project");
+    }
+    const heuristic = await mapFeatures(root, project, []);
+    await mapWithSource(root, project, [], heuristic, {
+      source: "agent",
+      provider,
+      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+    });
+
+    expect(prompt).toContain('"src/FsLib/Library.fs"');
+    expect(prompt).toContain('"src/FsLib/Signature.fsi"');
+    expect(prompt).toContain('"src/VbApp/Program.vb"');
   });
 
   it("fails forced agent mapping when the provider returns no valid features", async () => {
@@ -2594,6 +2698,132 @@ describe("workflow", () => {
     expect(parseArgs(["review", "--prompt-file", "/tmp/foo.md"]).flags).toMatchObject({
       promptFile: "/tmp/foo.md",
     });
+  });
+
+  it("runs review --prompt-file through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-file-cli-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "prompt-file-cli" }));
+
+    await runCli(["--root", root, "--json", "--quiet", "init"]);
+
+    await expect(
+      runCli([
+        "--root",
+        root,
+        "--json",
+        "--quiet",
+        "review",
+        "--prompt-file",
+        join(root, "missing.md"),
+      ]),
+    ).rejects.toThrow("failed to read --prompt-file");
+  });
+
+  it("writes a tribunal-shaped JSONL ledger when --export-tribunal-ledger is set", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "export-tribunal",
+        bin: { app: "src/index.ts" },
+        scripts: { test: "vitest run" },
+      }),
+    );
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const exportPath = join(root, "tribunal-export.jsonl");
+    const reviewed = (await reviewCommand(context, {
+      limit: "1",
+      exportTribunalLedger: exportPath,
+    })) as { findings: number; exportTribunalLedger?: string };
+
+    expect(reviewed.findings).toBeGreaterThan(0);
+    expect(reviewed.exportTribunalLedger).toBe(exportPath);
+
+    const contents = await readFile(exportPath, "utf8");
+    const lines = contents.trim().split("\n");
+    expect(lines).toHaveLength(reviewed.findings);
+    const first = JSON.parse(lines[0]!) as Record<string, unknown>;
+    expect(first).toMatchObject({
+      kind: "clawpatch-review",
+      plan_id: null,
+      round: 1,
+      agent_pubkey: null,
+      agent_label: expect.stringMatching(/^clawpatch-/u),
+      claim_uri: null,
+      stake: null,
+      signature: null,
+    });
+    expect(first["finding_id"]).toEqual(expect.stringMatching(/^fnd_/u));
+    expect(first["claim_hash"]).toEqual(expect.any(String));
+    expect(first["timestamp"]).toEqual(expect.any(String));
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("omits exportTribunalLedger from the result when the flag is absent", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-omit-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "export-omit" }));
+    await writeFixture(root, "tsconfig.json", "{}");
+    await writeFixture(root, "src/index.ts", "export const value = 'ok';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { limit: "1" })) as Record<string, unknown>;
+    expect(Object.hasOwn(reviewed, "exportTribunalLedger")).toBe(false);
+    delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("parses --export-tribunal-ledger as a review value flag", () => {
+    expect(parseArgs(["review", "--export-tribunal-ledger", "/tmp/out.jsonl"]).flags).toMatchObject(
+      { exportTribunalLedger: "/tmp/out.jsonl" },
+    );
+  });
+
+  it("runs review --export-tribunal-ledger through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-export-tribunal-cli-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "export-tribunal-cli",
+        bin: { app: "src/index.ts" },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+
+    try {
+      await runCli(["--root", root, "--json", "--quiet", "init"]);
+      await runCli(["--root", root, "--json", "--quiet", "map"]);
+      const exportPath = join(root, "tribunal-cli.jsonl");
+      const reviewed = await runCli([
+        "--root",
+        root,
+        "--json",
+        "--quiet",
+        "review",
+        "--limit",
+        "1",
+        "--export-tribunal-ledger",
+        exportPath,
+      ]);
+
+      expect(JSON.parse(reviewed.stdout)).toMatchObject({
+        findings: 1,
+        exportTribunalLedger: exportPath,
+      });
+      expect(await readFile(exportPath, "utf8")).toContain('"kind":"clawpatch-review"');
+    } finally {
+      delete process.env["CLAWPATCH_PROVIDER"];
+    }
   });
 
   it("filters non-simplification findings in deslopify mode", async () => {

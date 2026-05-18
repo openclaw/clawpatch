@@ -67,6 +67,10 @@ validation commands and records a patch attempt under `.clawpatch/`.
   imports, interfaces, inheritance, supertypes, and method signatures
 - Kotlin Android semantic roles for UI entrypoints, ViewModels, data
   boundaries, external clients, and dependency injection, including Metro
+- C#/.NET projects from `.sln`, `.slnx`, `.csproj`, `.fsproj`, and `.vbproj`
+  files, with conservative `dotnet build` / `dotnet test` defaults
+- ASP.NET Core controllers, minimal API endpoints, C#/F#/Visual Basic source
+  groups, and .NET test projects
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites
 - Elixir Mix/Phoenix projects, contexts, Phoenix web slices, runtime config,
   Ecto migrations, project scripts, and ExUnit suites
@@ -96,6 +100,11 @@ clawpatch doctor
 Provider calls use `codex exec` with strict JSON schemas. Review and revalidate
 run read-only; fix planning runs with workspace-write because Codex may edit the
 working tree during the explicit fix command.
+
+Set `CLAWPATCH_CODEX_SANDBOX` to override the Codex sandbox passed by
+Clawpatch. Use any Codex sandbox mode, or `bypass`/`none` to pass
+`--dangerously-bypass-approvals-and-sandbox` when the host environment already
+provides isolation.
 
 Supported provider names today:
 

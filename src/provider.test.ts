@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
 import { reviewOutputSchema } from "./types.js";
 
 // eslint-disable-next-line no-underscore-dangle
 const {
+  addCodexSandboxArgs,
   addCodexModelArgs,
   acpxFailureMessage,
   extractAcpxJson,
@@ -127,6 +128,52 @@ describe("parseCodexJson", () => {
 });
 
 describe("Codex provider args", () => {
+  const originalCodexSandbox = process.env["CLAWPATCH_CODEX_SANDBOX"];
+
+  afterEach(() => {
+    if (originalCodexSandbox === undefined) {
+      delete process.env["CLAWPATCH_CODEX_SANDBOX"];
+    } else {
+      process.env["CLAWPATCH_CODEX_SANDBOX"] = originalCodexSandbox;
+    }
+  });
+
+  it("uses the requested Codex sandbox by default", () => {
+    delete process.env["CLAWPATCH_CODEX_SANDBOX"];
+    const args = ["exec"];
+
+    addCodexSandboxArgs(args, "read-only");
+
+    expect(args).toEqual(["exec", "--sandbox", "read-only"]);
+  });
+
+  it("allows Codex sandbox mode to be overridden by environment", () => {
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " danger-full-access ";
+    const args = ["exec"];
+
+    addCodexSandboxArgs(args, "read-only");
+
+    expect(args).toEqual(["exec", "--sandbox", "danger-full-access"]);
+  });
+
+  it("ignores blank Codex sandbox overrides", () => {
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " ";
+    const args = ["exec"];
+
+    addCodexSandboxArgs(args, "read-only");
+
+    expect(args).toEqual(["exec", "--sandbox", "read-only"]);
+  });
+
+  it("can bypass Codex sandboxing when the host already provides isolation", () => {
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " none ";
+    const args = ["exec"];
+
+    addCodexSandboxArgs(args, "read-only");
+
+    expect(args).toEqual(["exec", "--dangerously-bypass-approvals-and-sandbox"]);
+  });
+
   it("passes model and reasoning effort through explicit CLI config", () => {
     const args = ["exec"];
 

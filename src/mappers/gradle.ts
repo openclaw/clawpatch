@@ -1050,9 +1050,6 @@ function kotlinImportForType(
       return isKotlinStdlibImport(full) ? undefined : full;
     }
   }
-  if (isNestedType && /^[a-z]/u.test(rootType)) {
-    return type;
-  }
   const direct = info.imports.get(type);
   if (direct !== undefined) {
     return isKotlinStdlibImport(direct) ? undefined : direct;
@@ -1067,6 +1064,9 @@ function kotlinImportForType(
     if (full.endsWith(".*") && kotlinPackageTypes.get(full.slice(0, -2))?.has(rootType) === true) {
       return undefined;
     }
+  }
+  if (isNestedType && /^[a-z]/u.test(rootType)) {
+    return type;
   }
   if (isNestedType) {
     for (const full of info.imports.values()) {
@@ -1410,7 +1410,7 @@ function parseKotlinDeclarations(source: string): KotlinDeclaration[] {
     declarations.push({
       kind: rawKind as KotlinDeclaration["kind"],
       name,
-      supertypes: match[5] === undefined ? [] : kotlinTypeNames(match[5]),
+      supertypes: match[5] === undefined ? [] : kotlinSupertypeNames(match[5]),
     });
   }
   return declarations;
@@ -1652,6 +1652,10 @@ function kotlinTypeNames(raw: string): string[] {
   }
   parts.push(current);
   return parts.map((type) => kotlinTypeReferenceName(type)).filter((type) => type.length > 0);
+}
+
+function kotlinSupertypeNames(raw: string): string[] {
+  return kotlinTypeNames(raw.replace(/\s+\bwhere\s+[A-Za-z_][A-Za-z0-9_]*\s*:[\s\S]*$/u, ""));
 }
 
 function baseJavaTypeName(raw: string): string {
@@ -2304,7 +2308,8 @@ function hasDirectAndroidApplyPlugin(source: string): boolean {
   const pattern =
     /\b(?:apply\s+plugin\s*:\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']|apply\s*\(\s*plugin\s*(?:=|:)\s*["']com\.android\.(?:application|library|dynamic-feature|test)["']\s*\))/gu;
   for (const match of source.matchAll(pattern)) {
-    if (!isInsideGradleChildProjectBlock(source, match.index ?? 0)) {
+    const start = match.index ?? 0;
+    if (!isInsideGradleString(source, start) && !isInsideGradleChildProjectBlock(source, start)) {
       return true;
     }
   }
@@ -2314,11 +2319,47 @@ function hasDirectAndroidApplyPlugin(source: string): boolean {
 function hasAndroidExtensionBlock(buildSource: string, isKotlinDsl: boolean): boolean {
   const source = stripGradleBuildComments(buildSource, isKotlinDsl);
   for (const match of source.matchAll(/\bandroid\s*\{/gu)) {
-    if (!isInsideGradleChildProjectBlock(source, match.index ?? 0)) {
+    const start = match.index ?? 0;
+    if (!isInsideGradleString(source, start) && !isInsideGradleChildProjectBlock(source, start)) {
       return true;
     }
   }
   return false;
+}
+
+function isInsideGradleString(source: string, offset: number): boolean {
+  let quote: "'" | '"' | null = null;
+  let tripleQuote: "'" | '"' | null = null;
+  for (let index = 0; index < offset; index += 1) {
+    const char = source[index] ?? "";
+    const triple = source.slice(index, index + 3);
+    if (tripleQuote !== null) {
+      if (triple === tripleQuote.repeat(3)) {
+        tripleQuote = null;
+        index += 2;
+      }
+      continue;
+    }
+    if (quote !== null) {
+      if (char === "\\") {
+        index += 1;
+        continue;
+      }
+      if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (triple === '"""' || triple === "'''") {
+      tripleQuote = char as "'" | '"';
+      index += 2;
+      continue;
+    }
+    if (char === "'" || char === '"') {
+      quote = char;
+    }
+  }
+  return quote !== null || tripleQuote !== null;
 }
 
 function isInsideGradleChildProjectBlock(source: string, offset: number): boolean {
