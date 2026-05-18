@@ -55,6 +55,8 @@ const sourceExtensions = new Set([
   ".cxx",
   ".ex",
   ".exs",
+  ".fs",
+  ".fsi",
   ".go",
   ".h",
   ".heex",
@@ -73,6 +75,7 @@ const sourceExtensions = new Set([
   ".swift",
   ".ts",
   ".tsx",
+  ".vb",
 ]);
 
 const manifestNames = new Set([

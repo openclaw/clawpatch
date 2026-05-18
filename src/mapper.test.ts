@@ -13436,6 +13436,24 @@ EndProject
     expect(project.detected.commands.test).toBe("dotnet test tests/App.Tests/App.Tests.csproj");
   });
 
+  it("does not build a root .NET solution that omits non-test projects", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-solution-missing-project-");
+    await writeFixture(
+      root,
+      "App.sln",
+      `Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{00000000-0000-0000-0000-000000000000}") = "App", "src\\App\\App.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+`,
+    );
+    await writeFixture(root, "src/App/App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/Lib/Lib.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+
+    const project = await detectProject(root);
+
+    expect(project.detected.commands.typecheck).toBeNull();
+  });
+
   it("prefers a root .NET project over an unrelated nested solution", async () => {
     const root = await fixtureRoot("clawpatch-dotnet-root-project-nested-solution-");
     await writeFixture(root, "App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');

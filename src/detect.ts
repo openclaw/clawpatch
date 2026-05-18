@@ -421,11 +421,18 @@ async function dotnetDefaultCommands(root: string): Promise<ProjectCommands> {
 async function dotnetValidationTarget(root: string): Promise<string | null> {
   const solutions = (await collectDotnetFiles(root, isDotnetSolutionFileName, 4)).toSorted();
   const rootSolutions = solutions.filter((path) => !path.includes("/"));
+  const projects = (await collectDotnetFiles(root, isDotnetProjectFileName, 5)).toSorted();
+  const solutionCoverageProjects = await dotnetSolutionCoverageProjects(root, projects);
   if (rootSolutions.length === 1) {
-    return rootSolutions[0] ?? null;
+    const solution = rootSolutions[0] ?? null;
+    if (
+      solution !== null &&
+      (await dotnetSolutionIncludesProjects(root, solution, solutionCoverageProjects))
+    ) {
+      return solution;
+    }
   }
 
-  const projects = (await collectDotnetFiles(root, isDotnetProjectFileName, 5)).toSorted();
   const rootProjects = projects.filter((path) => !path.includes("/"));
   if (rootProjects.length === 1) {
     return rootProjects[0] ?? null;
@@ -433,11 +440,22 @@ async function dotnetValidationTarget(root: string): Promise<string | null> {
   if (
     rootSolutions.length === 0 &&
     solutions.length === 1 &&
-    (await dotnetSolutionIncludesProjects(root, solutions[0] ?? "", projects))
+    (await dotnetSolutionIncludesProjects(root, solutions[0] ?? "", solutionCoverageProjects))
   ) {
     return solutions[0] ?? null;
   }
   return projects.length === 1 ? (projects[0] ?? null) : null;
+}
+
+async function dotnetSolutionCoverageProjects(root: string, projects: string[]): Promise<string[]> {
+  const buildProjects: string[] = [];
+  for (const project of projects) {
+    const source = await readFile(join(root, project), "utf8").catch(() => "");
+    if (!isStrongDotnetTestProject(source)) {
+      buildProjects.push(project);
+    }
+  }
+  return buildProjects.length === 0 ? projects : buildProjects;
 }
 
 async function dotnetTestTarget(root: string, buildTarget: string | null): Promise<string | null> {
