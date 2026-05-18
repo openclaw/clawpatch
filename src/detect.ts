@@ -1041,7 +1041,7 @@ async function detectDotnetFrameworks(root: string): Promise<string[]> {
     if (isDotnetWebProject(activeSource)) {
       frameworks.push("aspnetcore");
     }
-    if (/MSTest\.Sdk|Microsoft\.NET\.Test\.Sdk|xunit|NUnit/iu.test(activeSource)) {
+    if (hasDotnetTestFrameworkEvidence(activeSource)) {
       frameworks.push("dotnet-test");
     }
   }
@@ -1673,12 +1673,16 @@ function isDotnetSolutionFileName(entry: string): boolean {
 
 function isStrongDotnetTestProject(source: string): boolean {
   const activeSource = stripXmlComments(source);
+  return hasDotnetTestFrameworkEvidence(activeSource);
+}
+
+function hasDotnetTestFrameworkEvidence(source: string): boolean {
   return (
-    /<IsTestProject>\s*true\s*<\/IsTestProject>/iu.test(activeSource) ||
-    /<Project\b[^>]*\bSdk\s*=\s*["']MSTest\.Sdk(?:\/|["'])/iu.test(activeSource) ||
-    /<Sdk\b[^>]*\bName\s*=\s*["']MSTest\.Sdk["']/iu.test(activeSource) ||
-    /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|xunit\.v3|NUnit|NUnit3TestAdapter|MSTest\.TestFramework|Microsoft\.Testing\.Platform\.MSBuild)["']/iu.test(
-      activeSource,
+    /<IsTestProject>\s*true\s*<\/IsTestProject>/iu.test(source) ||
+    /<Project\b[^>]*\bSdk\s*=\s*["']MSTest\.Sdk(?:\/|["'])/iu.test(source) ||
+    /<Sdk\b[^>]*\bName\s*=\s*["']MSTest\.Sdk["']/iu.test(source) ||
+    /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|xunit\.v3|NUnit|NUnit3TestAdapter|MSTest\.TestFramework|Microsoft\.Testing\.Platform\.MSBuild|TUnit)["']/iu.test(
+      source,
     )
   );
 }

@@ -13508,6 +13508,50 @@ app.Run();
     );
   });
 
+  it("detects TUnit projects without Microsoft.NET.Test.Sdk as .NET test projects", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-tunit-test-");
+    await writeFixture(root, "src/App/App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/App/Program.cs", "public sealed class Program {}\n");
+    await writeFixture(
+      root,
+      "tests/App.TUnit/App.TUnit.csproj",
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="TUnit" Version="1.13.11" />
+    <ProjectReference Include="..\\..\\src\\App\\App.csproj" />
+  </ItemGroup>
+</Project>
+`,
+    );
+    await writeFixture(
+      root,
+      "tests/App.TUnit/ProgramTests.cs",
+      "public sealed class ProgramTests {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const testSuite = result.features.find(
+      (feature) => feature.title === "C# test suite App.TUnit",
+    );
+    const appSource = result.features.find((feature) => feature.title === "C# source src/App");
+
+    expect(project.detected.frameworks).toContain("dotnet-test");
+    expect(project.detected.commands.test).toBe("dotnet test tests/App.TUnit/App.TUnit.csproj");
+    expect(testSuite?.tests).toEqual([
+      {
+        path: "tests/App.TUnit/ProgramTests.cs",
+        command: "dotnet test tests/App.TUnit/App.TUnit.csproj",
+      },
+    ]);
+    expect(appSource?.tests).toEqual([
+      {
+        path: "tests/App.TUnit/ProgramTests.cs",
+        command: "dotnet test tests/App.TUnit/App.TUnit.csproj",
+      },
+    ]);
+  });
+
   it("keeps dotnet test commands for test projects without C# source files", async () => {
     const root = await fixtureRoot("clawpatch-dotnet-empty-test-group-");
     await writeFixture(root, "src/App/App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');

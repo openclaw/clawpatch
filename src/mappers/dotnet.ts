@@ -954,11 +954,12 @@ function isStrongTestProject(source: string): boolean {
     /<IsTestProject>\s*true\s*<\/IsTestProject>/iu.test(source) ||
     /<Project\b[^>]*\bSdk\s*=\s*["']MSTest\.Sdk(?:\/|["'])/iu.test(source) ||
     /<Sdk\b[^>]*\bName\s*=\s*["']MSTest\.Sdk["']/iu.test(source) ||
-    /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|xunit\.v3|NUnit|NUnit3TestAdapter|MSTest\.TestFramework|Microsoft\.Testing\.Platform\.MSBuild)["']/iu.test(
-      source,
-    )
+    dotnetTestPackageReferencePattern.test(source)
   );
 }
+
+const dotnetTestPackageReferencePattern =
+  /<PackageReference\b[^>]*\bInclude\s*=\s*["'](?:Microsoft\.NET\.Test\.Sdk|xunit|xunit\.v3|NUnit|NUnit3TestAdapter|MSTest\.TestFramework|Microsoft\.Testing\.Platform\.MSBuild|TUnit)["']/iu;
 
 function isWebProject(
   source: string,
