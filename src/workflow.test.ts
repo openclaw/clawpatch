@@ -1278,6 +1278,72 @@ describe("workflow", () => {
     );
   });
 
+  it("includes F# and Visual Basic sources in agent mapper inventory", async () => {
+    const root = await fixtureRoot("clawpatch-agent-map-dotnet-inventory-");
+    await writeFixture(root, "src/FsLib/FsLib.fsproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/FsLib/Library.fs", 'module Library\nlet hello = "world"\n');
+    await writeFixture(root, "src/FsLib/Signature.fsi", "module Library\nval hello: string\n");
+    await writeFixture(root, "src/VbApp/VbApp.vbproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(root, "src/VbApp/Program.vb", "Module Program\nEnd Module\n");
+    const context = await makeContext(testOptions(root));
+    let prompt = "";
+    const provider: Provider = {
+      name: "capture-agent-map",
+      async check() {
+        return "capture-agent-map";
+      },
+      async map(_root, nextPrompt) {
+        prompt = nextPrompt;
+        return {
+          features: [
+            {
+              title: "F# library",
+              summary: "Provider grouped F# source.",
+              kind: "library",
+              confidence: "medium",
+              entrypoints: [
+                { path: "src/FsLib/Library.fs", symbol: null, route: null, command: null },
+              ],
+              ownedFiles: [{ path: "src/FsLib/Library.fs", reason: "F# source" }],
+              contextFiles: [],
+              tests: [],
+              tags: ["dotnet"],
+              trustBoundaries: [],
+              reason: "inventory fixture",
+            },
+          ],
+          notes: [],
+        };
+      },
+      async review() {
+        throw new Error("unused");
+      },
+      async fix() {
+        throw new Error("unused");
+      },
+      async revalidate() {
+        throw new Error("unused");
+      },
+    };
+
+    await initCommand(context, {});
+    const paths = statePaths(join(root, ".clawpatch"));
+    const project = await readProject(paths);
+    if (project === null) {
+      throw new Error("missing project");
+    }
+    const heuristic = await mapFeatures(root, project, []);
+    await mapWithSource(root, project, [], heuristic, {
+      source: "agent",
+      provider,
+      providerOptions: { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+    });
+
+    expect(prompt).toContain('"src/FsLib/Library.fs"');
+    expect(prompt).toContain('"src/FsLib/Signature.fsi"');
+    expect(prompt).toContain('"src/VbApp/Program.vb"');
+  });
+
   it("fails forced agent mapping when the provider returns no valid features", async () => {
     const root = await fixtureRoot("clawpatch-empty-agent-map-");
     await writeFixture(

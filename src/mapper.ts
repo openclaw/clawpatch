@@ -2,6 +2,7 @@ import { nowIso } from "./fs.js";
 import { stableId } from "./id.js";
 import { cCppSeeds } from "./mappers/c-cpp.js";
 import { configSeeds } from "./mappers/config.js";
+import { dotnetSeeds } from "./mappers/dotnet.js";
 import { elixirSeeds } from "./mappers/elixir.js";
 import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
@@ -49,6 +50,7 @@ const featureMappers: FeatureMapper[] = [
   { name: "ruby", map: rubySeeds },
   { name: "elixir", map: elixirSeeds },
   { name: "rust", map: rustSeeds },
+  { name: "dotnet", map: dotnetSeeds },
   { name: "c-cpp", map: cCppSeeds },
   { name: "swift", map: swiftSeeds },
   { name: "apple", map: appleSeeds },
@@ -255,7 +257,7 @@ function dedupeSeeds(seeds: FeatureSeed[]): FeatureSeed[] {
   const seen = new Set<string>();
   const output: FeatureSeed[] = [];
   for (const seed of seeds) {
-    const key = `${seed.kind}:${seed.source}:${seed.entryPath}:${seed.command ?? seed.route ?? seed.symbol ?? ""}`;
+    const key = `${seed.kind}:${seed.source}:${seed.entryPath}:${seed.identityKey ?? seed.command ?? seed.route ?? seed.symbol ?? ""}`;
     if (seen.has(key)) {
       continue;
     }

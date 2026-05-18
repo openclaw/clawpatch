@@ -55,6 +55,8 @@ const sourceExtensions = new Set([
   ".cxx",
   ".ex",
   ".exs",
+  ".fs",
+  ".fsi",
   ".go",
   ".h",
   ".heex",
@@ -73,15 +75,22 @@ const sourceExtensions = new Set([
   ".swift",
   ".ts",
   ".tsx",
+  ".vb",
 ]);
 
 const manifestNames = new Set([
   "Cargo.toml",
   "CMakeLists.txt",
   "Package.swift",
+  "Directory.Build.props",
+  "Directory.Build.targets",
+  "Directory.Packages.props",
+  "Directory.Packages.targets",
+  "NuGet.config",
   "build.gradle",
   "build.gradle.kts",
   "composer.json",
+  "global.json",
   "go.mod",
   "mix.exs",
   "package.json",
@@ -389,7 +398,7 @@ async function repoInventory(
     weak: weak.weak,
     weakReason: weak.reason,
     allFiles: new Set(files),
-    manifests: files.filter((file) => manifestNames.has(file.split("/").at(-1) ?? "")),
+    manifests: files.filter(isManifestFile),
     topLevelDirs: uniqueStrings(files.map((file) => file.split("/")[0] ?? "").filter(Boolean)),
     fileSamples: files.slice(0, 400),
     sourceFileSamples: sourceFiles.slice(0, 500),
@@ -468,6 +477,11 @@ function inventorySummary(inventory: RepoInventory): RepoInventorySummary {
 function isSourceFile(path: string): boolean {
   const ext = /\.[^.]+$/u.exec(path)?.[0]?.toLowerCase();
   return ext !== undefined && sourceExtensions.has(ext);
+}
+
+function isManifestFile(path: string): boolean {
+  const name = path.split("/").at(-1) ?? "";
+  return manifestNames.has(name) || /\.(?:sln|slnx|csproj|fsproj|vbproj)$/iu.test(name);
 }
 
 function isTestFile(path: string): boolean {
