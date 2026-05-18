@@ -335,7 +335,8 @@ function expressRouterFactoryNames(source: string): Set<string> {
 
 function expressRouterImportBindingNames(source: string): Set<string> {
   const names = new Set<string>();
-  const pattern = /\bimport\s+(?!type\b)([\s\S]{0,400}?)\bfrom\s*["']express["']/gu;
+  const pattern =
+    /(?:^|[;\n])\s*import\s+(?!type\b)((?:(?!\n\s*import\b)[\s\S]){0,400}?)\bfrom\s*["']express["']/gu;
   pattern.lastIndex = 0;
   for (const match of source.matchAll(pattern)) {
     if (isInsideCommentOrString(source, match.index ?? 0)) {

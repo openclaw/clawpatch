@@ -1909,13 +1909,19 @@ describe("mapFeatures", () => {
       "src/custom-router.ts",
       [
         "// import { Router } from 'express';",
+        "import { Router as CustomRouter } from './custom-router-factory';",
+        "import express from 'express';",
         "import { type Router, type Router as ExpressRouter } from 'express';",
         "",
         "declare function Router(): { get(path: string, handler: unknown): void };",
         "declare function ExpressRouter(): { get(path: string, handler: unknown): void };",
         "",
+        "const app = express();",
+        "const customRouter = CustomRouter();",
         "const router = Router();",
         "const aliasRouter = ExpressRouter();",
+        "app.get('/custom-file-real', handler);",
+        "customRouter.get('/custom-import-router', handler);",
         "router.get('/custom-router', handler);",
         "aliasRouter.get('/custom-alias-router', handler);",
         "function handler() {}",
@@ -1968,6 +1974,7 @@ describe("mapFeatures", () => {
         "Express route GET /reports",
         "Express route GET /projects/:projectId/items",
         "Express route GET /after-jsx-close",
+        "Express route GET /custom-file-real",
         "Fastify route GET /status",
         "Fastify route GET /typed-users/:id",
         "Fastify route GET /route-status",
@@ -1982,6 +1989,7 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Express route GET /regex-health");
     expect(titles).not.toContain("Express route GET /arrow-regex");
     expect(titles).not.toContain("Express route GET /returned-regex");
+    expect(titles).not.toContain("Express route GET /custom-import-router");
     expect(titles).not.toContain("Express route GET /custom-router");
     expect(titles).not.toContain("Express route GET /custom-alias-router");
     expect(titles).not.toContain("Express route GET /cjs-not-router");
