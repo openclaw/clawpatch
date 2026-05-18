@@ -11,6 +11,7 @@ const {
   extractOpencodeJson,
   parseAcpxAgent,
   parseCodexJson,
+  piThinkingLevel,
   providerJsonSchema,
 } = __testing;
 
@@ -157,6 +158,16 @@ describe("providerJsonSchema", () => {
         "multipleOf",
       ]),
     );
+  });
+});
+
+describe("piThinkingLevel", () => {
+  it("maps clawpatch none to pi off", () => {
+    expect(piThinkingLevel("none")).toBe("off");
+  });
+
+  it("passes supported pi thinking levels through", () => {
+    expect(piThinkingLevel("xhigh")).toBe("xhigh");
   });
 });
 
@@ -407,6 +418,7 @@ describe("providerByName", () => {
     expect(providerByName("acpx").name).toBe("acpx");
     expect(providerByName("grok").name).toBe("grok");
     expect(providerByName("opencode").name).toBe("opencode");
+    expect(providerByName("pi").name).toBe("pi");
   });
 
   it("still supports codex, mock, and mock-fail", () => {
