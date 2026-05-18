@@ -36,7 +36,8 @@ export function filterFindingsByChangedOwnedFiles(
 export function limitFeatures(features: FeatureRecord[], flags: Flags): FeatureRecord[] {
   const explicitLimit = stringFlag(flags, "limit");
   if (explicitLimit === undefined) {
-    return features.slice(0, stringFlag(flags, "since") === undefined ? 1 : features.length);
+    const unlimited = stringFlag(flags, "since") !== undefined || flags["includeDirty"] === true;
+    return features.slice(0, unlimited ? features.length : 1);
   }
   const limit = Number(explicitLimit);
   return features.slice(0, Number.isFinite(limit) && limit > 0 ? limit : 1);
@@ -133,7 +134,7 @@ function featurePaths(feature: FeatureRecord): string[] {
 }
 
 function normalizeProjectFilter(project: string): string {
-  const normalized = normalizeFeaturePath(project).replace(/^\.\//u, "");
+  const normalized = normalizeFeaturePath(project).replace(/^\.\/$/u, "");
   return normalized.length === 0 ? "." : normalized;
 }
 

@@ -87,6 +87,41 @@ export async function changedFilesSince(root: string, ref: string): Promise<Set<
   );
 }
 
+export async function dirtyFiles(root: string): Promise<Set<string>> {
+  const result = await runCommand(
+    "git status --porcelain=v1 -z --untracked-files=all",
+    root,
+    undefined,
+    { trimOutput: false },
+  );
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      `git status failed: ${result.stderr || result.stdout}`,
+      2,
+      "git-failure",
+    );
+  }
+  const fields = result.stdout.split("\0").filter((field) => field.length > 0);
+  const paths = new Set<string>();
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (field.length < 4) {
+      continue;
+    }
+    const status = field.slice(0, 2);
+    const primaryPath = field.slice(3).replace(/\\/gu, "/");
+    paths.add(primaryPath);
+    if (/[RC]/u.test(status)) {
+      const secondaryPath = (fields[index + 1] ?? "").replace(/\\/gu, "/");
+      if (secondaryPath.length > 0) {
+        paths.add(secondaryPath);
+      }
+      index += 1;
+    }
+  }
+  return paths;
+}
+
 async function gitLine(cwd: string, command: string): Promise<string | null> {
   const result = await runCommand(command, cwd);
   if (result.exitCode !== 0) {
