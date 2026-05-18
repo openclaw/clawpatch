@@ -160,6 +160,7 @@ const commandFlags = {
     "reasoningEffort",
     "skipGitRepoCheck",
     "dryRun",
+    "promptFile",
   ]),
   report: new Set(["status", "severity", "feature", "project", "category", "triage", "output"]),
   show: new Set(["finding"]),
@@ -205,6 +206,7 @@ const valueFlagNames = new Set([
   "provider",
   "model",
   "reasoning-effort",
+  "prompt-file",
   "output",
   "status",
   "severity",
@@ -389,6 +391,8 @@ Flags:
   --reasoning-effort <none|minimal|low|medium|high|xhigh>
   --skip-git-repo-check
   --dry-run
+  --prompt-file <path>    appends extra reviewer guidance to the prompt;
+                          use "-" to read from stdin
   --json
   -q, --quiet
 `);

@@ -60,6 +60,7 @@ export async function buildReviewPrompt(
   feature: FeatureRecord,
   config: ClawpatchConfig,
   mode: ReviewMode = "default",
+  customPrompt: string | null = null,
 ): Promise<string> {
   const owned = feature.ownedFiles.slice(0, config.review.maxOwnedFiles);
   const context = feature.contextFiles.slice(0, config.review.maxContextFiles);
@@ -67,6 +68,14 @@ export async function buildReviewPrompt(
   for (const ref of [...owned, ...context]) {
     fileBlocks.push(await fileBlock(root, ref.path));
   }
+  const customBlock =
+    customPrompt !== null && customPrompt.trim() !== ""
+      ? `Additional reviewer guidance (provided via --prompt-file):
+
+${customPrompt.trim()}
+
+`
+      : "";
   return `You are reviewing one semantic feature for clawpatch.
 
 Return strict JSON only. No markdown fences.
@@ -77,7 +86,7 @@ ${JSON.stringify({ name: project.name, detected: project.detected }, null, 2)}
 Feature:
 ${JSON.stringify(feature, null, 2)}
 
-Review categories:
+${customBlock}Review categories:
 - correctness bugs
 - security issues
 - race/concurrency bugs

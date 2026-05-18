@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { hostname } from "node:os";
 import {
@@ -97,7 +97,10 @@ export async function initCommand(
   if (previous !== null && flags["force"] !== true) {
     throw new ClawpatchError("project already initialized; use --force", 2, "already-initialized");
   }
-  await writeProject(paths, { ...project, createdAt: previous?.createdAt ?? project.createdAt });
+  await writeProject(paths, {
+    ...project,
+    createdAt: previous?.createdAt ?? project.createdAt,
+  });
   if (previous === null || flags["force"] === true) {
     await writeJson(paths.config, detectedConfig);
   }
@@ -167,7 +170,9 @@ export async function mapCommand(
       reason: result.decision.reason,
     };
   }
-  emitProgress(context, "map", "write-start", { features: result.features.length });
+  emitProgress(context, "map", "write-start", {
+    features: result.features.length,
+  });
   for (const feature of result.features) {
     await writeFeature(loaded.paths, feature);
   }
@@ -234,6 +239,7 @@ export async function reviewCommand(
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
   const mode = reviewMode(flags);
+  const customPrompt = await loadCustomReviewPrompt(flags);
   const features = await selectReviewFeatures(loaded, flags);
   if (features.length === 0 && typeof flags["since"] === "string") {
     return { next: "no features touched by diff" };
@@ -253,7 +259,11 @@ export async function reviewCommand(
   run.claimedFeatureIds = features.map((feature) => feature.featureId);
   await writeRun(loaded.paths, run);
   const findingIds: string[] = [];
-  const errors: Array<{ message: string; code: string | null; error: unknown }> = [];
+  const errors: Array<{
+    message: string;
+    code: string | null;
+    error: unknown;
+  }> = [];
   const jobs = Math.min(reviewJobs(flags), Math.max(features.length, 1));
   let cursor = 0;
   emitProgress(context, "review", "start", {
@@ -281,6 +291,7 @@ export async function reviewCommand(
             index,
             total: features.length,
             mode,
+            customPrompt,
             allowNonPendingFeatureReview: stringFlag(flags, "feature") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
@@ -302,7 +313,10 @@ export async function reviewCommand(
       findingIds,
       errors: errors.map(({ message, code }) => ({ message, code })),
     });
-    emitProgress(context, "review", "failed", { run: currentRunId, errors: errors.length });
+    emitProgress(context, "review", "failed", {
+      run: currentRunId,
+      errors: errors.length,
+    });
     throw errors[0]?.error ?? new ClawpatchError("review failed", 1, "review-failed");
   }
   const finished: RunRecord = {
@@ -489,6 +503,7 @@ type ReviewFeatureOptions = {
   index: number;
   total: number;
   mode: ReviewMode;
+  customPrompt: string | null;
   allowNonPendingFeatureReview: boolean;
 };
 
@@ -503,6 +518,7 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
     index,
     total,
     mode,
+    customPrompt,
     allowNonPendingFeatureReview,
   } = options;
   const started = Date.now();
@@ -529,6 +545,7 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
       lockedFeature,
       config,
       mode,
+      customPrompt,
     );
     const output = await provider.review(loaded.root, prompt, providerOptions(config));
     const modeFindings = reviewFindingsForMode(output.findings, mode);
@@ -624,8 +641,11 @@ export async function revalidateCommand(
   const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
   run.findingIds = findings.map((finding) => finding.findingId);
   await writeRun(loaded.paths, run);
-  const results: Array<{ finding: string; outcome: FindingRecord["status"]; reasoning: string }> =
-    [];
+  const results: Array<{
+    finding: string;
+    outcome: FindingRecord["status"];
+    reasoning: string;
+  }> = [];
   emitProgress(context, "revalidate", "start", {
     run: currentRunId,
     findings: findings.length,
@@ -712,7 +732,11 @@ export async function revalidateCommand(
     };
   }
   const first = assertDefined(results[0], "missing revalidation result");
-  return { finding: first.finding, outcome: first.outcome, reasoning: first.reasoning };
+  return {
+    finding: first.finding,
+    outcome: first.outcome,
+    reasoning: first.reasoning,
+  };
 }
 
 export async function fixCommand(
@@ -1023,9 +1047,17 @@ async function refreshFeatureStatus(
     ["open", "uncertain"].includes(finding.status),
   );
   if (!hasUnresolved && featureFindings.length > 0) {
-    await writeFeature(paths, { ...feature, status: "fixed", updatedAt: nowIso() });
+    await writeFeature(paths, {
+      ...feature,
+      status: "fixed",
+      updatedAt: nowIso(),
+    });
   } else if (hasUnresolved && ["fixed", "revalidated", "reviewed"].includes(feature.status)) {
-    await writeFeature(paths, { ...feature, status: "needs-fix", updatedAt: nowIso() });
+    await writeFeature(paths, {
+      ...feature,
+      status: "needs-fix",
+      updatedAt: nowIso(),
+    });
   }
 }
 
@@ -1079,6 +1111,39 @@ function reviewMode(flags: Record<string, string | boolean>): ReviewMode {
     return mode;
   }
   throw new ClawpatchError("invalid --mode; expected default or deslopify", 2, "invalid-usage");
+}
+
+async function loadCustomReviewPrompt(
+  flags: Record<string, string | boolean>,
+): Promise<string | null> {
+  const path = stringFlag(flags, "prompt-file");
+  if (path === undefined) {
+    return null;
+  }
+  if (path === "" || path === "-") {
+    return readStdinToString();
+  }
+  try {
+    return await readFile(resolve(path), "utf8");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ClawpatchError(
+      `failed to read --prompt-file ${path}: ${message}`,
+      2,
+      "invalid-usage",
+    );
+  }
+}
+
+async function readStdinToString(): Promise<string> {
+  if (process.stdin.isTTY) {
+    throw new ClawpatchError("--prompt-file=- requested but stdin is a TTY", 2, "invalid-usage");
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function reviewFindingsForMode(
