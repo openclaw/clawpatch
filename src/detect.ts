@@ -1,5 +1,5 @@
 import { lstat, readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { pathExists } from "./fs.js";
 import { projectNameFromRoot, discoverGit } from "./git.js";
 import { stableId } from "./id.js";
@@ -449,11 +449,52 @@ async function dotnetTestTarget(root: string, buildTarget: string | null): Promi
   }
   if (
     buildTarget !== null &&
-    (isDotnetSolutionFileName(buildTarget) || testProjects.includes(buildTarget))
+    (testProjects.includes(buildTarget) ||
+      (isDotnetSolutionFileName(buildTarget) &&
+        (await dotnetSolutionIncludesProjects(root, buildTarget, testProjects))))
   ) {
     return buildTarget;
   }
   return testProjects.length === 1 ? (testProjects[0] ?? null) : null;
+}
+
+async function dotnetSolutionIncludesProjects(
+  root: string,
+  solution: string,
+  projects: string[],
+): Promise<boolean> {
+  const source = await readFile(join(root, solution), "utf8").catch(() => "");
+  const solutionProjects = new Set(dotnetSolutionProjectPaths(solution, source));
+  return projects.every((project) => solutionProjects.has(project));
+}
+
+function dotnetSolutionProjectPaths(solution: string, source: string): string[] {
+  const solutionRoot = solution.includes("/") ? solution.slice(0, solution.lastIndexOf("/")) : ".";
+  const paths: string[] = [];
+  const pattern = isDotnetSlnxFileName(solution)
+    ? /\bPath\s*=\s*["']([^"']+\.(?:cs|fs|vb)proj)["']/gimu
+    : /^Project\([^)]+\)\s*=\s*"[^"]*"\s*,\s*"([^"]+\.(?:cs|fs|vb)proj)"/gimu;
+  for (const match of source.matchAll(pattern)) {
+    const path = dotnetSolutionProjectPath(solutionRoot, match[1] ?? "");
+    if (path !== null) {
+      paths.push(path);
+    }
+  }
+  return [...new Set(paths)];
+}
+
+function dotnetSolutionProjectPath(solutionRoot: string, path: string): string | null {
+  const normalized = path.replace(/\\/gu, "/");
+  if (normalized.length === 0 || /^(?:[A-Za-z]:)?\//u.test(normalized)) {
+    return null;
+  }
+  const resolved = posix.normalize(
+    [solutionRoot === "." ? "" : solutionRoot, normalized].filter(Boolean).join("/"),
+  );
+  if (resolved === "." || resolved === ".." || resolved.startsWith("../")) {
+    return null;
+  }
+  return resolved;
 }
 
 async function phpDefaultCommands(
@@ -1669,6 +1710,10 @@ function isDotnetProjectFileName(entry: string): boolean {
 
 function isDotnetSolutionFileName(entry: string): boolean {
   return /\.(?:sln|slnx)$/iu.test(entry);
+}
+
+function isDotnetSlnxFileName(entry: string): boolean {
+  return /\.slnx$/iu.test(entry);
 }
 
 function isStrongDotnetTestProject(source: string): boolean {

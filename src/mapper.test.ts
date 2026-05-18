@@ -13196,7 +13196,16 @@ end
 
   it("maps C# .NET projects, ASP.NET endpoints, and associated test projects", async () => {
     const root = await fixtureRoot("clawpatch-dotnet-map-");
-    await writeFixture(root, "TodoApp.sln", "");
+    await writeFixture(
+      root,
+      "TodoApp.sln",
+      `Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{00000000-0000-0000-0000-000000000000}") = "Todo.Api", "src\\Todo.Api\\Todo.Api.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+Project("{00000000-0000-0000-0000-000000000000}") = "Todo.Api.Tests", "tests\\Todo.Api.Tests\\Todo.Api.Tests.csproj", "{22222222-2222-2222-2222-222222222222}"
+EndProject
+`,
+    );
     await writeFixture(root, "global.json", '{ "sdk": { "version": "9.0.100" } }\n');
     await writeFixture(root, "Directory.Build.props", "<Project />\n");
     await writeFixture(
@@ -13396,6 +13405,34 @@ app.Run();
     expect(project.detected.languages).toContain("csharp");
     expect(project.detected.packageManagers).toContain("dotnet");
     expect(project.detected.commands.typecheck).toBeNull();
+    expect(project.detected.commands.test).toBe("dotnet test tests/App.Tests/App.Tests.csproj");
+  });
+
+  it("targets a lone .NET test project when the build solution omits it", async () => {
+    const root = await fixtureRoot("clawpatch-dotnet-solution-missing-test-");
+    await writeFixture(
+      root,
+      "App.sln",
+      `Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{00000000-0000-0000-0000-000000000000}") = "App", "src\\App\\App.csproj", "{11111111-1111-1111-1111-111111111111}"
+EndProject
+`,
+    );
+    await writeFixture(root, "src/App/App.csproj", '<Project Sdk="Microsoft.NET.Sdk" />\n');
+    await writeFixture(
+      root,
+      "tests/App.Tests/App.Tests.csproj",
+      `<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+  </ItemGroup>
+</Project>
+`,
+    );
+
+    const project = await detectProject(root);
+
+    expect(project.detected.commands.typecheck).toBe("dotnet build App.sln");
     expect(project.detected.commands.test).toBe("dotnet test tests/App.Tests/App.Tests.csproj");
   });
 
