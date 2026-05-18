@@ -101,6 +101,11 @@ Provider calls use `codex exec` with strict JSON schemas. Review and revalidate
 run read-only; fix planning runs with workspace-write because Codex may edit the
 working tree during the explicit fix command.
 
+Set `CLAWPATCH_CODEX_SANDBOX` to override the Codex sandbox passed by
+Clawpatch. Use any Codex sandbox mode, or `bypass`/`none` to pass
+`--dangerously-bypass-approvals-and-sandbox` when the host environment already
+provides isolation.
+
 Supported provider names today:
 
 - `codex`: local Codex CLI
