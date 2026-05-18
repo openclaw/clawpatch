@@ -148,7 +148,7 @@ describe("Codex provider args", () => {
   });
 
   it("allows Codex sandbox mode to be overridden by environment", () => {
-    process.env["CLAWPATCH_CODEX_SANDBOX"] = "danger-full-access";
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " danger-full-access ";
     const args = ["exec"];
 
     addCodexSandboxArgs(args, "read-only");
@@ -156,8 +156,17 @@ describe("Codex provider args", () => {
     expect(args).toEqual(["exec", "--sandbox", "danger-full-access"]);
   });
 
+  it("ignores blank Codex sandbox overrides", () => {
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " ";
+    const args = ["exec"];
+
+    addCodexSandboxArgs(args, "read-only");
+
+    expect(args).toEqual(["exec", "--sandbox", "read-only"]);
+  });
+
   it("can bypass Codex sandboxing when the host already provides isolation", () => {
-    process.env["CLAWPATCH_CODEX_SANDBOX"] = "bypass";
+    process.env["CLAWPATCH_CODEX_SANDBOX"] = " none ";
     const args = ["exec"];
 
     addCodexSandboxArgs(args, "read-only");

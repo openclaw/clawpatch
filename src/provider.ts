@@ -479,12 +479,12 @@ async function runCodexJson(
 }
 
 function addCodexSandboxArgs(args: string[], sandbox: string): void {
-  const override = process.env["CLAWPATCH_CODEX_SANDBOX"];
+  const override = process.env["CLAWPATCH_CODEX_SANDBOX"]?.trim();
   if (override === "bypass" || override === "none") {
     args.push("--dangerously-bypass-approvals-and-sandbox");
     return;
   }
-  args.push("--sandbox", override ?? sandbox);
+  args.push("--sandbox", override && override.length > 0 ? override : sandbox);
 }
 
 function addCodexModelArgs(args: string[], options: ProviderOptions): void {

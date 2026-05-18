@@ -6,6 +6,7 @@
 - Added a `pi` provider for routing review, fix, revalidate, and agent map through the [pi coding agent](https://pi.dev) in non-interactive print mode, thanks @danielmarbach.
 - Added explicit Codex reasoning effort selection via `--reasoning-effort`, `CLAWPATCH_REASONING_EFFORT`, and provider config, with `doctor` reporting the active setting.
 - Added `--skip-git-repo-check` for Codex-backed map, review, fix, and revalidate commands so initialized non-Git roots can run Codex, thanks @im-zayan.
+- Added `CLAWPATCH_CODEX_SANDBOX` for overriding Codex provider sandbox mode when the host already provides isolation, thanks @IAMSamuelRodda.
 - Added deterministic Express, Fastify, and Hono route mapping for Node projects, thanks @rohitjavvadi.
 - Fixed provider commands with relative `--root` paths by canonicalizing explicit roots before invoking Codex or other providers.
 - Added first-pass Elixir Mix/Phoenix mapping for project metadata, contexts, Phoenix web slices, runtime config, Ecto migrations, project scripts, ExUnit tests, and Mix validation defaults, thanks @tears-mysthrala.
