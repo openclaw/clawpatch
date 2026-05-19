@@ -1,6 +1,6 @@
 import { appendFile, lstat, readFile, realpath, writeFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { hostname } from "node:os";
+import { cpus, hostname } from "node:os";
 import {
   changedPathsBetweenSnapshots,
   hasSourceDirtyWorktree,
@@ -74,6 +74,7 @@ import {
   reasoningEfforts,
 } from "./types.js";
 import { validationCommandsForFeature } from "./validation.js";
+import { createRpmLimiter, defaultJobs, rpmFromFlag } from "./rpm-limiter.js";
 
 export type AppContext = {
   root: string;
@@ -313,6 +314,9 @@ export async function reviewCommand(
     error: unknown;
   }> = [];
   const jobs = Math.min(reviewJobs(flags), Math.max(features.length, 1));
+  const limiter = createRpmLimiter(
+    rpmFromFlag(stringFlag(flags, "rateLimitPerMinute"), process.env["CLAWPATCH_RPM"]),
+  );
   let cursor = 0;
   emitProgress(context, "review", "start", {
     run: currentRunId,
@@ -329,6 +333,7 @@ export async function reviewCommand(
           return;
         }
         try {
+          await limiter.acquire();
           const reviewed = await reviewFeature({
             context,
             loaded,
@@ -1923,12 +1928,19 @@ async function filterFindingsByOwnedFilesSince(
   return filterFindingsByChangedOwnedFiles(findings, features, changed);
 }
 
-function reviewJobs(flags: Record<string, string | boolean>): number {
-  const parsed = Number(stringFlag(flags, "jobs") ?? "10");
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return 1;
+export function reviewJobs(
+  flags: Record<string, string | boolean>,
+  coreCount: number = cpus().length,
+): number {
+  const explicit = stringFlag(flags, "jobs");
+  if (explicit !== undefined) {
+    const parsed = Number(explicit);
+    if (!Number.isFinite(parsed) || parsed < 1) {
+      return 1;
+    }
+    return Math.min(Math.floor(parsed), 32);
   }
-  return Math.min(Math.floor(parsed), 32);
+  return defaultJobs(coreCount);
 }
 
 function reviewMode(flags: Record<string, string | boolean>): ReviewMode {

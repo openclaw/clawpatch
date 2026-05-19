@@ -161,6 +161,7 @@ const commandFlags = {
     "since",
     "jobs",
     "mode",
+    "rateLimitPerMinute",
     "provider",
     "model",
     "reasoningEffort",
@@ -221,6 +222,7 @@ const valueFlagNames = new Set([
   "since",
   "jobs",
   "mode",
+  "rate-limit-per-minute",
   "source",
   "provider",
   "model",
@@ -409,8 +411,9 @@ Flags:
   --project <name-or-root>
   --limit <n>
   --since <ref>
-  --jobs <n>        default: 10
+  --jobs <n>        default: ~half of CPU cores, max 10
   --mode <default|deslopify>
+  --rate-limit-per-minute <n>   cap provider calls per 60s window (env: CLAWPATCH_RPM)
   --provider <name>
   --model <name>
   --reasoning-effort <none|minimal|low|medium|high|xhigh>

@@ -17,6 +17,8 @@
 - Improved OpenCode malformed JSON diagnostics with output length, event kinds, and a bounded preview, thanks @rohitjavvadi.
 - Fixed Express route mapping for aliased Router imports that follow block comment banners, thanks @rohitjavvadi.
 - Fixed Bun package-manager detection to recognize the text `bun.lock` lockfile, thanks @austinm911.
+- Changed `clawpatch review --jobs` default from a fixed `10` to `floor(cpuCores / 2)` clamped to `[1, 10]`. Explicit `--jobs <n>` is honored as before.
+- Added `clawpatch review --rate-limit-per-minute <n>` (also `CLAWPATCH_RPM`) to cap how many provider calls may start within any rolling 60s window across jobs. Default unset preserves prior behavior.
 
 ## 0.3.0 - 2026-05-18
 
