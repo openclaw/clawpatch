@@ -117,13 +117,11 @@ export async function buildReviewPromptBundle(
   ];
   const fileBlocks: string[] = [];
   const includedFiles: ReviewPromptFileManifest[] = [];
-  for (const ref of owned) {
-    const file = await fileBlockWithManifest(root, ref.path, "owned");
-    fileBlocks.push(file.block);
-    includedFiles.push(file.manifest);
-  }
-  for (const ref of context) {
-    const file = await fileBlockWithManifest(root, ref.path, "context");
+  const files = await Promise.all([
+    ...owned.map((ref) => fileBlockWithManifest(root, ref.path, "owned")),
+    ...context.map((ref) => fileBlockWithManifest(root, ref.path, "context")),
+  ]);
+  for (const file of files) {
     fileBlocks.push(file.block);
     includedFiles.push(file.manifest);
   }

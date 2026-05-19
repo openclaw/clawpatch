@@ -12,6 +12,7 @@ const {
   addCodexSandboxArgs,
   addCodexModelArgs,
   acpxFailureMessage,
+  assertGeminiPatched,
   codexFailureMessage,
   extractAcpxJson,
   extractGeminiResponse,
@@ -121,6 +122,11 @@ describe("extractJson", () => {
   it("returns null for text with no valid JSON", () => {
     expect(extractJson("no json here at all")).toBeNull();
     expect(extractJson("just some words { unbalanced")).toBeNull();
+  });
+
+  it("bounds fallback JSON extraction work", () => {
+    expect(extractJson(`${"{".repeat(1_001)}${"}".repeat(1_001)}`)).toBeNull();
+    expect(extractJson(`${"{ nope } ".repeat(65)}{"ok":true}`)).toBeNull();
   });
 });
 
@@ -354,6 +360,30 @@ describe("Gemini provider", () => {
     expect(isGeminiPatched("0.40.0-preview.3")).toBe(true);
     expect(isGeminiPatched("0.39.0")).toBe(false);
     expect(isGeminiPatched("0.40.0-preview.2")).toBe(false);
+  });
+
+  it("warns when bypassing the Gemini patched-version gate", () => {
+    const original = process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"];
+    const write = process.stderr.write;
+    const writes: string[] = [];
+    process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] = "1";
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      assertGeminiPatched("0.1.0");
+    } finally {
+      process.stderr.write = write;
+      if (original === undefined) {
+        delete process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"];
+      } else {
+        process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] = original;
+      }
+    }
+
+    expect(writes.join("")).toContain("bypasses the Gemini CLI security version gate");
   });
 
   it("uses an explicit environment allowlist", () => {

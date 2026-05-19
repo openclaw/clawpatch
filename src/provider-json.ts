@@ -1,9 +1,16 @@
 import { ClawpatchError } from "./errors.js";
 
+const MAX_FALLBACK_JSON_SCAN_BYTES = 4 * 1024 * 1024;
+const MAX_FALLBACK_JSON_DEPTH = 1_000;
+const MAX_FALLBACK_JSON_CANDIDATES = 64;
+
 export function extractJson(text: string): unknown | null {
   try {
     return JSON.parse(text);
   } catch {}
+  if (Buffer.byteLength(text, "utf8") > MAX_FALLBACK_JSON_SCAN_BYTES) {
+    return null;
+  }
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/u);
   if (fenceMatch && fenceMatch[1]) {
     const candidate = fenceMatch[1].trim();
@@ -12,7 +19,12 @@ export function extractJson(text: string): unknown | null {
     } catch {}
   }
   let firstBrace = text.indexOf("{");
+  let candidates = 0;
   while (firstBrace !== -1) {
+    candidates += 1;
+    if (candidates > MAX_FALLBACK_JSON_CANDIDATES) {
+      return null;
+    }
     let depth = 0;
     let inString = false;
     let escape = false;
@@ -31,8 +43,12 @@ export function extractJson(text: string): unknown | null {
         continue;
       }
       if (!inString) {
-        if (ch === "{") depth += 1;
-        else if (ch === "}") {
+        if (ch === "{") {
+          depth += 1;
+          if (depth > MAX_FALLBACK_JSON_DEPTH) {
+            return null;
+          }
+        } else if (ch === "}") {
           depth -= 1;
           if (depth === 0) {
             const candidate = text.slice(firstBrace, i + 1);

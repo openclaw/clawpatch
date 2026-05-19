@@ -582,6 +582,10 @@ function geminiFailureMessage(stdout: string, stderr: string): string {
 
 function assertGeminiPatched(versionText: string): void {
   if (process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] === "1") {
+    process.stderr.write(
+      "warning: CLAWPATCH_GEMINI_ALLOW_UNPATCHED=1 bypasses the Gemini CLI " +
+        "security version gate for GHSA-wpqr-6v78-jr5g; use only for local diagnostics.\n",
+    );
     return;
   }
   const version = parseGeminiVersion(versionText);
@@ -1500,6 +1504,7 @@ export const __testing = {
   geminiArgs,
   geminiEnv,
   geminiPrompt,
+  assertGeminiPatched,
   isGeminiPatched,
   parseAcpxAgent,
   parseCodexJson,
