@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommandArgs } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
+import { pathExists } from "./fs.js";
 import {
   agentMapJsonSchema,
   fixPlanJsonSchema,
@@ -42,6 +43,9 @@ export type Provider = {
 export function providerByName(name: string): Provider {
   if (name === "codex") {
     return codexProvider;
+  }
+  if (name === "gemini") {
+    return geminiProvider;
   }
   if (name === "opencode") {
     return opencodeProvider;
@@ -197,6 +201,9 @@ const grokProvider: Provider = {
 };
 
 const PI_DEFAULT_TIMEOUT_MS = 180_000;
+const GEMINI_DEFAULT_TIMEOUT_MS = 180_000;
+const GEMINI_PATCHED_STABLE = "0.39.1";
+const GEMINI_PATCHED_PREVIEW = "0.40.0-preview.3";
 
 const piProvider: Provider = {
   name: "pi",
@@ -228,6 +235,423 @@ const piProvider: Provider = {
     return revalidateOutputSchema.parse(output);
   },
 };
+
+const geminiProvider: Provider = {
+  name: "gemini",
+  async check(root: string): Promise<string> {
+    const result = await runGeminiCommand(root, ["--version"]);
+    if (result.exitCode !== 0) {
+      throw new ClawpatchError(
+        geminiFailureMessage(result.stdout, result.stderr),
+        providerExitCode(`${result.stderr}\n${result.stdout}`),
+        "provider-auth",
+      );
+    }
+    const version = result.stdout.trim() || result.stderr.trim();
+    assertGeminiPatched(version);
+    return `${version} (patched for GHSA-wpqr-6v78-jr5g)`;
+  },
+  async map(root: string, prompt: string, options: ProviderOptions): Promise<AgentMapOutput> {
+    const output = await runGeminiJson(root, prompt, options, agentMapJsonSchema, "plan");
+    return agentMapOutputSchema.parse(output);
+  },
+  async review(root: string, prompt: string, options: ProviderOptions): Promise<ReviewOutput> {
+    const output = await runGeminiJson(root, prompt, options, reviewJsonSchema, "plan");
+    return reviewOutputSchema.parse(output);
+  },
+  async fix(root: string, prompt: string, options: ProviderOptions): Promise<FixPlanOutput> {
+    const output = await runGeminiJson(root, prompt, options, fixPlanJsonSchema, "auto_edit");
+    return fixPlanOutputSchema.parse(output);
+  },
+  async revalidate(
+    root: string,
+    prompt: string,
+    options: ProviderOptions,
+  ): Promise<RevalidateOutput> {
+    const output = await runGeminiJson(root, prompt, options, revalidateJsonSchema, "plan");
+    return revalidateOutputSchema.parse(output);
+  },
+};
+
+async function runGeminiJson(
+  root: string,
+  prompt: string,
+  options: ProviderOptions,
+  schema: object,
+  approvalMode: "plan" | "auto_edit",
+): Promise<unknown> {
+  requireGeminiTrustedWorkspace();
+  const args = geminiArgs(options, approvalMode);
+  const result = await runGeminiCommand(
+    root,
+    args,
+    geminiPrompt(prompt, schema, approvalMode === "plan"),
+  );
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      geminiFailureMessage(result.stdout, result.stderr),
+      providerExitCode(`${result.stderr}\n${result.stdout}`),
+      "provider-failure",
+    );
+  }
+  const response = extractGeminiResponse(result.stdout);
+  const parsed = extractJson(response);
+  if (parsed === null) {
+    throw new ClawpatchError(
+      `gemini provider response contained no parseable Clawpatch JSON ` +
+        `(response preview: ${safeProviderPreview(response)})`,
+      8,
+      "malformed-output",
+    );
+  }
+  return parsed;
+}
+
+function geminiArgs(options: ProviderOptions, approvalMode: "plan" | "auto_edit"): string[] {
+  const args = [
+    "--skip-trust",
+    "-p",
+    "",
+    `--approval-mode=${approvalMode}`,
+    "--output-format=json",
+    "--extensions",
+    "none",
+  ];
+  if (options.model !== null) {
+    args.push("--model", options.model);
+  }
+  return args;
+}
+
+async function runGeminiCommand(root: string, args: string[], input?: string) {
+  const isolated = await geminiIsolatedEnv();
+  try {
+    return await runCommandArgs(geminiExecutable(), args, root, input, {
+      trimOutput: false,
+      timeoutMs: geminiTimeoutMs(),
+      env: isolated.env,
+      inheritEnv: false,
+    });
+  } finally {
+    await rm(isolated.root, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+function geminiExecutable(): string {
+  const configured = process.env["CLAWPATCH_GEMINI_BIN"]?.trim();
+  if (configured === undefined || configured.length === 0) {
+    return "gemini";
+  }
+  if (configured.includes("\0")) {
+    throw new ClawpatchError("invalid CLAWPATCH_GEMINI_BIN", 2, "invalid-usage");
+  }
+  return configured;
+}
+
+async function geminiIsolatedEnv(): Promise<{ env: NodeJS.ProcessEnv; root: string }> {
+  const root = await mkdtemp(join(tmpdir(), "clawpatch-gemini-"));
+  const home = join(root, "home");
+  const xdgConfig = join(root, "xdg-config");
+  const xdgCache = join(root, "xdg-cache");
+  const xdgData = join(root, "xdg-data");
+  await Promise.all([
+    mkdir(join(home, ".gemini"), { recursive: true }),
+    mkdir(xdgConfig, { recursive: true }),
+    mkdir(xdgCache, { recursive: true }),
+    mkdir(xdgData, { recursive: true }),
+  ]);
+  await seedGeminiState(home);
+  return {
+    root,
+    env: geminiEnv({
+      home,
+      xdgConfig,
+      xdgCache,
+      xdgData,
+    }),
+  };
+}
+
+async function seedGeminiState(home: string): Promise<void> {
+  const sourceHome = process.env["HOME"];
+  if (sourceHome === undefined || sourceHome.length === 0) {
+    return;
+  }
+  const sourceDir = join(sourceHome, ".gemini");
+  const targetDir = join(home, ".gemini");
+  for (const file of ["google_accounts.json", "oauth_creds.json", "installation_id"]) {
+    const source = join(sourceDir, file);
+    if (await pathExists(source)) {
+      await copyFile(source, join(targetDir, file));
+    }
+  }
+  await writeMinimalGeminiSettings(sourceDir, targetDir);
+}
+
+async function writeMinimalGeminiSettings(sourceDir: string, targetDir: string): Promise<void> {
+  const source = join(sourceDir, "settings.json");
+  if (!(await pathExists(source))) {
+    return;
+  }
+  let raw: string;
+  try {
+    raw = await readFile(source, "utf8");
+  } catch {
+    return;
+  }
+  let settings: unknown;
+  try {
+    settings = JSON.parse(raw) as unknown;
+  } catch {
+    return;
+  }
+  const selectedType = geminiSelectedAuthType(settings);
+  if (selectedType === null) {
+    return;
+  }
+  await writeFile(
+    join(targetDir, "settings.json"),
+    JSON.stringify({ security: { auth: { selectedType } } }),
+    "utf8",
+  );
+}
+
+function geminiSelectedAuthType(settings: unknown): string | null {
+  if (typeof settings !== "object" || settings === null) {
+    return null;
+  }
+  const security = (settings as Record<string, unknown>)["security"];
+  if (typeof security !== "object" || security === null) {
+    return null;
+  }
+  const auth = (security as Record<string, unknown>)["auth"];
+  if (typeof auth !== "object" || auth === null) {
+    return null;
+  }
+  const selectedType = (auth as Record<string, unknown>)["selectedType"];
+  return typeof selectedType === "string" && selectedType.length > 0 ? selectedType : null;
+}
+
+function geminiEnv(paths?: {
+  home: string;
+  xdgConfig: string;
+  xdgCache: string;
+  xdgData: string;
+}): NodeJS.ProcessEnv {
+  const allowed = [
+    "PATH",
+    "TMPDIR",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "GOOGLE_CLOUD_PROJECT",
+    "GOOGLE_CLOUD_LOCATION",
+    "GOOGLE_CLOUD_QUOTA_PROJECT",
+    "GOOGLE_GENAI_USE_VERTEXAI",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "NODE_EXTRA_CA_CERTS",
+    "NO_COLOR",
+  ];
+  const env: NodeJS.ProcessEnv = {};
+  if (paths !== undefined) {
+    env["HOME"] = paths.home;
+    env["XDG_CONFIG_HOME"] = paths.xdgConfig;
+    env["XDG_CACHE_HOME"] = paths.xdgCache;
+    env["XDG_DATA_HOME"] = paths.xdgData;
+  }
+  for (const key of allowed) {
+    const value = process.env[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  if (process.platform === "win32") {
+    for (const key of ["ComSpec", "SystemRoot", "WINDIR", "PATHEXT"]) {
+      const value = process.env[key];
+      if (value !== undefined) {
+        env[key] = value;
+      }
+    }
+  }
+  return env;
+}
+
+function geminiPrompt(prompt: string, schema: object, readOnly: boolean): string {
+  const promptBody = readOnly
+    ? "READ-ONLY REVIEW MODE.\n" +
+      "Do not modify, create, or delete any files in the workspace.\n" +
+      "Do not run shell commands, use network tools, use MCP servers, activate skills, or launch subagents.\n" +
+      "Do not exit plan mode. Only inspect files needed to answer with the JSON output below.\n\n" +
+      prompt
+    : prompt;
+  return `${promptBody}
+
+Provider output schema:
+${JSON.stringify(schema, null, 2)}
+
+Return only one JSON object matching the schema.`;
+}
+
+function extractGeminiResponse(stdout: string): string {
+  const text = stdout.trim();
+  if (text.length === 0) {
+    throw new ClawpatchError("gemini provider produced no output", 8, "malformed-output");
+  }
+  const envelope = parseGeminiEnvelope(text);
+  if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
+    throw new ClawpatchError(
+      "gemini provider produced a non-object JSON envelope",
+      8,
+      "malformed-output",
+    );
+  }
+  const record = envelope as Record<string, unknown>;
+  const error = record["error"];
+  if (error !== undefined && error !== null) {
+    throw new ClawpatchError(
+      `gemini provider error: ${safeProviderPreview(geminiErrorText(error))}`,
+      providerExitCode(geminiErrorText(error)),
+      "provider-failure",
+    );
+  }
+  if (typeof record["response"] !== "string") {
+    throw new ClawpatchError(
+      "gemini provider JSON envelope is missing string field `response`",
+      8,
+      "malformed-output",
+    );
+  }
+  return record["response"];
+}
+
+function parseGeminiEnvelope(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {}
+  const values: unknown[] = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) {
+      continue;
+    }
+    try {
+      values.push(JSON.parse(trimmed) as unknown);
+    } catch {
+      throw new ClawpatchError(
+        `gemini provider produced malformed JSON envelope ` +
+          `(output preview: ${safeProviderPreview(text)})`,
+        8,
+        "malformed-output",
+      );
+    }
+  }
+  if (values.length === 1) {
+    return values[0];
+  }
+  throw new ClawpatchError(
+    `gemini provider produced ${values.length} JSON envelopes; expected exactly one`,
+    8,
+    "malformed-output",
+  );
+}
+
+function geminiErrorText(error: unknown): string {
+  if (typeof error === "string") {
+    return error;
+  }
+  if (typeof error !== "object" || error === null) {
+    return String(error);
+  }
+  const record = error as Record<string, unknown>;
+  for (const key of ["message", "status", "code"]) {
+    if (typeof record[key] === "string" || typeof record[key] === "number") {
+      return String(record[key]);
+    }
+  }
+  return JSON.stringify(record);
+}
+
+function geminiFailureMessage(stdout: string, stderr: string): string {
+  const output = stderr.trim().length > 0 ? stderr : stdout;
+  const preview = safeProviderPreview(output);
+  return preview.length === 0 ? "gemini provider failed" : `gemini provider failed: ${preview}`;
+}
+
+function assertGeminiPatched(versionText: string): void {
+  if (process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] === "1") {
+    return;
+  }
+  const version = parseGeminiVersion(versionText);
+  if (version === null || !isGeminiPatched(version)) {
+    throw new ClawpatchError(
+      `gemini CLI version ${versionText || "unknown"} is not in the patched range for ` +
+        `GHSA-wpqr-6v78-jr5g; install @google/gemini-cli >=${GEMINI_PATCHED_STABLE} ` +
+        `or >=${GEMINI_PATCHED_PREVIEW}`,
+      4,
+      "provider-auth",
+    );
+  }
+}
+
+function parseGeminiVersion(versionText: string): string | null {
+  return versionText.match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/u)?.[0] ?? null;
+}
+
+function isGeminiPatched(version: string): boolean {
+  if (version.includes("-preview.")) {
+    return compareGeminiVersions(version, GEMINI_PATCHED_PREVIEW) >= 0;
+  }
+  return compareGeminiVersions(version, GEMINI_PATCHED_STABLE) >= 0;
+}
+
+function compareGeminiVersions(left: string, right: string): number {
+  const a = geminiVersionParts(left);
+  const b = geminiVersionParts(right);
+  for (let index = 0; index < 4; index += 1) {
+    const diff = a[index]! - b[index]!;
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+  return 0;
+}
+
+function geminiVersionParts(version: string): [number, number, number, number] {
+  const match = version.match(/^(\d+)\.(\d+)\.(\d+)(?:-preview\.(\d+))?/u);
+  if (match === null) {
+    return [0, 0, 0, 0];
+  }
+  return [
+    Number(match[1]),
+    Number(match[2]),
+    Number(match[3]),
+    match[4] === undefined ? Number.MAX_SAFE_INTEGER : Number(match[4]),
+  ];
+}
+
+function requireGeminiTrustedWorkspace(): void {
+  if (process.env["CLAWPATCH_GEMINI_TRUST_WORKSPACE"] === "true") {
+    return;
+  }
+  throw new ClawpatchError(
+    "gemini provider requires CLAWPATCH_GEMINI_TRUST_WORKSPACE=true because it runs Gemini CLI with --skip-trust; use only in an isolated trusted checkout",
+    2,
+    "invalid-usage",
+  );
+}
+
+function geminiTimeoutMs(): number {
+  const raw =
+    process.env["CLAWPATCH_GEMINI_TIMEOUT_MS"] ?? process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+  if (raw === undefined) {
+    return GEMINI_DEFAULT_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : GEMINI_DEFAULT_TIMEOUT_MS;
+}
 
 async function runPiJson(
   root: string,
@@ -1069,9 +1493,17 @@ export const __testing = {
   addCodexSandboxArgs,
   codexFailureMessage,
   extractAcpxJson,
+  extractGeminiResponse,
+  geminiIsolatedEnv,
+  geminiSelectedAuthType,
   extractOpencodeJson,
+  geminiArgs,
+  geminiEnv,
+  geminiPrompt,
+  isGeminiPatched,
   parseAcpxAgent,
   parseCodexJson,
+  parseGeminiVersion,
   piThinkingLevel,
   providerJsonSchema,
 };

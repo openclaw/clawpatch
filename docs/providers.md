@@ -15,6 +15,7 @@ Provider names today:
 
 - `codex`: shells out to `codex exec` (default)
 - `acpx`: routes through any ACP-compatible coding agent via `acpx`
+- `gemini`: shells out to Google Gemini CLI in headless mode
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
@@ -104,6 +105,56 @@ first colon:
 Migration note: `--provider codex --model gpt-5-codex` is not equivalent to
 `--provider acpx --model gpt-5-codex`; the latter selects an ACP agent named
 `gpt-5-codex`. Use `--provider acpx --model codex:gpt-5-codex`.
+
+## Gemini
+
+The `gemini` provider shells out to the local
+[Gemini CLI](https://github.com/google-gemini/gemini-cli) in headless mode.
+
+Install Gemini CLI and authenticate using one of the upstream-supported flows:
+
+```bash
+npm install -g @google/gemini-cli
+gemini --version
+```
+
+Provider selection:
+
+```bash
+CLAWPATCH_GEMINI_TRUST_WORKSPACE=true clawpatch review --provider gemini
+CLAWPATCH_GEMINI_TRUST_WORKSPACE=true clawpatch fix --finding <id> --provider gemini
+CLAWPATCH_GEMINI_TRUST_WORKSPACE=true clawpatch doctor --provider gemini
+```
+
+How the Gemini provider works:
+
+- Headless mode: `gemini --skip-trust -p "" --approval-mode=<mode> --output-format=json`
+- Prompt delivery: Clawpatch writes the full prompt to stdin; it does not pass large prompts on argv
+- Read-only operations (map, review, revalidate): use `--approval-mode=plan`
+- Write operations (fix): use `--approval-mode=auto_edit`, not yolo mode
+- Output: parses Gemini's JSON envelope and extracts the string `response` field before validating Clawpatch JSON
+- Model selection: `--model <model>` is passed through when configured
+- Reasoning effort and `skipGitRepoCheck`: not supported by Gemini CLI and are treated as no-ops
+- Timeout: 180 seconds by default, override with `CLAWPATCH_GEMINI_TIMEOUT_MS` or `CLAWPATCH_PROVIDER_TIMEOUT_MS`
+
+Security gates:
+
+- Gemini CLI must be patched for GHSA-wpqr-6v78-jr5g. Clawpatch accepts
+  stable versions `>=0.39.1` and preview versions `>=0.40.0-preview.3`.
+  Set `CLAWPATCH_GEMINI_ALLOW_UNPATCHED=1` only for local diagnostics.
+- Clawpatch uses `--skip-trust` because Gemini headless execution requires an
+  explicit trusted-workspace path. You must opt in with
+  `CLAWPATCH_GEMINI_TRUST_WORKSPACE=true`; use this only in an isolated checkout
+  with no untrusted project Gemini configuration or secrets.
+- Gemini subprocesses run with isolated temp `HOME` and XDG dirs. Clawpatch
+  copies only the minimal verified Gemini auth/config files into that temp home,
+  and forwards a small env allowlist: path/temp basics, explicit Google/Gemini
+  auth variables, proxy and certificate vars, and `NO_COLOR`. Wildcard secret
+  prefixes are not forwarded.
+- Clawpatch passes `--extensions none` and prompts read-only operations not to use
+  network, MCP, skills, subagents, shell, or write tools. Enforcement still
+  depends on Gemini CLI policy behavior, so review untrusted code in an isolated
+  checkout.
 
 ## Grok
 
