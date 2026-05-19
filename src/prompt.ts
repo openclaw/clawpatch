@@ -4,7 +4,7 @@ import { ClawpatchConfig, FeatureRecord, FindingRecord, ProjectRecord } from "./
 
 export type ReviewMode = "default" | "deslopify";
 
-export const REVIEW_PROMPT_FILE_CHAR_LIMIT = 24_000;
+export const REVIEW_PROMPT_FILE_CHAR_LIMIT = 250_000;
 
 export type ReviewPromptFileRole = "owned" | "context";
 

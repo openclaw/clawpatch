@@ -106,7 +106,7 @@ describe("validateReviewOutput", () => {
 
   it("rejects evidence that only exists beyond the truncated prompt text", async () => {
     const root = await fixtureRoot("clawpatch-review-validation-truncated-");
-    await writeFixture(root, "src/index.ts", `${"a".repeat(24_000)}\nconst value = 'TODO_TAIL';\n`);
+    await writeFixture(root, "src/index.ts", `${"a".repeat(250_000)}\nconst value = 'TODO_TAIL';\n`);
 
     await expect(
       validateReviewOutput(
