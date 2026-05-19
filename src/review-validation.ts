@@ -27,9 +27,12 @@ export async function validateReviewOutput(
       if (promptFile === undefined || !promptFile.readable) {
         throwMalformed(`evidence file was not readable in review context: ${evidence.path}`);
       }
-      const contents = await fileContents(root, evidence.path, promptFile.truncated, cache);
-      assertLineRange(contents, evidence);
-      assertQuote(contents, evidence);
+      const fullContents = await fileContents(root, evidence.path, false, cache);
+      const promptContents = promptFile.truncated
+        ? await fileContents(root, evidence.path, true, cache)
+        : fullContents;
+      assertLineRange(fullContents, evidence);
+      assertQuote(promptContents, evidence);
     }
   }
   return { ...output, findings };
