@@ -58,7 +58,7 @@ const fastApiRouteDecoratorStartPattern = new RegExp(
   "u",
 );
 const fastApiRouteDecoratorPattern = new RegExp(
-  `^\\s*@${fastApiRouteTargetPattern}\\.(${fastApiRouteMethods})\\((.*)\\)\\s*(?:#.*)?$`,
+  `^\\s*@(${fastApiRouteTargetPattern})\\.(${fastApiRouteMethods})\\((.*)\\)\\s*(?:#.*)?$`,
   "u",
 );
 const projectMetadataFiles = [
@@ -980,7 +980,8 @@ function sourceLooksFastApi(source: string): boolean {
 
 function parseFastApiRoutes(filePath: string, source: string): FastApiRoute[] {
   const routes: FastApiRoute[] = [];
-  let pending: Array<{ routePath: string; methods: string[] }> = [];
+  const prefixes = parseFastApiRouterPrefixes(source);
+  let pending: Array<{ target: string; routePath: string; methods: string[] }> = [];
   let decoratorSource: string | null = null;
   let decoratorDepth = 0;
   for (const line of source.split("\n")) {
@@ -1016,7 +1017,12 @@ function parseFastApiRoutes(filePath: string, source: string): FastApiRoute[] {
     const functionName = /^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u.exec(line)?.[1];
     if (functionName !== undefined && pending.length > 0) {
       for (const item of pending) {
-        routes.push({ filePath, functionName, ...item });
+        routes.push({
+          filePath,
+          functionName,
+          routePath: combineFastApiPaths(prefixes.get(item.target) ?? "", item.routePath),
+          methods: item.methods,
+        });
       }
       pending = [];
       continue;
@@ -1038,11 +1044,14 @@ function startsFastApiRouteDecorator(line: string): boolean {
   return fastApiRouteDecoratorStartPattern.test(line);
 }
 
-function parseFastApiRouteDecorator(line: string): { routePath: string; methods: string[] } | null {
+function parseFastApiRouteDecorator(
+  line: string,
+): { target: string; routePath: string; methods: string[] } | null {
   const match = fastApiRouteDecoratorPattern.exec(line);
-  const method = match?.[1];
-  const args = match?.[2];
-  if (method === undefined || args === undefined) {
+  const target = match?.[1];
+  const method = match?.[2];
+  const args = match?.[3];
+  if (target === undefined || method === undefined || args === undefined) {
     return null;
   }
   const routePath = parseFastApiPath(args);
@@ -1053,7 +1062,86 @@ function parseFastApiRouteDecorator(line: string): { routePath: string; methods:
   if (methods === null) {
     return null;
   }
-  return { routePath, methods };
+  return { target, routePath, methods };
+}
+
+function parseFastApiRouterPrefixes(source: string): Map<string, string> {
+  const prefixes = new Map<string, string>();
+  const routerCallPattern = /\bAPIRouter\s*\(/gu;
+  for (const match of source.matchAll(routerCallPattern)) {
+    const callStart = match.index;
+    const openParenIndex = source.indexOf("(", callStart);
+    if (openParenIndex === -1) {
+      continue;
+    }
+    const prefixSegment = source.slice(0, callStart).trimEnd();
+    const varName =
+      /(?:^|[\n;])\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?::[^=\n;]+)?=\s*(?:[A-Za-z_][A-Za-z0-9_]*\.)?$/u.exec(
+        prefixSegment,
+      )?.[1];
+    if (varName === undefined) {
+      continue;
+    }
+    const closeParenIndex = findBalancedParenthesis(source, openParenIndex + 1);
+    if (closeParenIndex === -1) {
+      continue;
+    }
+    const args = splitTopLevelPythonArgs(source.slice(openParenIndex + 1, closeParenIndex));
+    const prefixArg = args.find((arg) => /^\s*prefix\s*=/u.test(arg));
+    const prefix = /^\s*prefix\s*=\s*([\s\S]*)$/u.exec(prefixArg ?? "")?.[1];
+    if (prefix === undefined) {
+      continue;
+    }
+    const value = pythonStringLiteralValue(prefix);
+    if (value !== null) {
+      prefixes.set(varName, value);
+    }
+  }
+  return prefixes;
+}
+
+function findBalancedParenthesis(source: string, start: number): number {
+  let depth = 1;
+  let quote: string | null = null;
+  let escaped = false;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      break;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === "(") {
+      depth += 1;
+    } else if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return index;
+      }
+    }
+  }
+  return -1;
+}
+
+function combineFastApiPaths(prefix: string, routePath: string): string {
+  const cleanPrefix = prefix.trim().replace(/^\/+/u, "").replace(/\/+$/u, "");
+  const normalizedPrefix = cleanPrefix.length === 0 ? "" : `/${cleanPrefix}`;
+  const cleanPath = routePath.trim().replace(/^\/+/u, "");
+  if (cleanPath.length === 0 && routePath.trim().length === 0) {
+    return normalizedPrefix || "/";
+  }
+  const normalizedPath = cleanPath.length === 0 ? "/" : `/${cleanPath}`;
+  return `${normalizedPrefix}${normalizedPath}`;
 }
 
 function parseFastApiPath(args: string): string | null {

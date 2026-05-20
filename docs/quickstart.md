@@ -47,7 +47,7 @@ This discovers reviewable features:
 - npm package bins and root/workspace scripts
 - Next.js routes
 - Go packages and commands
-- Java/Kotlin Gradle modules
+- Java/Kotlin Gradle and Maven modules
 - Python packages, console scripts, Flask/FastAPI/Django routes, and pytest suites
 - C#/.NET projects, ASP.NET endpoints, source groups, and test projects
 - JVM semantic role groups

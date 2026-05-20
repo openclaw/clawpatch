@@ -8,6 +8,7 @@ import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
 import { gradleSeeds } from "./mappers/gradle.js";
 import { laravelSeeds } from "./mappers/laravel.js";
+import { mavenSeeds } from "./mappers/maven.js";
 import { nextSeeds } from "./mappers/next.js";
 import { nodeRouteSeeds } from "./mappers/node-routes.js";
 import { nodeSeeds } from "./mappers/node.js";
@@ -55,6 +56,7 @@ const featureMappers: FeatureMapper[] = [
   { name: "swift", map: swiftSeeds },
   { name: "apple", map: appleSeeds },
   { name: "gradle", map: gradleSeeds },
+  { name: "maven", map: mavenSeeds },
   { name: "laravel", map: laravelSeeds },
   { name: "config", map: configSeeds },
 ];

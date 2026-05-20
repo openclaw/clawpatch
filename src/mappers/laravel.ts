@@ -405,14 +405,50 @@ async function laravelRoutes(root: string): Promise<RouteRef[]> {
   for (const file of routeFiles) {
     const source = stripPhpComments(await readFile(join(root, file), "utf8"));
     const imports = phpUseMap(source);
+    const filePrefixes = fileDefaultRoutePrefixes(file);
     for (const statement of routeStatements(source)) {
       const calls = parseRouteCalls(statement);
-      const route = routeFromCalls(file, imports, calls, fileDefaultRoutePrefixes(file));
+      const route = routeFromCalls(file, imports, calls, filePrefixes);
       if (route !== null) {
         routes.push(route);
       }
-      routes.push(...controllerGroupRoutes(file, imports, calls));
+      routes.push(...routeGroupRoutes(file, imports, calls, filePrefixes));
+      routes.push(...controllerGroupRoutes(file, imports, calls, filePrefixes));
     }
+  }
+  return routes;
+}
+
+function routeGroupRoutes(
+  file: string,
+  imports: Map<string, string>,
+  calls: RouteCall[],
+  basePrefixes: string[],
+): RouteRef[] {
+  const routes: RouteRef[] = [];
+  const groupIndex = calls.findIndex((call) => call.name === "group");
+  const groupCall = groupIndex < 0 ? undefined : calls[groupIndex];
+  if (groupCall === undefined) {
+    return routes;
+  }
+  const groupAttributePrefixes = routeGroupAttributePrefixes(groupCall);
+  const body = closureBody(groupCall.args[1] ?? groupCall.args[0] ?? "");
+  if (body === null) {
+    return routes;
+  }
+  const groupPrefixes = [
+    ...basePrefixes,
+    ...routePrefixesFromCalls(calls.slice(0, groupIndex)),
+    ...groupAttributePrefixes,
+  ];
+  for (const statement of routeStatements(body)) {
+    const nestedCalls = parseRouteCalls(statement);
+    const route = routeFromCalls(file, imports, nestedCalls, groupPrefixes);
+    if (route !== null) {
+      routes.push(route);
+    }
+    routes.push(...routeGroupRoutes(file, imports, nestedCalls, groupPrefixes));
+    routes.push(...controllerGroupRoutes(file, imports, nestedCalls, groupPrefixes));
   }
   return routes;
 }
@@ -421,6 +457,7 @@ function controllerGroupRoutes(
   file: string,
   imports: Map<string, string>,
   calls: RouteCall[],
+  basePrefixes: string[],
 ): RouteRef[] {
   const routes: RouteRef[] = [];
   const controllerIndex = calls.findIndex((call) => call.name === "controller");
@@ -436,10 +473,7 @@ function controllerGroupRoutes(
   if (controllerClass === null || body === null) {
     return routes;
   }
-  const groupPrefixes = [
-    ...fileDefaultRoutePrefixes(file),
-    ...routePrefixesFromCalls(calls.slice(0, groupIndex)),
-  ];
+  const groupPrefixes = [...basePrefixes, ...routePrefixesFromCalls(calls.slice(0, groupIndex))];
   for (const statement of routeStatements(body)) {
     const route = routeFromCalls(
       file,
@@ -705,6 +739,81 @@ function routePrefixesFromCalls(calls: RouteCall[]): string[] {
     .filter((call) => call.name === "prefix")
     .map((call) => stringLiteralValue(call.args[0] ?? ""))
     .filter((prefix) => prefix !== null);
+}
+
+function routeGroupAttributePrefixes(call: RouteCall): string[] {
+  const attributes = arrayArgs(call.args[0] ?? "");
+  if (attributes === null) {
+    return [];
+  }
+  const prefix = arrayLiteralStringValue(attributes, "prefix");
+  return prefix === null ? [] : [prefix];
+}
+
+function arrayLiteralStringValue(entries: string[], key: string): string | null {
+  for (const entry of entries) {
+    const pair = splitTopLevelKeyValue(entry);
+    if (pair === null) {
+      continue;
+    }
+    const entryKey = stringLiteralValue(pair[0]);
+    if (entryKey !== key) {
+      continue;
+    }
+    const value = stringLiteralValue(pair[1]);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function splitTopLevelKeyValue(source: string): [string, string] | null {
+  let quote: string | null = null;
+  let escaped = false;
+  let parens = 0;
+  let brackets = 0;
+  let braces = 0;
+  for (let index = 0; index < source.length - 1; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      continue;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === String.fromCharCode(39) || char === String.fromCharCode(34)) {
+      quote = char;
+    } else if (char === "(") {
+      parens += 1;
+    } else if (char === ")") {
+      parens = Math.max(0, parens - 1);
+    } else if (char === "[") {
+      brackets += 1;
+    } else if (char === "]") {
+      brackets = Math.max(0, brackets - 1);
+    } else if (char === "{") {
+      braces += 1;
+    } else if (char === "}") {
+      braces = Math.max(0, braces - 1);
+    } else if (
+      char === "=" &&
+      source[index + 1] === ">" &&
+      parens === 0 &&
+      brackets === 0 &&
+      braces === 0
+    ) {
+      return [source.slice(0, index).trim(), source.slice(index + 2).trim()];
+    }
+  }
+  return null;
 }
 
 function arrayArgs(source: string): string[] | null {

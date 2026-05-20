@@ -58,7 +58,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - generic extension/plugin packages under workspace roots such as `extensions/*`
   and `plugins/*`, including package metadata, source, docs, and nearby tests
 - semantic Node source groups for large packages, including runtime, commands,
-  auth, storage, monitor, webhook, setup, server, and client slices
+  auth, storage, monitor, webhook, setup, server, client, and repeated filename
+  family slices
 - Nx project metadata from `project.json`, including project-scoped validation
   targets
 - Turborepo task metadata for workspace-aware validation commands and feature
@@ -67,7 +68,8 @@ validation commands and records a patch attempt under `.clawpatch/`.
 - React Router routes and React components
 - Go package slices from `go list ./...`, including command packages
 - Go package tests and same-repo imports as review context
-- Java/Kotlin Gradle source groups and root Gradle build/test commands
+- Java/Kotlin Gradle source groups, Maven source groups, and root Gradle/Maven
+  build/test commands
 - JVM semantic roles from Java and Kotlin code evidence such as annotations,
   imports, interfaces, inheritance, supertypes, and method signatures
 - Kotlin Android semantic roles for UI entrypoints, ViewModels, data
@@ -163,6 +165,28 @@ Useful flags:
 - `--force`
 
 Unknown flags fail fast.
+
+### `report --json` shape
+
+`clawpatch report --json` returns:
+
+```json
+{
+  "total": 12,
+  "items": [
+    /* finding summaries */
+  ],
+  "results": [
+    /* alias for items */
+  ],
+  "findings": 12,
+  "output": "/path/or/null"
+}
+```
+
+- `total` and `items` are the canonical keys.
+- `results` is an alias for `items` with the same array for parity with `{count, results}` consumers.
+- `findings: <number>` is kept for backwards compatibility but is **deprecated**. Note that in `--json` output `findings` is a _count_, not the array — use `items` (or `results`) for the array. The next breaking release (v0.4) will drop `findings: <number>` and `results`, landing on `{ total, items, output }`.
 
 ## State
 

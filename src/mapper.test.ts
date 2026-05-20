@@ -1,11 +1,13 @@
 import { mkdir, symlink } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { detectProject } from "./detect.js";
 import { mapFeatures } from "./mapper.js";
 import { discoverNodeProjects } from "./mappers/projects.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { fixtureRoot, writeFixture } from "./test-helpers.js";
+
+const symlinkIt = process.platform === "win32" ? it.skip : it;
 
 describe("mapFeatures", () => {
   it("maps package bins, scripts, configs, and Next routes", async () => {
@@ -1466,15 +1468,16 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
+    const rootName = basename(root);
     const rubyProject = result.features.find(
-      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+      (feature) => feature.title === `Ruby project ${rootName}`,
     );
     const siteConfig = result.features.find(
       (feature) => feature.title === "Jekyll site configuration",
     );
 
     expect(project.detected.frameworks).toContain("jekyll");
-    expect(titles).toContain(`Ruby project ${root.split("/").at(-1)}`);
+    expect(titles).toContain(`Ruby project ${rootName}`);
     expect(titles).not.toContain("Ruby project jekyll");
     expect(titles).toContain("Jekyll site configuration");
     expect(titles).toContain("Jekyll theme _layouts");
@@ -1583,8 +1586,9 @@ describe("mapFeatures", () => {
       ...feature.ownedFiles.map((ref) => ref.path),
       ...feature.contextFiles.map((ref) => ref.path),
     ]);
+    const rootName = basename(root);
     const rubyProject = result.features.find(
-      (feature) => feature.title === `Ruby project ${root.split("/").at(-1)}`,
+      (feature) => feature.title === `Ruby project ${rootName}`,
     );
     const nodePackage = result.features.find(
       (feature) => feature.title === "Node package rails-webpacker-shell",
@@ -1773,8 +1777,10 @@ describe("mapFeatures", () => {
       "../outside-workspace/evil/src/index.ts",
       "export function evil() {}\n",
     );
-    await symlink(join(root, "../outside-workspace"), join(root, "linked-pkg"), "dir");
-    await symlink(join(root, "../outside-workspace"), join(root, "linked"), "dir");
+    if (process.platform !== "win32") {
+      await symlink(join(root, "../outside-workspace"), join(root, "linked-pkg"), "dir");
+      await symlink(join(root, "../outside-workspace"), join(root, "linked"), "dir");
+    }
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
@@ -2408,12 +2414,131 @@ describe("mapFeatures", () => {
       root,
       "src/fastify-plugin.ts",
       [
+        "import fastifyPlugin from 'fastify-plugin';",
+        "import fp from 'fastify-plugin';",
+        "import cjsPlugin = require('fastify-plugin');",
         "import { FastifyInstance } from 'fastify';",
+        "import type { FastifyInstance as FastifyApp } from 'fastify';",
         "",
         "export async function routes(fastify: FastifyInstance) {",
         "  fastify.get('/plugin-users', listPluginUsers);",
         "}",
+        "export async function appRoutes(app: FastifyInstance) {",
+        "  app.get('/plugin-app-users', listPluginAppUsers);",
+        "}",
+        "export async function typedReturnRoutes(app: FastifyInstance): Promise<void> {",
+        "  app.get('/plugin-typed-return-users', listPluginTypedReturnUsers);",
+        "}",
+        "export async function typedObjectReturnRoutes(app: FastifyInstance): Promise<{ ok: true }> {",
+        "  app.get('/plugin-typed-object-return-users', listPluginTypedObjectReturnUsers);",
+        "}",
+        "export async function aliasedTypeRoutes(app: FastifyApp) {",
+        "  app.get('/plugin-aliased-type-users', listPluginAliasedTypeUsers);",
+        "}",
+        "const app = createHttpServer();",
+        "app.get('/not-plugin-app-typed', ignoredApp);",
+        "export const serverRoutes = fastifyPlugin(async function routes(server) {",
+        "  server.get('/plugin-server-users', listPluginServerUsers);",
+        "});",
+        "export const serverReturnRoutes = fastifyPlugin(function routes(server): Promise<void> {",
+        "  server.get('/plugin-server-return-users', listPluginServerReturnUsers);",
+        "});",
+        "export const arrowRoutes = fastifyPlugin(async (app) => {",
+        "  app.get('/plugin-arrow-users', listPluginArrowUsers);",
+        "});",
+        "export const bareArrowRoutes = fastifyPlugin(async bareApp => {",
+        "  bareApp.get('/plugin-bare-arrow-users', listPluginBareArrowUsers);",
+        "});",
+        "export const instanceRoutes = fp(async (instance, options) => {",
+        "  instance.get('/plugin-instance-users', listPluginInstanceUsers);",
+        "  options.get('/not-plugin-options', ignoredOptions);",
+        "});",
+        "export const commentRoutes = fp(async (instance) => {",
+        "  // }",
+        "  instance.get('/plugin-comment-users', listPluginCommentUsers);",
+        "});",
+        "export const commentedArgumentRoutes = fp( /* routes */ async (commentedApp) => {",
+        "  commentedApp.get('/plugin-commented-argument-users', listPluginCommentedArgumentUsers);",
+        "});",
+        "export const aliasedRoutes = fp(async (app) => {",
+        "  app.get('/plugin-aliased-users', listPluginAliasedUsers);",
+        "});",
+        "type PluginOptions = { prefix: string };",
+        "export const genericRoutes = fastifyPlugin<PluginOptions>(async (server) => {",
+        "  server.get('/plugin-generic-users', listPluginGenericUsers);",
+        "});",
+        "export const importEqualsRoutes = cjsPlugin(async (server) => {",
+        "  server.get('/plugin-import-equals-users', listPluginImportEqualsUsers);",
+        "});",
+        "const defaultPlugin = require('fastify-plugin').default;",
+        "export const defaultRequireRoutes = defaultPlugin(async (app) => {",
+        "  app.get('/plugin-default-require-users', listPluginDefaultRequireUsers);",
+        "});",
+        "export const typedArrowRoutes = async (server: FastifyInstance): Promise<void> => {",
+        "  server.get('/plugin-typed-arrow-users', listPluginTypedArrowUsers);",
+        "};",
+        "const server = createHttpServer();",
+        "server.get('/not-plugin-server', ignoredServer);",
+        'export async function inlineRoutes(inlineApp: import("fastify").FastifyInstance) {',
+        '  inlineApp.get("/plugin-inline-users", listPluginInlineUsers);',
+        "}",
+        'export const inlineArrowRoutes = async (inlineServer: import("fastify").FastifyInstance): Promise<void> => {',
+        '  inlineServer.get("/plugin-inline-arrow-users", listPluginInlineArrowUsers);',
+        "};",
         "function listPluginUsers() {}",
+        "function listPluginAppUsers() {}",
+        "function listPluginTypedReturnUsers() {}",
+        "function listPluginTypedObjectReturnUsers() {}",
+        "function listPluginAliasedTypeUsers() {}",
+        "function listPluginServerUsers() {}",
+        "function listPluginServerReturnUsers() {}",
+        "function listPluginArrowUsers() {}",
+        "function listPluginBareArrowUsers() {}",
+        "function listPluginInstanceUsers() {}",
+        "function listPluginCommentUsers() {}",
+        "function listPluginCommentedArgumentUsers() {}",
+        "function listPluginAliasedUsers() {}",
+        "function listPluginGenericUsers() {}",
+        "function listPluginImportEqualsUsers() {}",
+        "function listPluginDefaultRequireUsers() {}",
+        "function listPluginTypedArrowUsers() {}",
+        "function listPluginInlineUsers() {}",
+        "function listPluginInlineArrowUsers() {}",
+        "function createHttpServer() { return { get() {} }; }",
+        "function ignoredApp() {}",
+        "function ignoredServer() {}",
+        "function ignoredOptions() {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/fastify-multiline-import.ts",
+      [
+        "import {",
+        "  FastifyInstance,",
+        "} from 'fastify';",
+        "",
+        "export async function multilineRoutes(app: FastifyInstance) {",
+        "  app.get('/plugin-multiline-users', listPluginMultilineUsers);",
+        "}",
+        "function listPluginMultilineUsers() {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/not-fastify-plugin.ts",
+      [
+        'import { FastifyInstance } from "./types"',
+        'import Fastify from "fastify"',
+        "export async function genericAppRoutes(app) {",
+        '  app.get("/not-plugin-app", ignored);',
+        "}",
+        "export async function shadowInstanceRoutes(instance: FastifyInstance) {",
+        '  instance.get("/shadow-fastify-instance", ignored);',
+        "}",
+        "function ignored() {}",
         "",
       ].join("\n"),
     );
@@ -2585,6 +2710,25 @@ describe("mapFeatures", () => {
         "Fastify route GET /route-status",
         "Fastify route POST /webhook/github",
         "Fastify route GET /plugin-users",
+        "Fastify route GET /plugin-app-users",
+        "Fastify route GET /plugin-typed-return-users",
+        "Fastify route GET /plugin-typed-object-return-users",
+        "Fastify route GET /plugin-aliased-type-users",
+        "Fastify route GET /plugin-server-users",
+        "Fastify route GET /plugin-server-return-users",
+        "Fastify route GET /plugin-arrow-users",
+        "Fastify route GET /plugin-bare-arrow-users",
+        "Fastify route GET /plugin-instance-users",
+        "Fastify route GET /plugin-comment-users",
+        "Fastify route GET /plugin-commented-argument-users",
+        "Fastify route GET /plugin-aliased-users",
+        "Fastify route GET /plugin-generic-users",
+        "Fastify route GET /plugin-import-equals-users",
+        "Fastify route GET /plugin-default-require-users",
+        "Fastify route GET /plugin-typed-arrow-users",
+        "Fastify route GET /plugin-inline-users",
+        "Fastify route GET /plugin-inline-arrow-users",
+        "Fastify route GET /plugin-multiline-users",
         "Hono route GET /api/items",
         "Hono route DELETE /sessions/:id",
       ]),
@@ -2607,6 +2751,11 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Express route GET /assigned-not-router");
     expect(titles).not.toContain("Express route GET /dynamic/");
     expect(titles).not.toContain("Fastify route GET /dynamic/");
+    expect(titles).not.toContain("Fastify route GET /not-plugin-app");
+    expect(titles).not.toContain("Fastify route GET /not-plugin-app-typed");
+    expect(titles).not.toContain("Fastify route GET /not-plugin-server");
+    expect(titles).not.toContain("Fastify route GET /not-plugin-options");
+    expect(titles).not.toContain("Fastify route GET /shadow-fastify-instance");
     expect(titles).not.toContain("Fastify route GET /concat-");
     expect(titles).not.toContain("Express route DELETE /reports");
     expect(admin?.source).toBe("express-route");
@@ -2622,6 +2771,85 @@ describe("mapFeatures", () => {
     expect(anonymousHandler?.entrypoints[0]?.symbol).toBeNull();
     expect(fastifyRouteObject?.entrypoints[0]?.symbol).toBe("routeStatus");
     expect(session?.trustBoundaries).toContain("auth");
+  });
+
+  it("maps Fastify route-object static method arrays conservatively", async () => {
+    const root = await fixtureRoot("clawpatch-fastify-method-array-routes-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify(
+        {
+          name: "fastify-array-routes",
+          dependencies: { fastify: "1.0.0" },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "src/fastify.ts",
+      [
+        "import Fastify from 'fastify';",
+        "",
+        "const fastify = Fastify();",
+        "fastify.route({ method: ['GET', 'POST'], url: '/items', handler: items });",
+        "fastify.route({ method: ['DELETE', configuredMethod], url: '/mixed', handler: mixed });",
+        "fastify.route({ method: ['GET', configuredMethods[0]], url: '/indexed-mixed', handler: indexedMixed });",
+        "fastify.route({ method: ['PUT', 'PATCH'] as const, url: '/const-items', handler: constItems });",
+        "fastify.route({ method: ['OPTIONS'] satisfies readonly string[], url: '/satisfies-items', handler: satisfiesItems });",
+        "fastify.route({ method: [configuredMethod], url: '/dynamic-only', handler: dynamicOnly });",
+        "fastify.route({ method: [200], url: '/numeric-only', handler: numericOnly });",
+        "fastify.route({ method: [`PATCH`], url: '/template-static', handler: templateStatic });",
+        "fastify.route({ method: ['GET', `POST-${suffix}`], url: '/template-mixed', handler: templateMixed });",
+        "fastify.route({ method: [`PUT-${suffix}`, 'HEAD'], url: '/template-mixed-tail', handler: templateMixedTail });",
+        "fastify.route({ method: [`PATCH-${suffix}`], url: '/template-dynamic', handler: templateDynamic });",
+        "function items() {}",
+        "function mixed() {}",
+        "function indexedMixed() {}",
+        "function constItems() {}",
+        "function satisfiesItems() {}",
+        "function dynamicOnly() {}",
+        "function numericOnly() {}",
+        "function templateStatic() {}",
+        "function templateMixed() {}",
+        "function templateMixedTail() {}",
+        "function templateDynamic() {}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const routes = result.features
+      .map((feature) => feature.entrypoints[0]?.route)
+      .filter((route): route is string => route !== undefined && route !== null);
+
+    expect(titles).toEqual(
+      expect.arrayContaining([
+        "Fastify route GET /items",
+        "Fastify route POST /items",
+        "Fastify route DELETE /mixed",
+        "Fastify route GET /indexed-mixed",
+        "Fastify route PUT /const-items",
+        "Fastify route PATCH /const-items",
+        "Fastify route OPTIONS /satisfies-items",
+        "Fastify route PATCH /template-static",
+        "Fastify route GET /template-mixed",
+        "Fastify route HEAD /template-mixed-tail",
+      ]),
+    );
+    expect(routes.some((route) => route.endsWith(" /dynamic-only"))).toBe(false);
+    expect(routes.some((route) => route.endsWith(" /numeric-only"))).toBe(false);
+    expect(routes.filter((route) => route.endsWith(" /template-mixed"))).toEqual([
+      "GET /template-mixed",
+    ]);
+    expect(routes.filter((route) => route.endsWith(" /template-mixed-tail"))).toEqual([
+      "HEAD /template-mixed-tail",
+    ]);
+    expect(routes.some((route) => route.endsWith(" /template-dynamic"))).toBe(false);
   });
 
   it("keeps index route tests scoped to their route directory", async () => {
@@ -3120,10 +3348,12 @@ describe("mapFeatures", () => {
       "../outside-linked.tsx",
       "export default function LinkedPage() { return null; }\n",
     );
-    await symlink(
-      join(root, "../outside-linked.tsx"),
-      join(root, "frontend/src/pages/LinkedPage.tsx"),
-    );
+    if (process.platform !== "win32") {
+      await symlink(
+        join(root, "../outside-linked.tsx"),
+        join(root, "frontend/src/pages/LinkedPage.tsx"),
+      );
+    }
     await writeFixture(
       root,
       "frontend/src/components/Dialog.tsx",
@@ -3488,7 +3718,7 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("React route /ambiguous");
   });
 
-  it("does not discover React packages through symlinked package roots", async () => {
+  symlinkIt("does not discover React packages through symlinked package roots", async () => {
     const root = await fixtureRoot("clawpatch-react-symlink-package-");
     const outside = join(root, "../outside-react-package");
     const outsidePackages = join(root, "../outside-react-packages");
@@ -9264,6 +9494,454 @@ describe("mapFeatures", () => {
     ).toBe(true);
   });
 
+  it("detects Maven root projects and wrapper validation commands", async () => {
+    const root = await fixtureRoot("clawpatch-root-maven-map-");
+    await writeFixture(root, "mvnw", "#!/bin/sh\n");
+    await writeFixture(
+      root,
+      "pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme</groupId>",
+        "  <artifactId>demo-app</artifactId>",
+        "  <version>1.0.0</version>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/App.java",
+      "package com.acme;\nclass App {}\n",
+    );
+    await writeFixture(
+      root,
+      "src/test/java/com/acme/AppTest.java",
+      "package com.acme;\nclass AppTest {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(project.detected.languages).toContain("java");
+    expect(project.detected.packageManagers).toContain("maven");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "./mvnw -DskipTests compile",
+      test: "./mvnw test",
+    });
+    expect(titles).toContain("Maven module demo-app");
+    expect(titles).toContain("Maven source src");
+    expect(titles).toContain("Maven test suite src");
+    expect(result.features.find((feature) => feature.title === "Maven source src")?.tests).toEqual([
+      { path: "src/test/java/com/acme/AppTest.java", command: null },
+    ]);
+  });
+
+  it("preserves Gradle validation commands when root Maven and Gradle files coexist", async () => {
+    const root = await fixtureRoot("clawpatch-root-maven-gradle-commands-");
+    await writeFixture(root, "pom.xml", "<project><artifactId>dual-build</artifactId></project>\n");
+    await writeFixture(root, "build.gradle", "plugins { id 'java' }\n");
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/App.java",
+      "package com.acme;\nclass App {}\n",
+    );
+
+    const project = await detectProject(root);
+
+    expect(project.detected.packageManagers).toEqual(expect.arrayContaining(["gradle", "maven"]));
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "gradle build",
+      test: "gradle test",
+    });
+  });
+
+  it("maps Spring JVM roles from Maven Java projects", async () => {
+    const root = await fixtureRoot("clawpatch-maven-spring-role-map-");
+    await writeFixture(
+      root,
+      "pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme</groupId>",
+        "  <artifactId>orders-api</artifactId>",
+        "  <version>1.0.0</version>",
+        "  <dependencies>",
+        "    <dependency>",
+        "      <groupId>org.springframework.boot</groupId>",
+        "      <artifactId>spring-boot-starter-web</artifactId>",
+        "    </dependency>",
+        "    <dependency>",
+        "      <groupId>org.springframework.boot</groupId>",
+        "      <artifactId>spring-boot-starter-data-jpa</artifactId>",
+        "    </dependency>",
+        "  </dependencies>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, ".mvn/maven.config", "-Dspring.profiles.active=local\n");
+    await writeFixture(root, "src/main/resources/application.yml", "server:\n  port: 8080\n");
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/api/OrderController.java",
+      [
+        "package com.acme.api;",
+        "",
+        "import org.springframework.web.bind.annotation.GetMapping;",
+        "import org.springframework.web.bind.annotation.RestController;",
+        "",
+        "@RestController",
+        "public class OrderController {",
+        '  @GetMapping("/orders")',
+        '  public String list() { return "ok"; }',
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/app/BillingService.java",
+      [
+        "package com.acme.app;",
+        "",
+        "import org.springframework.stereotype.Service;",
+        "",
+        "@Service",
+        "public class BillingService {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/db/OrderRepository.java",
+      [
+        "package com.acme.db;",
+        "",
+        "import org.springframework.stereotype.Repository;",
+        "",
+        "@Repository",
+        "public interface OrderRepository {}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/client/RemoteClient.java",
+      [
+        "package com.acme.client;",
+        "",
+        "import java.net.http.HttpClient;",
+        "",
+        "public class RemoteClient {",
+        "  private final HttpClient client = HttpClient.newHttpClient();",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/config/AppConfig.java",
+      [
+        "package com.acme.config;",
+        "",
+        "import org.springframework.context.annotation.Configuration;",
+        "",
+        "@Configuration",
+        "public class AppConfig {}",
+        "",
+      ].join("\n"),
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const bySource = new Map(result.features.map((feature) => [feature.source, feature]));
+    const module = result.features.find((feature) => feature.title === "Maven module orders-api");
+
+    expect(project.detected.frameworks).toEqual(expect.arrayContaining(["spring", "spring-boot"]));
+    expect(module?.tags).toEqual(
+      expect.arrayContaining([
+        "maven",
+        "project:orders-api",
+        "project-root:.",
+        "spring",
+        "spring-boot",
+      ]),
+    );
+    expect(module?.contextFiles.map((file) => file.path).toSorted()).toEqual(
+      [".mvn/maven.config", "src/main/resources/application.yml"].toSorted(),
+    );
+    expect(bySource.get("jvm-role-web-entrypoint")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/api/OrderController.java",
+    );
+    expect(bySource.get("jvm-role-application-service")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/app/BillingService.java",
+    );
+    expect(bySource.get("jvm-role-persistence-boundary")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/db/OrderRepository.java",
+    );
+    expect(bySource.get("jvm-role-external-client")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/client/RemoteClient.java",
+    );
+    expect(bySource.get("jvm-role-configuration")?.ownedFiles[0]?.path).toBe(
+      "src/main/java/com/acme/config/AppConfig.java",
+    );
+  });
+
+  it("ignores Maven metadata inside XML comments", async () => {
+    const root = await fixtureRoot("clawpatch-maven-xml-comments-");
+    await writeFixture(
+      root,
+      "pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme</groupId>",
+        "  <artifactId>commented-app</artifactId>",
+        "  <version>1.0.0</version>",
+        "  <!-- <modules><module>ghost</module></modules> -->",
+        "  <!-- <dependencies><dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency></dependencies> -->",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "src/main/java/com/acme/App.java",
+      "package com.acme;\nclass App {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(project.detected.frameworks).not.toContain("spring");
+    expect(project.detected.frameworks).not.toContain("spring-boot");
+    expect(titles).toContain("Maven module commented-app");
+    expect(titles).not.toContain("Maven module ghost");
+  });
+
+  it("maps Maven multi-module projects without empty parent source groups", async () => {
+    const root = await fixtureRoot("clawpatch-maven-multimodule-map-");
+    await writeFixture(
+      root,
+      "pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme</groupId>",
+        "  <artifactId>root-parent</artifactId>",
+        "  <version>1.0.0</version>",
+        "  <packaging>pom</packaging>",
+        "  <modules>",
+        "    <module>core</module>",
+        "    <module>services</module>",
+        "  </modules>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "core/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <parent>",
+        "    <groupId>com.acme</groupId>",
+        "    <artifactId>root-parent</artifactId>",
+        "    <version>1.0.0</version>",
+        "  </parent>",
+        "  <artifactId>core-service</artifactId>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "core/src/main/java/com/acme/Core.java",
+      "package com.acme;\nclass Core {}\n",
+    );
+    await writeFixture(
+      root,
+      "services/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <parent>",
+        "    <groupId>com.acme</groupId>",
+        "    <artifactId>root-parent</artifactId>",
+        "    <version>1.0.0</version>",
+        "  </parent>",
+        "  <artifactId>services-parent</artifactId>",
+        "  <packaging>pom</packaging>",
+        "  <modules>",
+        "    <module>api</module>",
+        "    <module>../shared</module>",
+        "  </modules>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "services/api/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <parent>",
+        "    <groupId>com.acme</groupId>",
+        "    <artifactId>root-parent</artifactId>",
+        "    <version>1.0.0</version>",
+        "  </parent>",
+        "  <artifactId>api-service</artifactId>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "services/api/src/main/java/com/acme/api/Api.java",
+      "package com.acme.api;\nclass Api {}\n",
+    );
+    await writeFixture(
+      root,
+      "shared/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <parent>",
+        "    <groupId>com.acme</groupId>",
+        "    <artifactId>root-parent</artifactId>",
+        "    <version>1.0.0</version>",
+        "  </parent>",
+        "  <artifactId>shared-library</artifactId>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "shared/src/main/java/com/acme/shared/Shared.java",
+      "package com.acme.shared;\nclass Shared {}\n",
+    );
+    await writeFixture(
+      root,
+      "tools/standalone/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme.tools</groupId>",
+        "  <artifactId>standalone-tool</artifactId>",
+        "  <version>1.0.0</version>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "tools/standalone/src/main/java/com/acme/tools/Tool.java",
+      "package com.acme.tools;\nclass Tool {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const core = result.features.find((feature) => feature.title === "Maven module core-service");
+
+    expect(project.detected.packageManagers).toContain("maven");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "mvn -DskipTests compile",
+      test: "mvn test",
+    });
+    expect(titles).toContain("Maven module root-parent");
+    expect(titles).toContain("Maven module services-parent");
+    expect(titles).toContain("Maven module core-service");
+    expect(titles).toContain("Maven module api-service");
+    expect(titles).toContain("Maven module shared-library");
+    expect(titles).toContain("Maven module standalone-tool");
+    expect(titles).toContain("Maven source core/src");
+    expect(titles).toContain("Maven source services/api/src");
+    expect(titles).toContain("Maven source shared/src");
+    expect(titles).toContain("Maven source tools/standalone/src");
+    expect(titles).not.toContain("Maven source src");
+    expect(titles).not.toContain("Maven source services/src");
+    expect(titles.filter((title) => title === "Maven module api-service")).toHaveLength(1);
+    expect(titles.filter((title) => title === "Maven module shared-library")).toHaveLength(1);
+    expect(core?.tags).toEqual(
+      expect.arrayContaining(["project:core-service", "project-root:core"]),
+    );
+  });
+
+  it("maps nested Maven projects without assigning root validation commands", async () => {
+    const root = await fixtureRoot("clawpatch-nested-maven-map-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "host" }, null, 2));
+    await writeFixture(
+      root,
+      "apps/service/pom.xml",
+      [
+        "<project>",
+        "  <modelVersion>4.0.0</modelVersion>",
+        "  <groupId>com.acme</groupId>",
+        "  <artifactId>service-app</artifactId>",
+        "  <version>1.0.0</version>",
+        "</project>",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "apps/service/src/main/java/com/acme/App.java",
+      "package com.acme;\nclass App {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+
+    expect(project.detected.packageManagers).toContain("maven");
+    expect(project.detected.commands.typecheck).toBeNull();
+    expect(project.detected.commands.test).toBeNull();
+    expect(titles).toContain("Maven module service-app");
+    expect(titles).toContain("Maven source apps/service/src");
+  });
+
+  it("ignores Maven manifests under fixtures and testdata during detection", async () => {
+    const root = await fixtureRoot("clawpatch-maven-fixture-detect-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "host" }, null, 2));
+    await writeFixture(
+      root,
+      "testdata/pom.xml",
+      "<project><artifactId>fixture</artifactId></project>\n",
+    );
+    await writeFixture(root, "testdata/src/main/java/com/example/App.java", "class App {}\n");
+    await writeFixture(
+      root,
+      "fixtures/service/pom.xml",
+      "<project><artifactId>sample</artifactId></project>\n",
+    );
+    await writeFixture(
+      root,
+      "fixtures/service/src/main/java/com/example/App.java",
+      "class App {}\n",
+    );
+    await writeFixture(
+      root,
+      "vendor/lib/pom.xml",
+      "<project><artifactId>vendored</artifactId></project>\n",
+    );
+    await writeFixture(root, "vendor/lib/src/main/java/com/example/App.java", "class App {}\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.packageManagers).not.toContain("maven");
+    expect(result.features.some((feature) => feature.source.startsWith("maven-"))).toBe(false);
+  });
+
   it("ignores vendored SwiftPM manifests during detection", async () => {
     const root = await fixtureRoot("clawpatch-vendored-swiftpm-detect-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "host" }, null, 2));
@@ -9465,7 +10143,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(command?.tests).toEqual([{ path: "root_test.go", command: "go test ./..." }]);
   });
 
-  it("maps Go packages from symlinked explicit roots", async () => {
+  symlinkIt("maps Go packages from symlinked explicit roots", async () => {
     const root = await fixtureRoot("clawpatch-go-symlink-real-");
     const link = `${root}-link`;
     await writeFixture(root, "go.mod", "module example.com/symlink\n\ngo 1.26\n");
@@ -9671,13 +10349,14 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
 
   it("maps CMake C and C++ targets without duplicating main files", async () => {
     const root = await fixtureRoot("clawpatch-cmake-cpp-map-");
+    const cmakeRoot = root.replaceAll("\\", "/");
     await writeFixture(
       root,
       "CMakeLists.txt",
       `add_executable(myapp src/main.cpp src/util.cpp)
 add_executable(quoted "src/quoted.cpp")
 ADD_EXECUTABLE(upper src/upper.c)
-add_executable(absin ${root}/src/absin.cpp)
+add_executable(absin ${cmakeRoot}/src/absin.cpp)
 add_executable(absout /src/main.cpp)
 add_executable(7zip src/seven.c)
 add_executable(latebin)
@@ -11448,6 +12127,140 @@ add_executable(headerapp include/headers.hpp)
     expect(dashboard?.entrypoints[0]?.route).toBe("/{tenant}/dashboard");
   });
 
+  it("maps Laravel array-style route group prefixes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-array-group-prefix-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/array-group-prefix",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\UserController;\n" +
+        'Route::group(["prefix" => "admin"], function () {\n' +
+        '    Route::get("/users", UserController::class);\n' +
+        "});\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const userController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/UserController.php",
+    );
+
+    expect(userController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(userController?.summary).toContain("GET /admin/users");
+    expect(userController?.contextFiles).toContainEqual({
+      path: "routes/web.php",
+      reason: "route definition",
+    });
+  });
+
+  it("maps nested Laravel route groups inside array-style prefixes", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-nested-array-group-prefix-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/nested-array-group-prefix",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::group(['prefix' => 'admin'], function () {\n" +
+        "    Route::controller(UserController::class)->group(function () {\n" +
+        "        Route::get('/users', 'index');\n" +
+        "    });\n" +
+        "});\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const userController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/UserController.php",
+    );
+
+    expect(userController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(userController?.summary).toContain("GET /admin/users#index");
+  });
+
+  it("maps Laravel prefixes nested inside non-prefix array groups", async () => {
+    const root = await fixtureRoot("clawpatch-laravel-non-prefix-array-group-");
+    await writeFixture(
+      root,
+      "composer.json",
+      JSON.stringify(
+        {
+          name: "acme/non-prefix-array-group",
+          require: {
+            php: "^8.3",
+            "laravel/framework": "^13.0",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    await writeFixture(
+      root,
+      "routes/web.php",
+      "<?php\n" +
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::group(['middleware' => 'auth'], function () {\n" +
+        "    Route::group(['prefix' => 'admin'], function () {\n" +
+        "        Route::get('/users', UserController::class);\n" +
+        "    });\n" +
+        "});\n",
+    );
+    await writeFixture(
+      root,
+      "app/Http/Controllers/UserController.php",
+      "<?php\nnamespace App\\Http\\Controllers;\nfinal class UserController {}\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const userController = result.features.find(
+      (feature) => feature.entrypoints[0]?.path === "app/Http/Controllers/UserController.php",
+    );
+
+    expect(userController?.entrypoints[0]?.route).toBe("/admin/users");
+    expect(userController?.summary).toContain("GET /admin/users");
+  });
+
   it("maps Laravel controller route groups", async () => {
     const root = await fixtureRoot("clawpatch-laravel-controller-groups-");
     await writeFixture(
@@ -11841,7 +12654,7 @@ add_executable(headerapp include/headers.hpp)
     expect(cli?.tests).toEqual([{ path: "test_cli.py", command: "pytest" }]);
   });
 
-  it("does not resolve Python console scripts through symlinked package dirs", async () => {
+  symlinkIt("does not resolve Python console scripts through symlinked package dirs", async () => {
     const root = await fixtureRoot("clawpatch-python-script-symlink-root-");
     const external = await fixtureRoot("clawpatch-python-script-symlink-external-");
     await writeFixture(
@@ -12483,13 +13296,38 @@ add_executable(headerapp include/headers.hpp)
       [
         "from fastapi import APIRouter",
         "",
-        "router = APIRouter()",
+        "router: APIRouter = APIRouter(prefix='/api/v1')",
         "",
         "@router.post(",
         "    path='/admin/jobs',",
         ")",
         "def create_job():",
         "    return {'queued': True}",
+        "",
+        "@router.get('/admin/jobs/')",
+        "def list_jobs():",
+        "    return {'jobs': []}",
+        "",
+        "@router.get('')",
+        "def admin_root():",
+        "    return {'root': True}",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(
+      root,
+      "web/v2.py",
+      [
+        "import fastapi",
+        "",
+        "api_router = fastapi.APIRouter (",
+        '    prefix="/v2",',
+        "    tags=['v2'],",
+        ")",
+        "",
+        "@api_router.get('/')",
+        "def v2_index():",
+        "    return {'ok': True}",
         "",
       ].join("\n"),
     );
@@ -12505,8 +13343,15 @@ add_executable(headerapp include/headers.hpp)
       (feature) => feature.title === "FastAPI route POST /submit",
     );
     const admin = result.features.find(
-      (feature) => feature.title === "FastAPI route POST /admin/jobs",
+      (feature) => feature.title === "FastAPI route POST /api/v1/admin/jobs",
     );
+    const jobs = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /api/v1/admin/jobs/",
+    );
+    const adminRoot = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /api/v1",
+    );
+    const v2 = result.features.find((feature) => feature.title === "FastAPI route GET /v2/");
 
     expect(project.detected.frameworks).toContain("fastapi");
     expect(health?.source).toBe("python-fastapi-route");
@@ -12521,9 +13366,16 @@ add_executable(headerapp include/headers.hpp)
     expect(admin?.entrypoints[0]).toMatchObject({
       path: "web/api.py",
       symbol: "create_job",
-      route: "POST /admin/jobs",
+      route: "POST /api/v1/admin/jobs",
     });
     expect(admin?.trustBoundaries).toContain("auth");
+    expect(jobs?.entrypoints[0]?.route).toBe("GET /api/v1/admin/jobs/");
+    expect(adminRoot?.entrypoints[0]?.route).toBe("GET /api/v1");
+    expect(v2?.entrypoints[0]).toMatchObject({
+      path: "web/v2.py",
+      symbol: "v2_index",
+      route: "GET /v2/",
+    });
   });
 
   it("detects metadata-free root and web Python sources", async () => {
@@ -13085,7 +13937,7 @@ members = ["tools/old"]
     expect(titles).not.toContain("Rust library old");
   });
 
-  it("skips duplicate and symlinked Cargo workspace members", async () => {
+  symlinkIt("skips duplicate and symlinked Cargo workspace members", async () => {
     const root = await fixtureRoot("clawpatch-rust-workspace-safe-");
     const external = await fixtureRoot("clawpatch-rust-workspace-external-");
     await writeFixture(
@@ -13111,7 +13963,7 @@ members = ["tools/old"]
     expect(paths.some((path) => path.startsWith("../"))).toBe(false);
   });
 
-  it("does not scan symlinked conventional crates directories", async () => {
+  symlinkIt("does not scan symlinked conventional crates directories", async () => {
     const root = await fixtureRoot("clawpatch-rust-crates-symlink-root-");
     const external = await fixtureRoot("clawpatch-rust-crates-symlink-external-");
     await writeFixture(root, "Cargo.toml", '[package]\nname = "rootpkg"\n');
@@ -13128,7 +13980,7 @@ members = ["tools/old"]
     expect(titles).not.toContain("Rust library outside-member");
   });
 
-  it("does not map Rust entrypoints through symlinked source directories", async () => {
+  symlinkIt("does not map Rust entrypoints through symlinked source directories", async () => {
     const root = await fixtureRoot("clawpatch-rust-src-symlink-root-");
     const externalRoot = await fixtureRoot("clawpatch-rust-src-symlink-external-root-");
     const externalMember = await fixtureRoot("clawpatch-rust-src-symlink-external-member-");
@@ -13572,7 +14424,7 @@ let package = Package(
     expect(paths.some((path) => path.startsWith("../"))).toBe(false);
   });
 
-  it("ignores SwiftPM custom paths through symlinks outside the repo", async () => {
+  symlinkIt("ignores SwiftPM custom paths through symlinks outside the repo", async () => {
     const root = await fixtureRoot("clawpatch-swift-symlink-path-");
     const external = await fixtureRoot("clawpatch-swift-external-path-");
     await writeFixture(
@@ -13636,7 +14488,7 @@ let package = Package(name: "NoTests", targets: [.executableTarget(name: "NoTest
     expect(feature?.tests).toEqual([]);
   });
 
-  it("ignores symlinked SwiftPM test directories", async () => {
+  symlinkIt("ignores symlinked SwiftPM test directories", async () => {
     const root = await fixtureRoot("clawpatch-swift-symlink-tests-");
     const external = await fixtureRoot("clawpatch-swift-external-tests-");
     await writeFixture(

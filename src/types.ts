@@ -206,13 +206,21 @@ export type FeatureRecord = z.infer<typeof featureRecordSchema>;
 export type FeatureKind = FeatureRecord["kind"];
 export type TrustBoundary = FeatureRecord["trustBoundaries"][number];
 
-export const evidenceRefSchema = z.object({
-  path: z.string(),
-  startLine: z.number().int().positive().nullable(),
-  endLine: z.number().int().positive().nullable(),
-  symbol: z.string().nullable(),
-  quote: z.string().nullable(),
-});
+const evidenceLineSchema = z.number().int().min(0).nullable();
+
+export const evidenceRefSchema = z
+  .object({
+    path: z.string(),
+    startLine: evidenceLineSchema,
+    endLine: evidenceLineSchema,
+    symbol: z.string().nullable(),
+    quote: z.string().nullable(),
+  })
+  .transform((evidence) =>
+    evidence.startLine === 0 || evidence.endLine === 0
+      ? { ...evidence, startLine: null, endLine: null }
+      : evidence,
+  );
 
 export const findingHistoryEntrySchema = z.object({
   runId: z.string().nullable(),
@@ -349,27 +357,39 @@ export const agentMapOutputSchema = z.object({
 
 export type AgentMapOutput = z.infer<typeof agentMapOutputSchema>;
 
+export const reviewFindingSchema = z.object({
+  title: z.string(),
+  category: z.enum(findingCategories),
+  severity: z.enum(["critical", "high", "medium", "low"]),
+  confidence: z.enum(["high", "medium", "low"]),
+  evidence: z.array(evidenceRefSchema),
+  reasoning: z.string(),
+  reproduction: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? null),
+  recommendation: z.string(),
+  whyTestsDoNotAlreadyCoverThis: z.string(),
+  suggestedRegressionTest: z.string().nullable(),
+  minimumFixScope: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? ""),
+});
+
+export type ReviewFinding = z.infer<typeof reviewFindingSchema>;
+
+export const reviewInspectedSchema = z.object({
+  files: z.array(z.string()),
+  symbols: z.array(z.string()),
+  notes: z.array(z.string()),
+});
+
+export type ReviewInspected = z.infer<typeof reviewInspectedSchema>;
+
 export const reviewOutputSchema = z.object({
-  findings: z.array(
-    z.object({
-      title: z.string(),
-      category: z.enum(findingCategories),
-      severity: z.enum(["critical", "high", "medium", "low"]),
-      confidence: z.enum(["high", "medium", "low"]),
-      evidence: z.array(evidenceRefSchema),
-      reasoning: z.string(),
-      reproduction: z.string().nullable(),
-      recommendation: z.string(),
-      whyTestsDoNotAlreadyCoverThis: z.string(),
-      suggestedRegressionTest: z.string().nullable(),
-      minimumFixScope: z.string(),
-    }),
-  ),
-  inspected: z.object({
-    files: z.array(z.string()),
-    symbols: z.array(z.string()),
-    notes: z.array(z.string()),
-  }),
+  findings: z.array(reviewFindingSchema),
+  inspected: reviewInspectedSchema,
 });
 
 export type ReviewOutput = z.infer<typeof reviewOutputSchema>;

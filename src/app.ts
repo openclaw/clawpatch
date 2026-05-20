@@ -17,12 +17,12 @@ import {
   parseFindingStatus,
 } from "./findings.js";
 import { nowIso, writeJson } from "./fs.js";
-import { changedFilesSince, discoverGit, findProjectRoot } from "./git.js";
+import { changedFilesSince, dirtyFiles, discoverGit, findProjectRoot } from "./git.js";
 import { stableId, runId } from "./id.js";
 import { mapWithSource } from "./agent-mapper.js";
 import { mapFeatures } from "./mapper.js";
 import { emitProgress } from "./progress.js";
-import { providerByName } from "./provider.js";
+import { providerByName, type DroppedFinding } from "./provider.js";
 import { buildFixPrompt, buildReviewPromptBundle, buildRevalidatePrompt } from "./prompt.js";
 import type { ReviewMode, ReviewPromptManifest } from "./prompt.js";
 import {
@@ -32,7 +32,7 @@ import {
   renderFindingDetail,
   renderReport,
 } from "./reporting.js";
-import { validateReviewOutput } from "./review-validation.js";
+import { validateReviewOutputPartitioned } from "./review-validation.js";
 import {
   filterFeaturesByChangedFiles,
   filterFeaturesByProject,
@@ -276,7 +276,7 @@ export async function reviewCommand(
   const mode = reviewMode(flags);
   const customPrompt = await loadCustomReviewPrompt(flags);
   const features = await selectReviewFeatures(loaded, flags);
-  if (features.length === 0 && typeof flags["since"] === "string") {
+  if (features.length === 0 && hasFileFilter(flags)) {
     if (flags["dryRun"] === true) {
       return { next: "no features touched by diff" };
     }
@@ -343,6 +343,16 @@ export async function reviewCommand(
             allowNonPendingFeatureReview: stringFlag(flags, "feature") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
+          for (const dropped of reviewed.droppedFindings) {
+            const code = dropped.layer === "validation" ? "validation-drop" : "schema-drop";
+            errors.push({
+              message:
+                `dropped 1 finding from feature ${feature.featureId} ` +
+                `at ${dropped.path.join(".")}: ${dropped.message}`,
+              code,
+              error: null,
+            });
+          }
         } catch (error: unknown) {
           errors.push({
             message: error instanceof Error ? error.message : String(error),
@@ -353,7 +363,10 @@ export async function reviewCommand(
       }
     }),
   );
-  if (errors.length > 0) {
+  const fatalErrors = errors.filter(
+    (entry) => entry.code !== "schema-drop" && entry.code !== "validation-drop",
+  );
+  if (fatalErrors.length > 0) {
     await writeRun(loaded.paths, {
       ...run,
       status: "failed",
@@ -363,15 +376,16 @@ export async function reviewCommand(
     });
     emitProgress(context, "review", "failed", {
       run: currentRunId,
-      errors: errors.length,
+      errors: fatalErrors.length,
     });
-    throw errors[0]?.error ?? new ClawpatchError("review failed", 1, "review-failed");
+    throw fatalErrors[0]?.error ?? new ClawpatchError("review failed", 1, "review-failed");
   }
   const finished: RunRecord = {
     ...run,
     status: "completed",
     finishedAt: nowIso(),
     findingIds,
+    errors: errors.map(({ message, code }) => ({ message, code })),
   };
   await writeRun(loaded.paths, finished);
   emitProgress(context, "review", "done", {
@@ -499,10 +513,13 @@ export async function reportCommand(
     await writeFile(outputPath, output, "utf8");
   }
   if (context.options.json) {
+    const items = findingSummaries(filtered, scopedFeatures);
     return {
       findings: filtered.length,
+      total: filtered.length,
       output: outputPath,
-      items: findingSummaries(filtered, scopedFeatures),
+      items,
+      results: items,
     };
   }
   return {
@@ -635,7 +652,9 @@ type ReviewFeatureOptions = {
   allowNonPendingFeatureReview: boolean;
 };
 
-async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingIds: string[] }> {
+async function reviewFeature(
+  options: ReviewFeatureOptions,
+): Promise<{ findingIds: string[]; droppedFindings: DroppedFinding[] }> {
   const {
     context,
     loaded,
@@ -675,26 +694,37 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
       mode,
       customPrompt,
     );
-    const providerOutput = await provider.review(
-      loaded.root,
-      reviewPrompt.prompt,
-      providerOptions(config),
-    );
+    const providerOutput = await runProviderReviewWithRetry({
+      provider,
+      root: loaded.root,
+      prompt: reviewPrompt.prompt,
+      options: providerOptions(config),
+      context,
+      featureId: feature.featureId,
+      index,
+      total,
+    });
+    // Layer 1 drops: per-finding schema violations from parseReviewOutput.
+    const droppedFindings: DroppedFinding[] = [...providerOutput.droppedFindings];
     const reviewOutput = {
-      ...providerOutput,
       findings: reviewFindingsForMode(providerOutput.findings, mode).slice(
         0,
         config.review.maxFindingsPerFeature,
       ),
+      inspected: providerOutput.inspected,
     };
-    const output = await validateReviewOutput(
+    // Layer 2 drops: per-finding evidence validation (line ranges, quotes,
+    // included files). Partition so a single bad finding doesn't lose the
+    // whole feature.
+    const validated = await validateReviewOutputPartitioned(
       loaded.root,
       lockedFeature,
       config,
       reviewPrompt.manifest,
       reviewOutput,
     );
-    const records = output.findings.map((finding) =>
+    droppedFindings.push(...validated.droppedFindings);
+    const records = validated.findings.map((finding) =>
       findingFromOutput(finding, lockedFeature.featureId, currentRunId),
     );
     const findingIds: string[] = [];
@@ -735,7 +765,7 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
       findings: findingIds.length,
       elapsed: `${Math.round((Date.now() - started) / 1000)}s`,
     });
-    return { findingIds };
+    return { findingIds, droppedFindings };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     if (locked !== null) {
@@ -771,6 +801,55 @@ async function reviewFeature(options: ReviewFeatureOptions): Promise<{ findingId
     });
     throw error;
   }
+}
+
+type ReviewProvider = ReturnType<typeof providerByName>;
+type ProviderReviewOutput = Awaited<ReturnType<ReviewProvider["review"]>>;
+
+async function runProviderReviewWithRetry(args: {
+  provider: ReviewProvider;
+  root: string;
+  prompt: string;
+  options: Parameters<ReviewProvider["review"]>[2];
+  context: AppContext;
+  featureId: string;
+  index: number;
+  total: number;
+}): Promise<ProviderReviewOutput> {
+  const { provider, root, prompt, options, context, featureId, index, total } = args;
+  const maxAttempts = 1 + reviewRetries();
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await provider.review(root, prompt, options);
+    } catch (error: unknown) {
+      lastError = error;
+      if (!isRetryableReviewError(error) || attempt === maxAttempts) {
+        throw error;
+      }
+      emitProgress(context, "review", "feature-retry", {
+        index: index + 1,
+        total,
+        feature: featureId,
+        attempt,
+        reason: error instanceof ClawpatchError ? error.code : "unknown",
+      });
+    }
+  }
+  throw lastError ?? new ClawpatchError("review retry exhausted", 1, "review-retry-exhausted");
+}
+
+function reviewRetries(): number {
+  const raw = process.env["CLAWPATCH_REVIEW_RETRIES"];
+  if (raw === undefined) {
+    return 1;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 1;
+}
+
+function isRetryableReviewError(error: unknown): boolean {
+  return error instanceof ClawpatchError && error.code === "malformed-output";
 }
 
 export async function revalidateCommand(
@@ -866,7 +945,11 @@ export async function revalidateCommand(
     });
     throw error;
   }
-  if (flags["all"] === true || typeof flags["since"] === "string") {
+  if (
+    flags["all"] === true ||
+    typeof flags["since"] === "string" ||
+    flags["includeDirty"] === true
+  ) {
     return {
       revalidated: results.length,
       open: results.filter((result) => result.outcome === "open").length,
@@ -1323,6 +1406,9 @@ function reviewFlagSubset(
     if (value !== undefined) {
       subset[flag] = value;
     }
+  }
+  if (flags["includeDirty"] === true) {
+    subset["includeDirty"] = true;
   }
   return subset;
 }
@@ -1902,10 +1988,10 @@ async function filterFeaturesByFilesSince(
   flags: Record<string, string | boolean>,
 ): Promise<FeatureRecord[]> {
   const since = stringFlag(flags, "since");
-  if (since === undefined) {
+  if (since === undefined && flags["includeDirty"] !== true) {
     return features;
   }
-  const changed = await changedFilesSince(root, since);
+  const changed = await changedFiles(root, flags);
   return filterFeaturesByChangedFiles(features, changed, true);
 }
 
@@ -1915,12 +2001,35 @@ async function filterFindingsByOwnedFilesSince(
   flags: Record<string, string | boolean>,
 ): Promise<FindingRecord[]> {
   const since = stringFlag(flags, "since");
-  if (since === undefined) {
+  if (since === undefined && flags["includeDirty"] !== true) {
     return findings;
   }
-  const changed = await changedFilesSince(loaded.root, since);
+  const changed = await changedFiles(loaded.root, flags);
   const features = await readFeatures(loaded.paths);
   return filterFindingsByChangedOwnedFiles(findings, features, changed);
+}
+
+async function changedFiles(
+  root: string,
+  flags: Record<string, string | boolean>,
+): Promise<Set<string>> {
+  const changed = new Set<string>();
+  const since = stringFlag(flags, "since");
+  if (since !== undefined) {
+    for (const file of await changedFilesSince(root, since)) {
+      changed.add(file);
+    }
+  }
+  if (flags["includeDirty"] === true) {
+    for (const file of await dirtyFiles(root)) {
+      changed.add(file);
+    }
+  }
+  return changed;
+}
+
+function hasFileFilter(flags: Record<string, string | boolean>): boolean {
+  return stringFlag(flags, "since") !== undefined || flags["includeDirty"] === true;
 }
 
 function reviewJobs(flags: Record<string, string | boolean>): number {
@@ -2031,3 +2140,10 @@ function stringFlag(flags: Record<string, string | boolean>, name: string): stri
   const value = flags[name];
   return typeof value === "string" ? value : undefined;
 }
+
+// eslint-disable-next-line no-underscore-dangle
+export const __testing = {
+  isRetryableReviewError,
+  reviewRetries,
+  runProviderReviewWithRetry,
+};

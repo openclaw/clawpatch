@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "./config.js";
 import type { ReviewPromptManifest } from "./prompt.js";
-import { validateReviewOutput } from "./review-validation.js";
+import { validateReviewOutput, validateReviewOutputPartitioned } from "./review-validation.js";
 import { fixtureRoot, writeFixture } from "./test-helpers.js";
 import type { FeatureRecord, ReviewOutput } from "./types.js";
 
@@ -117,6 +117,108 @@ describe("validateReviewOutput", () => {
         output("src/index.ts", { startLine: null, endLine: null, quote: "TODO_TAIL" }),
       ),
     ).rejects.toMatchObject({ code: "malformed-output" });
+  });
+});
+
+describe("validateReviewOutputPartitioned", () => {
+  it("returns all findings when every finding's evidence is valid", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-partition-ok-");
+    await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
+
+    const result = await validateReviewOutputPartitioned(
+      root,
+      feature("src/index.ts"),
+      defaultConfig(),
+      manifest("src/index.ts"),
+      output("src/index.ts"),
+    );
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]!.title).toBe("Bug");
+    expect(result.droppedFindings).toEqual([]);
+  });
+
+  it("keeps valid siblings when one finding has a stale quote", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-partition-quote-");
+    await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
+
+    const goodFinding = output("src/index.ts").findings[0]!;
+    const badFinding: ReviewOutput["findings"][number] = {
+      ...goodFinding,
+      title: "Stale quote",
+      evidence: [
+        {
+          path: "src/index.ts",
+          startLine: 1,
+          endLine: 1,
+          symbol: null,
+          quote: "this text does not exist",
+        },
+      ],
+    };
+    const provider: ReviewOutput = {
+      findings: [goodFinding, badFinding, { ...goodFinding, title: "Also good" }],
+      inspected: { files: ["src/index.ts"], symbols: [], notes: [] },
+    };
+
+    const result = await validateReviewOutputPartitioned(
+      root,
+      feature("src/index.ts"),
+      defaultConfig(),
+      manifest("src/index.ts"),
+      provider,
+    );
+
+    expect(result.findings.map((f) => f.title)).toEqual(["Bug", "Also good"]);
+    expect(result.droppedFindings).toHaveLength(1);
+    const dropped = result.droppedFindings[0]!;
+    expect(dropped.path).toEqual(["findings", 1]);
+    expect(dropped.layer).toBe("validation");
+    expect(dropped.message).toMatch(/quote/iu);
+    expect(dropped.sample.length).toBeLessThanOrEqual(200);
+  });
+
+  it("drops findings whose evidence file was not included in the prompt", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-partition-included-");
+    await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
+    await writeFixture(root, "src/other.ts", "const value = 'TODO_BUG';\n");
+
+    const result = await validateReviewOutputPartitioned(
+      root,
+      feature("src/index.ts"),
+      defaultConfig(),
+      manifest("src/index.ts"),
+      output("src/other.ts"),
+    );
+
+    expect(result.findings).toEqual([]);
+    expect(result.droppedFindings).toHaveLength(1);
+    expect(result.droppedFindings[0]!.layer).toBe("validation");
+    expect(result.droppedFindings[0]!.message).toMatch(/not included/iu);
+  });
+
+  it("drops findings with empty evidence arrays without throwing", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-partition-empty-");
+    await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
+
+    const goodFinding = output("src/index.ts").findings[0]!;
+    const provider: ReviewOutput = {
+      findings: [{ ...goodFinding, title: "No evidence", evidence: [] }, goodFinding],
+      inspected: { files: ["src/index.ts"], symbols: [], notes: [] },
+    };
+
+    const result = await validateReviewOutputPartitioned(
+      root,
+      feature("src/index.ts"),
+      defaultConfig(),
+      manifest("src/index.ts"),
+      provider,
+    );
+
+    expect(result.findings.map((f) => f.title)).toEqual(["Bug"]);
+    expect(result.droppedFindings).toHaveLength(1);
+    expect(result.droppedFindings[0]!.path).toEqual(["findings", 0]);
+    expect(result.droppedFindings[0]!.message).toMatch(/no evidence/iu);
   });
 });
 

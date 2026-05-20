@@ -21,7 +21,9 @@ export const revalidateJsonSchema = providerJsonSchema(revalidateOutputSchema);
 export const fixPlanJsonSchema = providerJsonSchema(fixPlanOutputSchema);
 
 export function providerJsonSchema(schema: z.ZodType): object {
-  return stripProviderUnsupportedSchemaKeywords(z.toJSONSchema(schema)) as object;
+  return stripProviderUnsupportedSchemaKeywords(
+    z.toJSONSchema(schema, { io: "input", unrepresentable: "any" }),
+  ) as object;
 }
 
 function stripProviderUnsupportedSchemaKeywords(value: unknown): unknown {
@@ -38,5 +40,13 @@ function stripProviderUnsupportedSchemaKeywords(value: unknown): unknown {
     }
     output[key] = stripProviderUnsupportedSchemaKeywords(item);
   }
+  if (output["type"] === "object" && isRecord(output["properties"])) {
+    output["additionalProperties"] = false;
+    output["required"] = Object.keys(output["properties"]);
+  }
   return output;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

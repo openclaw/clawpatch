@@ -1,5 +1,5 @@
-import { stat } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { realpath, stat } from "node:fs/promises";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { runCommand } from "./exec.js";
 import { ClawpatchError } from "./errors.js";
 
@@ -85,6 +85,58 @@ export async function changedFilesSince(root: string, ref: string): Promise<Set<
       .map((line) => line.trim())
       .filter((line) => line.length > 0),
   );
+}
+
+export async function dirtyFiles(root: string): Promise<Set<string>> {
+  const gitRoot = await gitLine(root, "git rev-parse --show-toplevel");
+  const [resolvedRoot, resolvedGitRoot] = await Promise.all([
+    realpath(root).catch(() => root),
+    gitRoot === null ? Promise.resolve(root) : realpath(gitRoot).catch(() => gitRoot),
+  ]);
+  const result = await runCommand(
+    "git status --porcelain=v1 -z --untracked-files=all",
+    root,
+    undefined,
+    { trimOutput: false },
+  );
+  if (result.exitCode !== 0) {
+    throw new ClawpatchError(
+      `git status failed: ${result.stderr || result.stdout}`,
+      2,
+      "git-failure",
+    );
+  }
+  const fields = result.stdout.split("\0").filter((field) => field.length > 0);
+  const paths = new Set<string>();
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (field.length < 4) {
+      continue;
+    }
+    const status = field.slice(0, 2);
+    addDirtyPath(paths, resolvedRoot, resolvedGitRoot, field.slice(3));
+    if (/[RC]/u.test(status)) {
+      const secondary = fields[index + 1] ?? "";
+      if (secondary.length > 0) {
+        addDirtyPath(paths, resolvedRoot, resolvedGitRoot, secondary);
+      }
+      index += 1;
+    }
+  }
+  return paths;
+}
+
+function addDirtyPath(paths: Set<string>, root: string, gitRoot: string, path: string): void {
+  const normalized = relative(root, join(gitRoot, path)).replace(/\\/gu, "/");
+  if (
+    normalized.length === 0 ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    isAbsolute(normalized)
+  ) {
+    return;
+  }
+  paths.add(normalized);
 }
 
 async function gitLine(cwd: string, command: string): Promise<string | null> {

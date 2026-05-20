@@ -2,6 +2,7 @@ import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { ClawpatchError } from "./errors.js";
 import { REVIEW_PROMPT_FILE_CHAR_LIMIT, type ReviewPromptManifest } from "./prompt.js";
+import type { DroppedFinding } from "./provider.js";
 import { ClawpatchConfig, FeatureRecord, ReviewOutput } from "./types.js";
 
 export async function validateReviewOutput(
@@ -18,21 +19,88 @@ export async function validateReviewOutput(
   const cache = new Map<string, Promise<string>>();
   const findings = output.findings;
   for (const finding of findings) {
-    if (finding.evidence.length === 0) {
-      throwMalformed(`finding "${finding.title}" has no evidence`);
-    }
-    for (const evidence of finding.evidence) {
-      assertIncludedPath(evidence.path, included, "evidence file");
-      const promptFile = promptFiles.get(normalizePath(evidence.path));
-      if (promptFile === undefined || !promptFile.readable) {
-        throwMalformed(`evidence file was not readable in review context: ${evidence.path}`);
-      }
-      const contents = await fileContents(root, evidence.path, promptFile.truncated, cache);
-      assertLineRange(contents, evidence);
-      assertQuote(contents, evidence);
-    }
+    await validateFinding(root, finding, included, promptFiles, cache);
   }
   return { ...output, findings };
+}
+
+/**
+ * Same evidence validation as {@link validateReviewOutput}, but runs
+ * per-finding and partitions failures instead of throwing on the first
+ * bad finding. Callers receive only the validated findings plus a list
+ * of {@link DroppedFinding}s describing why each rejection occurred. The
+ * caller is then free to surface drops as non-fatal run errors instead
+ * of losing the whole feature.
+ */
+export async function validateReviewOutputPartitioned(
+  root: string,
+  feature: FeatureRecord,
+  config: ClawpatchConfig,
+  manifest: ReviewPromptManifest,
+  output: ReviewOutput,
+): Promise<{ findings: ReviewOutput["findings"]; droppedFindings: DroppedFinding[] }> {
+  const included = includedReviewPaths(feature, config);
+  const promptFiles = new Map(
+    manifest.includedFiles.map((file) => [normalizePath(file.path), file]),
+  );
+  const cache = new Map<string, Promise<string>>();
+  const validFindings: ReviewOutput["findings"] = [];
+  const droppedFindings: DroppedFinding[] = [];
+  output.findings.forEach(() => undefined);
+  for (let idx = 0; idx < output.findings.length; idx += 1) {
+    const finding = output.findings[idx]!;
+    try {
+      await validateFinding(root, finding, included, promptFiles, cache);
+      validFindings.push(finding);
+    } catch (error: unknown) {
+      if (error instanceof ClawpatchError && error.code === "malformed-output") {
+        droppedFindings.push({
+          path: ["findings", idx],
+          message: error.message.replace(/^malformed provider review output:\s*/u, ""),
+          sample: truncateValidationSample(finding),
+          layer: "validation",
+        });
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { findings: validFindings, droppedFindings };
+}
+
+async function validateFinding(
+  root: string,
+  finding: ReviewOutput["findings"][number],
+  included: ReadonlySet<string>,
+  promptFiles: Map<string, ReviewPromptManifest["includedFiles"][number]>,
+  cache: Map<string, Promise<string>>,
+): Promise<void> {
+  if (finding.evidence.length === 0) {
+    throwMalformed(`finding "${finding.title}" has no evidence`);
+  }
+  for (const evidence of finding.evidence) {
+    assertIncludedPath(evidence.path, included, "evidence file");
+    const promptFile = promptFiles.get(normalizePath(evidence.path));
+    if (promptFile === undefined || !promptFile.readable) {
+      throwMalformed(`evidence file was not readable in review context: ${evidence.path}`);
+    }
+    const contents = await fileContents(root, evidence.path, promptFile.truncated, cache);
+    assertLineRange(contents, evidence);
+    assertQuote(contents, evidence);
+  }
+}
+
+function truncateValidationSample(finding: ReviewOutput["findings"][number]): string {
+  let text: string;
+  try {
+    text = JSON.stringify(finding);
+  } catch {
+    text = String(finding);
+  }
+  if (text === undefined) {
+    text = String(finding);
+  }
+  return text.length > 200 ? `${text.slice(0, 197)}...` : text;
 }
 
 function includedReviewPaths(feature: FeatureRecord, config: ClawpatchConfig): Set<string> {

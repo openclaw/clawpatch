@@ -234,6 +234,9 @@ async function languageDefaultCommands(
   ) {
     return gradleDefaultCommands(root);
   }
+  if (await isRootMavenProject(root)) {
+    return mavenDefaultCommands(root);
+  }
   if (languages.includes("elixir")) {
     return elixirDefaultCommands(root);
   }
@@ -331,6 +334,9 @@ async function detectPackageManagers(root: string): Promise<string[]> {
   ) {
     found.push("gradle");
   }
+  if (!found.includes("maven") && (await containsFileNamed(root, "pom.xml", 5))) {
+    found.push("maven");
+  }
   if (
     !found.includes("cmake") &&
     (await containsFileNamed(root, "CMakeLists.txt", 5, shouldSkipCOrCppSearchEntry))
@@ -402,6 +408,20 @@ async function gradleDefaultCommands(root: string): Promise<ProjectCommands> {
   const runner = (await pathExists(join(root, "gradlew"))) ? "./gradlew" : "gradle";
   return {
     typecheck: `${runner} build`,
+    lint: null,
+    format: null,
+    test: `${runner} test`,
+  };
+}
+
+async function isRootMavenProject(root: string): Promise<boolean> {
+  return await pathExists(join(root, "pom.xml"));
+}
+
+async function mavenDefaultCommands(root: string): Promise<ProjectCommands> {
+  const runner = (await pathExists(join(root, "mvnw"))) ? "./mvnw" : "mvn";
+  return {
+    typecheck: `${runner} -DskipTests compile`,
     lint: null,
     format: null,
     test: `${runner} test`,
@@ -1114,12 +1134,43 @@ async function detectFrameworks(
       frameworks.push(name);
     }
   }
+  for (const name of await detectMavenFrameworks(root)) {
+    if (!frameworks.includes(name)) {
+      frameworks.push(name);
+    }
+  }
   for (const name of await detectDotnetFrameworks(root)) {
     if (!frameworks.includes(name)) {
       frameworks.push(name);
     }
   }
   return uniqueStrings(frameworks);
+}
+
+async function detectMavenFrameworks(root: string): Promise<string[]> {
+  const frameworks: string[] = [];
+  for (const pom of await collectMavenPomFiles(root, 5)) {
+    const source = await readFile(join(root, pom), "utf8").catch(() => "");
+    const activeSource = stripXmlComments(source);
+    if (mavenPomHasSpring(activeSource)) {
+      frameworks.push("spring");
+    }
+    if (mavenPomHasSpringBoot(activeSource)) {
+      frameworks.push("spring-boot");
+    }
+  }
+  return uniqueStrings(frameworks);
+}
+
+function mavenPomHasSpring(source: string): boolean {
+  return /<groupId>\s*org\.springframework(?:\.[^<]*)?\s*<\/groupId>/iu.test(source);
+}
+
+function mavenPomHasSpringBoot(source: string): boolean {
+  return (
+    /<groupId>\s*org\.springframework\.boot\s*<\/groupId>/iu.test(source) ||
+    /<artifactId>\s*spring-boot-[^<]*\s*<\/artifactId>/iu.test(source)
+  );
 }
 
 async function detectDotnetFrameworks(root: string): Promise<string[]> {
@@ -1720,6 +1771,43 @@ async function collectDotnetFiles(
   return [...new Set(files)].toSorted();
 }
 
+async function collectMavenPomFiles(root: string, maxDepth: number): Promise<string[]> {
+  const files: string[] = [];
+  await collectMavenPomFilesAt(root, maxDepth, files);
+  return [...new Set(files)].toSorted();
+}
+
+async function collectMavenPomFilesAt(
+  dir: string,
+  remainingDepth: number,
+  files: string[],
+  relativeDir = "",
+): Promise<void> {
+  if (remainingDepth < 0 || !(await pathExists(dir))) {
+    return;
+  }
+  const dirInfo = await lstat(dir);
+  if (!dirInfo.isDirectory() || dirInfo.isSymbolicLink()) {
+    return;
+  }
+  for (const entry of await readdir(dir)) {
+    const relativePath = relativeDir.length === 0 ? entry : `${relativeDir}/${entry}`;
+    if (shouldSkipSearchEntry(entry, relativePath)) {
+      continue;
+    }
+    const full = join(dir, entry);
+    const info = await lstat(full);
+    if (info.isSymbolicLink()) {
+      continue;
+    }
+    if (info.isFile() && entry === "pom.xml") {
+      files.push(relativePath);
+    } else if (info.isDirectory()) {
+      await collectMavenPomFilesAt(full, remainingDepth - 1, files, relativePath);
+    }
+  }
+}
+
 async function collectDotnetFilesAt(
   dir: string,
   remainingDepth: number,
@@ -1781,7 +1869,22 @@ function hasDotnetTestFrameworkEvidence(source: string): boolean {
 }
 
 function stripXmlComments(source: string): string {
-  return source.replace(/<!--[\s\S]*?-->/gu, "");
+  let output = "";
+  let index = 0;
+  while (index < source.length) {
+    const start = source.indexOf("<!--", index);
+    if (start === -1) {
+      output += source.slice(index);
+      break;
+    }
+    output += source.slice(index, start);
+    const end = source.indexOf("-->", start + 4);
+    if (end === -1) {
+      break;
+    }
+    index = end + 3;
+  }
+  return output;
 }
 
 function isDotnetWebProject(source: string): boolean {
