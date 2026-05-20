@@ -496,15 +496,19 @@ const geminiProvider: Provider = {
   },
   async map(root: string, prompt: string, options: ProviderOptions): Promise<AgentMapOutput> {
     const output = await runGeminiJson(root, prompt, options, agentMapJsonSchema, "plan");
-    return agentMapOutputSchema.parse(output);
+    return parseOrThrow(agentMapOutputSchema, output, "gemini agent-map");
   },
-  async review(root: string, prompt: string, options: ProviderOptions): Promise<ReviewOutput> {
+  async review(
+    root: string,
+    prompt: string,
+    options: ProviderOptions,
+  ): Promise<PartitionedReviewOutput> {
     const output = await runGeminiJson(root, prompt, options, reviewJsonSchema, "plan");
-    return reviewOutputSchema.parse(output);
+    return parseReviewOutput(output);
   },
   async fix(root: string, prompt: string, options: ProviderOptions): Promise<FixPlanOutput> {
     const output = await runGeminiJson(root, prompt, options, fixPlanJsonSchema, "auto_edit");
-    return fixPlanOutputSchema.parse(output);
+    return parseOrThrow(fixPlanOutputSchema, output, "gemini fix-plan");
   },
   async revalidate(
     root: string,
@@ -512,7 +516,7 @@ const geminiProvider: Provider = {
     options: ProviderOptions,
   ): Promise<RevalidateOutput> {
     const output = await runGeminiJson(root, prompt, options, revalidateJsonSchema, "plan");
-    return revalidateOutputSchema.parse(output);
+    return parseOrThrow(revalidateOutputSchema, output, "gemini revalidate");
   },
 };
 
