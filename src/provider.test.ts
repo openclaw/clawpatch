@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
 import { safeProviderPreview } from "./provider-json.js";
@@ -7,18 +10,27 @@ import { evidenceRefSchema, revalidateOutputSchema, reviewOutputSchema } from ".
 // eslint-disable-next-line no-underscore-dangle
 const {
   acpxFailureMessage,
+  assertGeminiPatched,
   acpxPromptRetries,
   addCodexModelArgs,
   addCodexSandboxArgs,
   buildAcpxJsonArgs,
   codexFailureMessage,
   extractAcpxJson,
+  extractGeminiResponse,
   extractOpencodeJson,
+  geminiArgs,
+  geminiEnv,
+  geminiIsolatedEnv,
+  geminiPrompt,
+  geminiSelectedAuthType,
+  isGeminiPatched,
   formatZodError,
   formatZodIssue,
   parseAcpxJsonOutput,
   parseAcpxAgent,
   parseCodexJson,
+  parseGeminiVersion,
   parseReviewOutput,
   parseOrThrow,
   piThinkingLevel,
@@ -152,6 +164,11 @@ describe("extractJson", () => {
   it("returns null for text with no valid JSON", () => {
     expect(extractJson("no json here at all")).toBeNull();
     expect(extractJson("just some words { unbalanced")).toBeNull();
+  });
+
+  it("bounds fallback JSON extraction work", () => {
+    expect(extractJson(`${"{".repeat(1_001)}${"}".repeat(1_001)}`)).toBeNull();
+    expect(extractJson(`${"{ nope } ".repeat(65)}{"ok":true}`)).toBeNull();
   });
 });
 
@@ -303,6 +320,239 @@ describe("piThinkingLevel", () => {
     expect(piThinkingLevel("xhigh")).toBe("xhigh");
   });
 });
+
+describe("Gemini provider", () => {
+  const originalGeminiSecret = process.env["GEMINI_SECRET_TEST"];
+  const originalGeminiApiKey = process.env["GEMINI_API_KEY"];
+  const originalOpenAiKey = process.env["OPENAI_API_KEY"];
+
+  afterEach(() => {
+    restoreEnv("GEMINI_SECRET_TEST", originalGeminiSecret);
+    restoreEnv("GEMINI_API_KEY", originalGeminiApiKey);
+    restoreEnv("OPENAI_API_KEY", originalOpenAiKey);
+  });
+
+  it("builds the HITL-verified review command shape with model passthrough", () => {
+    expect(
+      geminiArgs(
+        { model: "gemini-3-pro", reasoningEffort: "high", skipGitRepoCheck: true },
+        "plan",
+      ),
+    ).toEqual([
+      "--skip-trust",
+      "-p",
+      "",
+      "--approval-mode=plan",
+      "--output-format=json",
+      "--extensions",
+      "none",
+      "--model",
+      "gemini-3-pro",
+    ]);
+  });
+
+  it("builds fix commands with auto_edit instead of yolo", () => {
+    expect(
+      geminiArgs({ model: null, reasoningEffort: null, skipGitRepoCheck: false }, "auto_edit"),
+    ).toEqual([
+      "--skip-trust",
+      "-p",
+      "",
+      "--approval-mode=auto_edit",
+      "--output-format=json",
+      "--extensions",
+      "none",
+    ]);
+  });
+
+  it("adds read-only safety instructions to plan prompts", () => {
+    const prompt = geminiPrompt("Inspect src/index.ts", { type: "object" }, true);
+
+    expect(prompt).toContain("READ-ONLY REVIEW MODE");
+    expect(prompt).toContain("Do not exit plan mode");
+    expect(prompt).toContain("Provider output schema");
+  });
+
+  it("extracts Clawpatch response text from Gemini JSON envelopes", () => {
+    const stdout = JSON.stringify({
+      response: '```json\n{"findings":[],"inspected":{"files":[],"symbols":[],"notes":[]}}\n```',
+      stats: { tools: { totalCalls: 0, byName: {} } },
+      future: true,
+    });
+
+    expect(extractGeminiResponse(stdout)).toContain('"findings":[]');
+  });
+
+  it("throws malformed-output for missing Gemini response", () => {
+    expectMalformed(
+      () => extractGeminiResponse(JSON.stringify({ stats: {} })),
+      /missing.*response/u,
+    );
+  });
+
+  it("throws malformed-output for multiple Gemini JSON envelopes", () => {
+    const stdout = [JSON.stringify({ response: "{}" }), JSON.stringify({ response: "{}" })].join(
+      "\n",
+    );
+
+    expectMalformed(() => extractGeminiResponse(stdout), /2 JSON envelopes/u);
+  });
+
+  it("throws provider-failure for Gemini error envelopes", () => {
+    try {
+      extractGeminiResponse(JSON.stringify({ error: { message: "quota exceeded" } }));
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClawpatchError);
+      expect((err as ClawpatchError).code).toBe("provider-failure");
+      expect((err as ClawpatchError).exitCode).toBe(5);
+      return;
+    }
+    throw new Error("expected provider failure");
+  });
+
+  it("checks patched Gemini CLI versions", () => {
+    expect(parseGeminiVersion("0.42.0")).toBe("0.42.0");
+    expect(isGeminiPatched("0.39.1")).toBe(true);
+    expect(isGeminiPatched("0.40.0-preview.3")).toBe(true);
+    expect(isGeminiPatched("0.39.0")).toBe(false);
+    expect(isGeminiPatched("0.40.0-preview.2")).toBe(false);
+  });
+
+  it("warns when bypassing the Gemini patched-version gate", () => {
+    const original = process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"];
+    const write = process.stderr.write;
+    const writes: string[] = [];
+    process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] = "1";
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      assertGeminiPatched("0.1.0");
+    } finally {
+      process.stderr.write = write;
+      if (original === undefined) {
+        delete process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"];
+      } else {
+        process.env["CLAWPATCH_GEMINI_ALLOW_UNPATCHED"] = original;
+      }
+    }
+
+    expect(writes.join("")).toContain("bypasses the Gemini CLI security version gate");
+  });
+
+  it("uses an explicit environment allowlist", () => {
+    process.env["GEMINI_API_KEY"] = "allowed";
+    process.env["GEMINI_SECRET_TEST"] = "blocked";
+    process.env["OPENAI_API_KEY"] = "blocked";
+
+    const env = geminiEnv({
+      home: "/tmp/gemini-home",
+      xdgConfig: "/tmp/gemini-config",
+      xdgCache: "/tmp/gemini-cache",
+      xdgData: "/tmp/gemini-data",
+    });
+
+    expect(env["GEMINI_API_KEY"]).toBe("allowed");
+    expect(env["HOME"]).toBe("/tmp/gemini-home");
+    expect(env["XDG_CONFIG_HOME"]).toBe("/tmp/gemini-config");
+    expect(env["GEMINI_SECRET_TEST"]).toBeUndefined();
+    expect(env["OPENAI_API_KEY"]).toBeUndefined();
+  });
+
+  it("seeds only minimal Gemini auth files and sanitized settings into an isolated home", async () => {
+    const sourceHome = await mkdtempForTest("clawpatch-gemini-source-home-");
+    const originalHome = process.env["HOME"];
+    await mkdir(join(sourceHome, ".gemini"), { recursive: true });
+    await writeFile(join(sourceHome, ".gemini", "oauth_creds.json"), "oauth", "utf8");
+    await writeFile(
+      join(sourceHome, ".gemini", "settings.json"),
+      JSON.stringify({
+        security: { auth: { selectedType: "oauth-personal", token: "blocked" } },
+        hooks: { onStart: "blocked" },
+      }),
+      "utf8",
+    );
+    await writeFile(join(sourceHome, ".gemini", "hooks.json"), "blocked", "utf8");
+    process.env["HOME"] = sourceHome;
+
+    const isolated = await geminiIsolatedEnv();
+
+    try {
+      expect(isolated.env["HOME"]).not.toBe(sourceHome);
+      expect(isolated.env["XDG_CONFIG_HOME"]).toContain(isolated.root);
+      expect(
+        await readFile(join(isolated.env["HOME"]!, ".gemini", "oauth_creds.json"), "utf8"),
+      ).toBe("oauth");
+      expect(
+        JSON.parse(await readFile(join(isolated.env["HOME"]!, ".gemini", "settings.json"), "utf8")),
+      ).toEqual({
+        security: { auth: { selectedType: "oauth-personal" } },
+      });
+      expect(
+        await readFile(join(isolated.env["HOME"]!, ".gemini", "settings.json"), "utf8"),
+      ).not.toContain("blocked");
+      await expect(
+        readFile(join(isolated.env["HOME"]!, ".gemini", "hooks.json"), "utf8"),
+      ).rejects.toThrow();
+    } finally {
+      await rm(isolated.root, { recursive: true, force: true });
+      await rm(sourceHome, { recursive: true, force: true });
+      restoreEnv("HOME", originalHome);
+    }
+  });
+
+  it("extracts only the Gemini auth selection from settings", () => {
+    expect(
+      geminiSelectedAuthType({
+        security: { auth: { selectedType: "oauth-personal", token: "blocked" } },
+        hooks: { onStart: "blocked" },
+      }),
+    ).toBe("oauth-personal");
+    expect(
+      geminiSelectedAuthType({
+        security: { auth: { selectedType: "" } },
+      }),
+    ).toBeNull();
+  });
+
+  it("does not write Gemini settings when the source has no selected auth type", async () => {
+    const sourceHome = await mkdtempForTest("clawpatch-gemini-no-auth-home-");
+    const originalHome = process.env["HOME"];
+    await mkdir(join(sourceHome, ".gemini"), { recursive: true });
+    await writeFile(
+      join(sourceHome, ".gemini", "settings.json"),
+      JSON.stringify({ hooks: { onStart: "blocked" } }),
+      "utf8",
+    );
+    process.env["HOME"] = sourceHome;
+
+    const isolated = await geminiIsolatedEnv();
+
+    try {
+      await expect(
+        readFile(join(isolated.env["HOME"]!, ".gemini", "settings.json"), "utf8"),
+      ).rejects.toThrow();
+    } finally {
+      await rm(isolated.root, { recursive: true, force: true });
+      await rm(sourceHome, { recursive: true, force: true });
+      restoreEnv("HOME", originalHome);
+    }
+  });
+});
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
+async function mkdtempForTest(prefix: string): Promise<string> {
+  return mkdtemp(join(tmpdir(), prefix));
+}
 
 function schemaKeys(value: unknown): string[] {
   if (Array.isArray(value)) {
@@ -871,6 +1121,7 @@ describe("parseOrThrow", () => {
 describe("providerByName", () => {
   it("returns provider instances for optional CLI-backed providers", () => {
     expect(providerByName("acpx").name).toBe("acpx");
+    expect(providerByName("gemini").name).toBe("gemini");
     expect(providerByName("grok").name).toBe("grok");
     expect(providerByName("opencode").name).toBe("opencode");
     expect(providerByName("pi").name).toBe("pi");
