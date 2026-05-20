@@ -158,7 +158,9 @@ function parseServerRoutes(
   const routes: ServerRoute[] = [];
   for (const framework of projectFrameworks) {
     const targets = routeTargetNames(source, framework);
-    if (targets.size === 0) {
+    const scopedFastifyRoutes =
+      framework === "fastify" ? fastifyScopedCallbackRoutes(source, filePath) : [];
+    if (targets.size === 0 && scopedFastifyRoutes.length === 0) {
       continue;
     }
     routes.push(...directMethodRoutes(source, filePath, framework, targets));
@@ -166,6 +168,7 @@ function parseServerRoutes(
       routes.push(...expressRouteChains(source, filePath, targets));
     } else if (framework === "fastify") {
       routes.push(...fastifyRouteObjects(source, filePath, targets));
+      routes.push(...scopedFastifyRoutes);
     }
   }
   return uniqueRoutes(routes);
@@ -320,7 +323,7 @@ function routeTargetNames(source: string, framework: ServerFramework): Set<strin
       ...declaredTargetNames(source, [
         new RegExp(`${declarationPrefix}(?:Fastify|fastify)${genericArguments}\\s*\\(`, "gu"),
       ]),
-      ...functionParameterTargets(source, "fastify"),
+      ...fastifyParameterTargets(source),
     ]);
   }
   return declaredTargetNames(source, [
@@ -487,33 +490,440 @@ function declaredTargetNames(source: string, patterns: RegExp[]): Set<string> {
   return names;
 }
 
-function functionParameterTargets(source: string, preferredName: string): Set<string> {
+function fastifyParameterTargets(source: string): Set<string> {
   const names = new Set<string>();
-  for (const pattern of [
-    /(?:async\s+)?function(?:\s+[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(([^)]*)\)/gu,
-    /(?:async\s*)?\(([^)]*)\)\s*=>/gu,
-  ]) {
-    pattern.lastIndex = 0;
-    for (const match of source.matchAll(pattern)) {
-      const matchIndex = match.index ?? 0;
-      if (isInsideCommentOrString(source, matchIndex)) {
-        continue;
-      }
-      for (const parameter of parameterNames(match[1] ?? "")) {
-        if (parameter === preferredName) {
-          names.add(parameter);
-        }
+  for (const callback of functionParameterCallbacks(source)) {
+    for (const parameter of callback.parameters) {
+      if (parameter.name === "fastify") {
+        names.add(parameter.name);
       }
     }
   }
   return names;
 }
 
-function parameterNames(parameters: string): string[] {
+function fastifyPluginCallTargetNames(source: string): Set<string> {
+  const names = new Set<string>();
+  for (const clause of fastifyPluginImportClauses(source)) {
+    addFastifyPluginImportNames(names, clause);
+  }
+  for (const pattern of [
+    /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)(?:\s*:\s*[^=;]+)?\s*=\s*require\s*\(\s*["']fastify-plugin["']\s*\)(?:\s*\.\s*default)?/gu,
+    /\bimport\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*require\s*\(\s*["']fastify-plugin["']\s*\)/gu,
+  ]) {
+    pattern.lastIndex = 0;
+    for (const match of source.matchAll(pattern)) {
+      if (isInsideCommentOrString(source, match.index ?? 0)) {
+        continue;
+      }
+      const name = match[1];
+      if (name !== undefined) {
+        names.add(name);
+      }
+    }
+  }
+  return names;
+}
+
+function fastifyPluginImportClauses(source: string): string[] {
+  const clauses: string[] = [];
+  const pattern = /\bimport\b/gu;
+  pattern.lastIndex = 0;
+  for (const match of source.matchAll(pattern)) {
+    const importIndex = match.index ?? 0;
+    if (
+      isInsideCommentOrString(source, importIndex) ||
+      !isImportDeclarationStart(source, importIndex)
+    ) {
+      continue;
+    }
+    const clause = readStaticImportClause(source, importIndex, "fastify-plugin");
+    if (clause !== null) {
+      clauses.push(clause);
+    }
+  }
+  return clauses;
+}
+
+function addFastifyPluginImportNames(names: Set<string>, clause: string): void {
+  const namespace = /^\*\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*)/u.exec(clause.trim())?.[1];
+  if (namespace !== undefined) {
+    names.add(namespace);
+    return;
+  }
+
+  const defaultName = /^([A-Za-z_$][A-Za-z0-9_$]*)\b/u.exec(clause.trim())?.[1];
+  if (defaultName !== undefined && defaultName !== "type") {
+    names.add(defaultName);
+  }
+
+  const named = /\{([^}]*)\}/u.exec(clause)?.[1];
+  if (named === undefined) {
+    return;
+  }
+  for (const part of named.split(",")) {
+    const binding = part.trim();
+    if (binding.startsWith("type ")) {
+      continue;
+    }
+    const match = /^(?:default|fastifyPlugin)(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?$/u.exec(
+      binding,
+    );
+    if (match !== null) {
+      names.add(match[1] ?? binding);
+    }
+  }
+}
+
+function fastifyInstanceTypeNames(source: string): Set<string> {
+  const names = new Set<string>();
+  const pattern = /\bimport\b/gu;
+  pattern.lastIndex = 0;
+  for (const match of source.matchAll(pattern)) {
+    const importIndex = match.index ?? 0;
+    if (
+      isInsideCommentOrString(source, importIndex) ||
+      !isImportDeclarationStart(source, importIndex)
+    ) {
+      continue;
+    }
+    const clause = readFastifyStaticImportClause(source, importIndex);
+    if (clause !== null) {
+      addFastifyInstanceTypeNames(names, clause);
+    }
+  }
+  return names;
+}
+
+function addFastifyInstanceTypeNames(names: Set<string>, clause: string): void {
+  const named = /\{([^}]*)\}/u.exec(clause)?.[1];
+  if (named === undefined) {
+    return;
+  }
+  for (const part of named.split(",")) {
+    const binding = part.trim().replace(/^type\s+/u, "");
+    const match = /^FastifyInstance(?:\s+as\s+([A-Za-z_$][A-Za-z0-9_$]*))?$/u.exec(binding);
+    if (match !== null) {
+      names.add(match[1] ?? "FastifyInstance");
+    }
+  }
+}
+
+function readFastifyStaticImportClause(source: string, importIndex: number): string | null {
+  return readStaticImportClause(source, importIndex, "fastify");
+}
+
+function readStaticImportClause(
+  source: string,
+  importIndex: number,
+  moduleName: string,
+): string | null {
+  let cursor = importIndex + "import".length;
+  cursor = skipWhitespaceAndComments(source, cursor);
+  if (
+    source[cursor] === "(" ||
+    source[cursor] === "." ||
+    source[cursor] === "'" ||
+    source[cursor] === '"'
+  ) {
+    return null;
+  }
+  if (!isImportClauseStart(source[cursor])) {
+    return null;
+  }
+  const clauseStart = cursor;
+  const limit = Math.min(source.length, importIndex + 500);
+  while (cursor < limit) {
+    const char = source[cursor];
+    const next = source[cursor + 1];
+    if (char === undefined) {
+      break;
+    }
+    if (char === ";") {
+      return null;
+    }
+    if (char === "/" && next === "/") {
+      cursor = skipLineComment(source, cursor + 2);
+      continue;
+    }
+    if (char === "/" && next === "*") {
+      cursor = skipBlockComment(source, cursor + 2);
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      cursor = skipQuoted(source, cursor, char);
+      continue;
+    }
+    if (isKeywordAt(source, cursor, "from")) {
+      const specifier = readImportSpecifier(source, cursor + "from".length);
+      if (specifier === null) {
+        cursor += "from".length;
+        continue;
+      }
+      return specifier.value === moduleName ? source.slice(clauseStart, cursor) : null;
+    }
+    cursor += 1;
+  }
+  return null;
+}
+
+function fastifyScopedCallbackRoutes(source: string, filePath: string): ServerRoute[] {
+  const pluginCallTargets = fastifyPluginCallTargetNames(source);
+  const instanceTypeNames = fastifyInstanceTypeNames(source);
+  const routes: ServerRoute[] = [];
+  for (const callback of [
+    ...functionParameterCallbacks(source),
+    ...inlineFastifyInstanceCallbacks(source),
+  ]) {
+    const targets = new Set<string>();
+    for (const [index, parameter] of callback.parameters.entries()) {
+      if (
+        isFastifyInstanceParameter(parameter.source, instanceTypeNames) ||
+        (pluginCallTargets.size > 0 &&
+          index === 0 &&
+          isInsideFastifyPluginCall(source, callback.index, pluginCallTargets))
+      ) {
+        targets.add(parameter.name);
+      }
+    }
+    if (targets.size === 0) {
+      continue;
+    }
+    const body = functionBodySource(source, callback.bodySearchStart);
+    if (body === null) {
+      continue;
+    }
+    routes.push(...directMethodRoutes(body, filePath, "fastify", targets));
+    routes.push(...fastifyRouteObjects(body, filePath, targets));
+  }
+  return routes;
+}
+
+function inlineFastifyInstanceCallbacks(source: string): Array<{
+  index: number;
+  bodySearchStart: number;
+  parameters: Array<{ name: string; source: string }>;
+}> {
+  const callbacks: Array<{
+    index: number;
+    bodySearchStart: number;
+    parameters: Array<{ name: string; source: string }>;
+  }> = [];
+  const functionPattern =
+    /(?:async\s+)?function(?:\s+[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*import\s*\(\s*["']fastify["']\s*\)\s*\.\s*FastifyInstance\b[^)]*\)/gu;
+  functionPattern.lastIndex = 0;
+  for (const match of source.matchAll(functionPattern)) {
+    const matchIndex = match.index ?? 0;
+    addInlineFastifyInstanceCallback(callbacks, source, matchIndex, match[0].length, match[1]);
+  }
+  const arrowPattern =
+    /(^|[^A-Za-z0-9_$])((?:async\s*)?\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*import\s*\(\s*["']fastify["']\s*\)\s*\.\s*FastifyInstance\b[^)]*\)\s*(?::\s*[^=]+?)?=>)/gu;
+  arrowPattern.lastIndex = 0;
+  for (const match of source.matchAll(arrowPattern)) {
+    const prefixLength = match[1]?.length ?? 0;
+    const callbackIndex = (match.index ?? 0) + prefixLength;
+    addInlineFastifyInstanceCallback(
+      callbacks,
+      source,
+      callbackIndex,
+      match[2]?.length ?? 0,
+      match[3],
+    );
+  }
+  return callbacks;
+}
+
+function addInlineFastifyInstanceCallback(
+  callbacks: Array<{
+    index: number;
+    bodySearchStart: number;
+    parameters: Array<{ name: string; source: string }>;
+  }>,
+  source: string,
+  callbackIndex: number,
+  matchLength: number,
+  name: string | undefined,
+): void {
+  if (name === undefined || isInsideCommentOrString(source, callbackIndex)) {
+    return;
+  }
+  callbacks.push({
+    index: callbackIndex,
+    bodySearchStart: callbackIndex + matchLength,
+    parameters: [
+      {
+        name,
+        source: `${name}: import("fastify").FastifyInstance`,
+      },
+    ],
+  });
+}
+
+function functionParameterCallbacks(source: string): Array<{
+  index: number;
+  bodySearchStart: number;
+  parameters: Array<{ name: string; source: string }>;
+}> {
+  const callbacks: Array<{
+    index: number;
+    bodySearchStart: number;
+    parameters: Array<{ name: string; source: string }>;
+  }> = [];
+  const functionPattern = /(?:async\s+)?function(?:\s+[A-Za-z_$][A-Za-z0-9_$]*)?\s*\(([^)]*)\)/gu;
+  functionPattern.lastIndex = 0;
+  for (const match of source.matchAll(functionPattern)) {
+    const matchIndex = match.index ?? 0;
+    addFunctionParameterCallback(callbacks, source, matchIndex, match[0].length, match[1]);
+  }
+  const arrowPattern = /(^|[^A-Za-z0-9_$])((?:async\s*)?\(([^()]*)\)\s*(?::\s*[^=]+?)?=>)/gu;
+  arrowPattern.lastIndex = 0;
+  for (const match of source.matchAll(arrowPattern)) {
+    const prefixLength = match[1]?.length ?? 0;
+    const callbackIndex = (match.index ?? 0) + prefixLength;
+    addFunctionParameterCallback(callbacks, source, callbackIndex, match[2]?.length ?? 0, match[3]);
+  }
+  const bareArrowPattern = /(^|[^A-Za-z0-9_$])((?:async\s+)?([A-Za-z_$][A-Za-z0-9_$]*)\s*=>)/gu;
+  bareArrowPattern.lastIndex = 0;
+  for (const match of source.matchAll(bareArrowPattern)) {
+    const prefixLength = match[1]?.length ?? 0;
+    const callbackIndex = (match.index ?? 0) + prefixLength;
+    addFunctionParameterCallback(callbacks, source, callbackIndex, match[2]?.length ?? 0, match[3]);
+  }
+  return callbacks;
+}
+
+function addFunctionParameterCallback(
+  callbacks: Array<{
+    index: number;
+    bodySearchStart: number;
+    parameters: Array<{ name: string; source: string }>;
+  }>,
+  source: string,
+  callbackIndex: number,
+  matchLength: number,
+  parameters: string | undefined,
+): void {
+  if (isInsideCommentOrString(source, callbackIndex)) {
+    return;
+  }
+  callbacks.push({
+    index: callbackIndex,
+    bodySearchStart: callbackIndex + matchLength,
+    parameters: functionParameters(parameters ?? ""),
+  });
+}
+
+function functionBodySource(source: string, bodySearchStart: number): string | null {
+  let bodyStart = skipWhitespaceAndComments(source, bodySearchStart);
+  if (source[bodyStart] === ":") {
+    bodyStart = skipWhitespaceAndComments(source, skipFunctionReturnType(source, bodyStart + 1));
+  }
+  if (source[bodyStart] !== "{") {
+    return null;
+  }
+  const bodyEnd = endOfObject(source, bodyStart + 1);
+  return bodyEnd === null ? null : source.slice(bodyStart + 1, bodyEnd - 1);
+}
+
+function skipFunctionReturnType(source: string, start: number): number {
+  let quote: string | null = null;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      return index;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+    } else if (char === "(") {
+      parenDepth += 1;
+    } else if (char === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (char === "[") {
+      bracketDepth += 1;
+    } else if (char === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+    } else if (char === "{") {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+        const previous = previousSignificantChar(source, index - 1, start);
+        if (
+          previous !== ":" &&
+          previous !== "|" &&
+          previous !== "&" &&
+          previous !== "," &&
+          previous !== "<"
+        ) {
+          return index;
+        }
+      }
+      braceDepth += 1;
+    } else if (char === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+    }
+  }
+  return source.length;
+}
+
+function previousSignificantChar(source: string, start: number, lowerBound: number): string | null {
+  for (let index = start; index >= lowerBound; index -= 1) {
+    const char = source[index];
+    if (char !== undefined && !/\s/u.test(char)) {
+      return char;
+    }
+  }
+  return ":";
+}
+
+function functionParameters(parameters: string): Array<{ name: string; source: string }> {
   return parameters
     .split(",")
-    .map((parameter) => /^\.{0,3}\s*([A-Za-z_$][A-Za-z0-9_$]*)/u.exec(parameter.trim())?.[1])
-    .filter((parameter): parameter is string => parameter !== undefined);
+    .map((parameter) => {
+      const source = parameter.trim();
+      const name = /^\.{0,3}\s*([A-Za-z_$][A-Za-z0-9_$]*)/u.exec(source)?.[1];
+      return name === undefined ? null : { name, source };
+    })
+    .filter((parameter): parameter is { name: string; source: string } => parameter !== null);
+}
+
+function isFastifyInstanceParameter(
+  parameter: string,
+  instanceTypeNames: ReadonlySet<string>,
+): boolean {
+  if (/:\s*import\s*\(\s*["']fastify["']\s*\)\s*\.\s*FastifyInstance\b/u.test(parameter)) {
+    return true;
+  }
+  for (const name of instanceTypeNames) {
+    if (new RegExp(String.raw`:\s*${escapeRegExp(name)}\b`, "u").test(parameter)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isInsideFastifyPluginCall(
+  source: string,
+  functionIndex: number,
+  pluginCallTargets: ReadonlySet<string>,
+): boolean {
+  const prefix = source
+    .slice(Math.max(0, functionIndex - 500), functionIndex)
+    .replace(/\/\*[\s\S]*?\*\//gu, " ")
+    .replace(/\/\/[^\n\r]*/gu, " ");
+  const targetPattern = [...pluginCallTargets].map(escapeRegExp).join("|");
+  return new RegExp(`\\b(?:${targetPattern})${genericArguments}\\s*\\(\\s*$`, "u").test(prefix);
 }
 
 function isRouteTarget(targets: ReadonlySet<string>, target: string): boolean {
@@ -747,7 +1157,13 @@ function endOfObject(source: string, start: number): number | null {
       }
       continue;
     }
-    if (char === "'" || char === '"' || char === "`") {
+    if (char === "/" && source[index + 1] === "/") {
+      const newline = source.indexOf("\n", index + 2);
+      index = newline < 0 ? source.length : newline;
+    } else if (char === "/" && source[index + 1] === "*") {
+      const close = source.indexOf("*/", index + 2);
+      index = close < 0 ? source.length : close + 1;
+    } else if (char === "'" || char === '"' || char === "`") {
       quote = char;
     } else if (char === "{") {
       depth += 1;
