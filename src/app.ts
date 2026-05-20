@@ -123,12 +123,14 @@ export async function mapCommand(
   const config = applyProviderFlags(loaded.config, flags);
   const provider = source === "heuristic" ? null : providerByName(config.provider.name);
   const existing = await readFeatures(loaded.paths);
+  const filters = { include: config.include, exclude: config.exclude };
   emitProgress(context, "map", "start", {
     source,
     existing: existing.length,
     dryRun: flags["dryRun"] === true,
   });
   const heuristic = await mapFeatures(loaded.root, loaded.project, existing, {
+    filters,
     onProgress: (event) => {
       emitProgress(context, "map", event.event, {
         mapper: event.mapper,
@@ -149,7 +151,7 @@ export async function mapCommand(
     source,
     provider,
     providerOptions: providerOptions(config),
-    inventory: { include: config.include, exclude: config.exclude },
+    inventory: filters,
     onProgress: (event, fields) => {
       emitProgress(context, "map", event, fields);
     },

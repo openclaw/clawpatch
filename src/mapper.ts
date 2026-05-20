@@ -17,7 +17,7 @@ import { reactSeeds } from "./mappers/react.js";
 import { discoverNodeProjects } from "./mappers/projects.js";
 import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
-import { nearbyTests } from "./mappers/shared.js";
+import { nearbyTests, PathFilters, pathMatchesFilters } from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
@@ -39,6 +39,7 @@ export type MapProgressEvent = {
 
 export type MapOptions = {
   onProgress?: (event: MapProgressEvent) => void;
+  filters?: PathFilters;
 };
 
 const featureMappers: FeatureMapper[] = [
@@ -68,7 +69,7 @@ export async function mapFeatures(
   options: MapOptions = {},
 ): Promise<MapResult> {
   const seeds = await collectSeeds(root, options);
-  return mapFeatureSeeds(root, project, existing, seeds);
+  return mapFeatureSeeds(root, project, existing, seeds, options);
 }
 
 export async function mapFeatureSeeds(
@@ -76,13 +77,18 @@ export async function mapFeatureSeeds(
   project: ProjectRecord,
   existing: FeatureRecord[],
   seeds: FeatureSeed[],
+  options: MapOptions = {},
 ): Promise<MapResult> {
   const existingById = new Map(existing.map((feature) => [feature.featureId, feature]));
   const features: FeatureRecord[] = [];
   let created = 0;
   let changed = 0;
   const now = nowIso();
-  for (const seed of seeds) {
+  for (const rawSeed of seeds) {
+    const seed = filterSeed(rawSeed, options.filters);
+    if (seed === null) {
+      continue;
+    }
     const identity = featureIdentity(seed, existingById);
     const featureId = identity.featureId;
     const previous = existingById.get(featureId);
@@ -100,9 +106,11 @@ export async function mapFeatureSeeds(
               (name): name is string => typeof name === "string",
             ),
           );
-    const tests = uniqueTests([...(seed.tests ?? []), ...discoveredTests]);
+    const tests = uniqueTests(
+      filterTests([...(seed.tests ?? []), ...discoveredTests], options.filters),
+    );
     const contextFiles = uniqueFileRefs([
-      ...(seed.contextFiles ?? []),
+      ...filterFileRefs(seed.contextFiles ?? [], options.filters),
       ...tests.map((test) => ({ path: test.path, reason: "nearby test" })),
     ]);
     const feature: FeatureRecord = {
@@ -157,6 +165,53 @@ export async function mapFeatureSeeds(
       (feature) => !features.some((mapped) => mapped.featureId === feature.featureId),
     ).length,
   };
+}
+
+function filterSeed(seed: FeatureSeed, filters: PathFilters | undefined): FeatureSeed | null {
+  if (filters === undefined) {
+    return seed;
+  }
+  const ownedFiles =
+    seed.ownedFiles === undefined ? undefined : filterFileRefs(seed.ownedFiles, filters);
+  if (seed.ownedFiles !== undefined && ownedFiles?.length === 0) {
+    return null;
+  }
+  const entryPath = pathMatchesFilters(seed.entryPath, filters)
+    ? seed.entryPath
+    : (ownedFiles?.[0]?.path ?? null);
+  if (entryPath === null) {
+    return null;
+  }
+  const filteredSeed = {
+    ...seed,
+    entryPath,
+    contextFiles: filterFileRefs(seed.contextFiles ?? [], filters),
+    tests: filterTests(seed.tests ?? [], filters),
+  };
+  if (ownedFiles === undefined) {
+    return filteredSeed;
+  }
+  return { ...filteredSeed, ownedFiles };
+}
+
+function filterFileRefs(
+  refs: Array<{ path: string; reason: string }>,
+  filters: PathFilters | undefined,
+): Array<{ path: string; reason: string }> {
+  if (filters === undefined) {
+    return refs;
+  }
+  return refs.filter((ref) => pathMatchesFilters(ref.path, filters));
+}
+
+function filterTests(
+  tests: Array<{ path: string; command: string | null }>,
+  filters: PathFilters | undefined,
+): Array<{ path: string; command: string | null }> {
+  if (filters === undefined) {
+    return tests;
+  }
+  return tests.filter((test) => pathMatchesFilters(test.path, filters));
 }
 
 function featureIdentity(

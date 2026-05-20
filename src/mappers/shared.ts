@@ -9,6 +9,75 @@ export type TestRef = {
   command: string | null;
 };
 
+export type PathFilters = {
+  include: string[];
+  exclude: string[];
+};
+
+export function applyPathFilters(paths: string[], filters: PathFilters | undefined): string[] {
+  if (filters === undefined) {
+    return paths;
+  }
+  return paths.filter((path) => pathMatchesFilters(path, filters));
+}
+
+export function pathMatchesFilters(path: string, filters: PathFilters): boolean {
+  return (
+    filters.include.some((pattern) => pathPatternMatches(pattern, path)) &&
+    !filters.exclude.some((pattern) => pathPatternMatches(pattern, path))
+  );
+}
+
+function pathPatternMatches(pattern: string, path: string): boolean {
+  const normalized = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
+  if (normalized === "**" || normalized === "**/*") {
+    return true;
+  }
+  if (normalized.length === 0) {
+    return false;
+  }
+  if (!/[?*]/u.test(normalized)) {
+    return path === normalized || path.startsWith(`${normalized}/`);
+  }
+  if (normalized.endsWith("/**")) {
+    const prefix = normalized.slice(0, -3);
+    if (/[?*]/u.test(prefix)) {
+      return new RegExp(`^${globPatternRegExp(prefix)}(?:/.*)?$`, "u").test(path);
+    }
+    return prefix.length === 0 || path === prefix || path.startsWith(`${prefix}/`);
+  }
+  return new RegExp(`^${globPatternRegExp(normalized)}$`, "u").test(path);
+}
+
+function globPatternRegExp(pattern: string): string {
+  let source = "";
+  for (let index = 0; index < pattern.length; index += 1) {
+    const char = pattern[index];
+    if (char === "*") {
+      if (pattern[index + 1] === "*") {
+        if (pattern[index + 2] === "/") {
+          source += "(?:.*/)?";
+          index += 2;
+        } else {
+          source += ".*";
+          index += 1;
+        }
+      } else {
+        source += "[^/]*";
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+    } else {
+      source += regexpEscape(char ?? "");
+    }
+  }
+  return source;
+}
+
+function regexpEscape(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
+}
+
 export async function nearbyTests(
   root: string,
   entryPath: string,

@@ -10,6 +10,37 @@ import { fixtureRoot, writeFixture } from "./test-helpers.js";
 const symlinkIt = process.platform === "win32" ? it.skip : it;
 
 describe("mapFeatures", () => {
+  it("applies configured path excludes to heuristic feature mapping", async () => {
+    const root = await fixtureRoot("clawpatch-map-exclude-");
+    await writeFixture(root, "requirements.txt", "pytest\n");
+    await writeFixture(root, "src/app/api_service.py", "def call_api(): pass\n");
+    for (let index = 0; index < 13; index += 1) {
+      await writeFixture(
+        root,
+        `src/client/generated/models/model_${index}.py`,
+        `class Model${index}: pass\n`,
+      );
+    }
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, [], {
+      filters: {
+        include: ["**/*"],
+        exclude: ["src/client/generated/**"],
+      },
+    });
+    const featurePaths = result.features.flatMap((feature) => [
+      ...feature.entrypoints.map((entrypoint) => entrypoint.path),
+      ...feature.ownedFiles.map((file) => file.path),
+      ...feature.contextFiles.map((file) => file.path),
+      ...feature.tests.map((test) => test.path),
+    ]);
+
+    expect(featurePaths).toContain("src/app/api_service.py");
+    expect(result.features.some((feature) => feature.title.includes("generated"))).toBe(false);
+    expect(featurePaths.some((path) => path.startsWith("src/client/generated/"))).toBe(false);
+  });
+
   it("maps package bins, scripts, configs, and Next routes", async () => {
     const root = await fixtureRoot("clawpatch-map-");
     await writeFixture(

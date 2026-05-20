@@ -7,7 +7,14 @@ import { pathExists } from "./fs.js";
 import { runCommandArgs } from "./exec.js";
 import { mapFeatureSeeds, MapResult } from "./mapper.js";
 import { FeatureSeed, SeedFileRef, SeedTestRef } from "./mappers/types.js";
-import { isSafeFile, normalize, shouldSkip, walk } from "./mappers/shared.js";
+import {
+  applyPathFilters,
+  isSafeFile,
+  normalize,
+  PathFilters,
+  shouldSkip,
+  walk,
+} from "./mappers/shared.js";
 
 type AgentMapMode = "heuristic" | "auto" | "agent";
 
@@ -26,13 +33,8 @@ type AgentMapOptions = {
   source: AgentMapMode;
   provider: Provider | null;
   providerOptions: ProviderOptions;
-  inventory?: InventoryFilters;
+  inventory?: PathFilters;
   onProgress?: (event: string, fields: Record<string, string | number | boolean>) => void;
-};
-
-type InventoryFilters = {
-  include: string[];
-  exclude: string[];
 };
 
 type RepoInventorySummary = {
@@ -148,6 +150,7 @@ export async function mapWithSource(
     options.provider,
     options.providerOptions,
     inventory,
+    options.inventory,
   );
   options.onProgress?.("agent-done", {
     features: agent.features.length,
@@ -199,6 +202,7 @@ async function agentMap(
   provider: Provider,
   providerOptions: ProviderOptions,
   inventory: RepoInventory,
+  filters: PathFilters | undefined,
 ): Promise<MapResult> {
   const prompt = buildAgentMapPrompt(project, {
     manifests: inventory.manifests,
@@ -212,12 +216,10 @@ async function agentMap(
   const seeds = await Promise.all(
     output.features.map((feature) => toSeed(root, feature, inventory.allFiles)),
   );
-  return mapFeatureSeeds(
-    root,
-    project,
-    existing,
-    uniqueSeeds(seeds.filter((seed): seed is FeatureSeed => seed !== null)),
-  );
+  const mappedSeeds = uniqueSeeds(seeds.filter((seed): seed is FeatureSeed => seed !== null));
+  return filters === undefined
+    ? mapFeatureSeeds(root, project, existing, mappedSeeds)
+    : mapFeatureSeeds(root, project, existing, mappedSeeds, { filters });
 }
 
 async function toSeed(
@@ -385,10 +387,10 @@ async function repoInventory(
   root: string,
   project: ProjectRecord,
   features: FeatureRecord[],
-  filters: InventoryFilters | undefined,
+  filters: PathFilters | undefined,
 ): Promise<RepoInventory> {
   const skipPath = await inventorySkipPath(root, project, features);
-  const files = applyInventoryFilters(
+  const files = applyPathFilters(
     ((await gitInventoryFiles(root)) ?? (await walk(root, [""], skipPath))).filter(
       (path) => !skipPath(path),
     ),
@@ -443,71 +445,10 @@ async function gitInventoryFiles(root: string): Promise<string[] | null> {
   return existing.filter((path): path is string => path !== null);
 }
 
-function applyInventoryFilters(files: string[], filters: InventoryFilters | undefined): string[] {
-  if (filters === undefined) {
-    return files;
-  }
-  return files.filter(
-    (file) =>
-      filters.include.some((pattern) => inventoryPatternMatches(pattern, file)) &&
-      !filters.exclude.some((pattern) => inventoryPatternMatches(pattern, file)),
-  );
-}
-
 function isInventoryPath(path: string): boolean {
   return (
     path.length > 0 && !isAbsolute(path) && !path.includes("\0") && !path.split("/").includes("..")
   );
-}
-
-function inventoryPatternMatches(pattern: string, path: string): boolean {
-  const normalized = pattern.replace(/\\/gu, "/").replace(/^\.\//u, "");
-  if (normalized === "**" || normalized === "**/*") {
-    return true;
-  }
-  if (normalized.length === 0) {
-    return false;
-  }
-  if (!/[?*]/u.test(normalized)) {
-    return path === normalized || path.startsWith(`${normalized}/`);
-  }
-  if (normalized.endsWith("/**")) {
-    const prefix = normalized.slice(0, -3);
-    if (/[?*]/u.test(prefix)) {
-      return new RegExp(`^${globPatternRegExp(prefix)}(?:/.*)?$`, "u").test(path);
-    }
-    return prefix.length === 0 || path === prefix || path.startsWith(`${prefix}/`);
-  }
-  return new RegExp(`^${globPatternRegExp(normalized)}$`, "u").test(path);
-}
-
-function globPatternRegExp(pattern: string): string {
-  let source = "";
-  for (let index = 0; index < pattern.length; index += 1) {
-    const char = pattern[index];
-    if (char === "*") {
-      if (pattern[index + 1] === "*") {
-        if (pattern[index + 2] === "/") {
-          source += "(?:.*/)?";
-          index += 2;
-        } else {
-          source += ".*";
-          index += 1;
-        }
-      } else {
-        source += "[^/]*";
-      }
-    } else if (char === "?") {
-      source += "[^/]";
-    } else {
-      source += regexpEscape(char ?? "");
-    }
-  }
-  return source;
-}
-
-function regexpEscape(value: string): string {
-  return value.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&");
 }
 
 async function inventorySkipPath(
