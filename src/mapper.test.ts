@@ -9820,6 +9820,10 @@ describe("mapFeatures", () => {
     const core = result.features.find((feature) => feature.title === "Maven module core-service");
 
     expect(project.detected.packageManagers).toContain("maven");
+    expect(project.detected.commands).toMatchObject({
+      typecheck: "mvn -DskipTests compile",
+      test: "mvn test",
+    });
     expect(titles).toContain("Maven module root-parent");
     expect(titles).toContain("Maven module services-parent");
     expect(titles).toContain("Maven module core-service");
