@@ -792,12 +792,77 @@ function addFunctionParameterCallback(
 }
 
 function functionBodySource(source: string, bodySearchStart: number): string | null {
-  const bodyStart = skipWhitespace(source, bodySearchStart);
+  let bodyStart = skipWhitespaceAndComments(source, bodySearchStart);
+  if (source[bodyStart] === ":") {
+    bodyStart = skipWhitespaceAndComments(source, skipFunctionReturnType(source, bodyStart + 1));
+  }
   if (source[bodyStart] !== "{") {
     return null;
   }
   const bodyEnd = endOfObject(source, bodyStart + 1);
   return bodyEnd === null ? null : source.slice(bodyStart + 1, bodyEnd - 1);
+}
+
+function skipFunctionReturnType(source: string, start: number): number {
+  let quote: string | null = null;
+  let escaped = false;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let braceDepth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index];
+    if (char === undefined) {
+      return index;
+    }
+    if (quote !== null) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (char === "'" || char === '"' || char === "`") {
+      quote = char;
+    } else if (char === "(") {
+      parenDepth += 1;
+    } else if (char === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+    } else if (char === "[") {
+      bracketDepth += 1;
+    } else if (char === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+    } else if (char === "{") {
+      if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0) {
+        const previous = previousSignificantChar(source, index - 1, start);
+        if (
+          previous !== ":" &&
+          previous !== "|" &&
+          previous !== "&" &&
+          previous !== "," &&
+          previous !== "<"
+        ) {
+          return index;
+        }
+      }
+      braceDepth += 1;
+    } else if (char === "}") {
+      braceDepth = Math.max(0, braceDepth - 1);
+    }
+  }
+  return source.length;
+}
+
+function previousSignificantChar(source: string, start: number, lowerBound: number): string | null {
+  for (let index = start; index >= lowerBound; index -= 1) {
+    const char = source[index];
+    if (char !== undefined && !/\s/u.test(char)) {
+      return char;
+    }
+  }
+  return ":";
 }
 
 function functionParameters(parameters: string): Array<{ name: string; source: string }> {
