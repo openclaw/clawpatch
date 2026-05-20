@@ -15,6 +15,7 @@ Provider names today:
 
 - `codex`: shells out to `codex exec` (default)
 - `acpx`: routes through any ACP-compatible coding agent via `acpx`
+- `claude`: shells out to Claude Code in print mode (`claude -p`)
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
@@ -104,6 +105,67 @@ first colon:
 Migration note: `--provider codex --model gpt-5-codex` is not equivalent to
 `--provider acpx --model gpt-5-codex`; the latter selects an ACP agent named
 `gpt-5-codex`. Use `--provider acpx --model codex:gpt-5-codex`.
+
+## Claude
+
+The `claude` provider shells out to the local
+[Claude Code CLI](https://code.claude.com/docs/en/cli-usage) in non-interactive
+print mode.
+
+Install Claude Code and authenticate with an Anthropic API key:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+claude --version
+```
+
+Provider selection:
+
+```bash
+clawpatch review --provider claude
+CLAWPATCH_PROVIDER=claude clawpatch review
+clawpatch fix --finding <id> --provider claude
+clawpatch doctor --provider claude
+```
+
+For low-cost smoke checks, pass a smaller model explicitly:
+
+```bash
+clawpatch review --provider claude --model claude-haiku-4-5-20251001 --limit 1
+```
+
+How the Claude provider works:
+
+- Doctor: `clawpatch doctor --provider claude` only checks that the Claude Code
+  binary is available, reads `claude --version`, and blocks known vulnerable
+  versions. It does not validate auth or make a network call; auth failures are
+  reported on the first provider-backed command.
+- Auth/isolation: provider runs use `--bare` with a default-deny environment.
+  Clawpatch forwards only minimal execution variables and `ANTHROPIC_API_KEY`;
+  it does not pass host `HOME`, OAuth/keychain state, or whole Claude
+  config/cache directories.
+- Structured output: provider runs use `--output-format json --json-schema`
+  and parse the returned `structured_output` field.
+- Read-only operations (map, review, revalidate): use
+  `--tools "Read,Grep,Glob" --permission-mode dontAsk`.
+- Write operation (fix): uses Claude's default tool set with
+  `--permission-mode acceptEdits`. Clawpatch still relies on its existing clean
+  worktree preflight before `fix`.
+- Ambient config isolation: runs add `--strict-mcp-config` with an empty MCP
+  configuration, `--disable-slash-commands`, and `--no-chrome`.
+- Model selection: `--model <model>` is passed through to Claude.
+- Reasoning effort: `low`, `medium`, `high`, and `xhigh` are passed as
+  `--effort`. Clawpatch `minimal` maps to Claude `low`; Clawpatch `none` is
+  treated as no override because Claude does not accept `--effort none`.
+- `skipGitRepoCheck`: Claude has no equivalent flag, so this option is a no-op
+  for the Claude provider.
+- Timeout: 180 seconds by default, override with `CLAWPATCH_CLAUDE_TIMEOUT_MS`
+  or `CLAWPATCH_PROVIDER_TIMEOUT_MS`.
+
+Permission caveat: Claude tool restrictions are enforced by Claude Code. For
+write operations during `fix`, Claude may edit the current worktree. For
+untrusted code, run `clawpatch fix --provider claude` inside an isolated
+checkout.
 
 ## Grok
 

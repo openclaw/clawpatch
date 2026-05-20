@@ -40,11 +40,19 @@ export async function runCommandRaw(
   });
   let spawnErrorMessage: string | null = null;
   const exitCodePromise = new Promise<number | null>((resolve) => {
+    let settled = false;
+    const finish = (code: number | null): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(code);
+    };
     child.on("error", (error: Error) => {
       spawnErrorMessage = error.message;
-      resolve(127);
+      finish(127);
     });
-    child.on("close", resolve);
+    child.on("close", finish);
   });
   endChildStdin(child, input);
   const exitCode = await exitCodePromise;
@@ -66,13 +74,23 @@ export async function runCommandArgs(
   args: string[],
   cwd: string,
   input?: string,
-  options: { trimOutput?: boolean; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
+  options: {
+    trimOutput?: boolean;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
+    replaceEnv?: boolean;
+  } = {},
 ): Promise<CommandResult> {
   const started = Date.now();
   const spawnSpec = commandSpawnSpec(program, args);
   const child = spawn(spawnSpec.program, spawnSpec.args, {
     cwd,
-    env: options.env === undefined ? process.env : { ...process.env, ...options.env },
+    env:
+      options.env === undefined
+        ? process.env
+        : options.replaceEnv === true
+          ? options.env
+          : { ...process.env, ...options.env },
     detached: process.platform !== "win32" && options.timeoutMs !== undefined,
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],

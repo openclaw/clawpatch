@@ -2,7 +2,41 @@ import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { runCommandArgs } from "./exec.js";
+import { runCommand, runCommandArgs } from "./exec.js";
+
+describe("runCommand", () => {
+  it("runs a shell command and passes stdin", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-shell-"));
+    const script = join(dir, "stdin.mjs");
+    await writeFile(
+      script,
+      "process.stdin.setEncoding('utf8'); let input = ''; process.stdin.on('data', (chunk) => { input += chunk; }); process.stdin.on('end', () => process.stdout.write(input.toUpperCase()));",
+      "utf8",
+    );
+
+    const result = await runCommand(
+      `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}`,
+      dir,
+      "ok",
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("OK");
+  });
+
+  it("trims large output by default and can preserve raw output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-shell-"));
+    const script = join(dir, "large-output.mjs");
+    await writeFile(script, "process.stdout.write('x'.repeat(9000));", "utf8");
+    const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}`;
+
+    const trimmed = await runCommand(command, dir);
+    const raw = await runCommand(command, dir, undefined, { trimOutput: false });
+
+    expect(trimmed.stdout).toContain("...[trimmed]...");
+    expect(raw.stdout).toHaveLength(9000);
+  });
+});
 
 describe("runCommandArgs", () => {
   it("passes paths with spaces and quotes without shell quoting", async () => {
