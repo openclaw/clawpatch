@@ -12,7 +12,9 @@ export async function validateReviewOutput(
   manifest: ReviewPromptManifest,
   output: ReviewOutput,
 ): Promise<ReviewOutput> {
-  const included = includedReviewPaths(feature, config);
+  void feature;
+  void config;
+  const included = includedReviewPaths(manifest);
   const promptFiles = new Map(
     manifest.includedFiles.map((file) => [normalizePath(file.path), file]),
   );
@@ -39,7 +41,9 @@ export async function validateReviewOutputPartitioned(
   manifest: ReviewPromptManifest,
   output: ReviewOutput,
 ): Promise<{ findings: ReviewOutput["findings"]; droppedFindings: DroppedFinding[] }> {
-  const included = includedReviewPaths(feature, config);
+  void feature;
+  void config;
+  const included = includedReviewPaths(manifest);
   const promptFiles = new Map(
     manifest.includedFiles.map((file) => [normalizePath(file.path), file]),
   );
@@ -85,7 +89,8 @@ async function validateFinding(
       throwMalformed(`evidence file was not readable in review context: ${evidence.path}`);
     }
     const contents = await fileContents(root, evidence.path, promptFile.truncated, cache);
-    assertLineRange(contents, evidence);
+    assertVerifiableEvidence(evidence);
+    assertLineRange(contents, evidence, promptFile);
     assertQuote(contents, evidence);
   }
 }
@@ -103,13 +108,8 @@ function truncateValidationSample(finding: ReviewOutput["findings"][number]): st
   return text.length > 200 ? `${text.slice(0, 197)}...` : text;
 }
 
-function includedReviewPaths(feature: FeatureRecord, config: ClawpatchConfig): Set<string> {
-  return new Set(
-    [
-      ...feature.ownedFiles.slice(0, config.review.maxOwnedFiles).map((ref) => ref.path),
-      ...feature.contextFiles.slice(0, config.review.maxContextFiles).map((ref) => ref.path),
-    ].map(normalizePath),
-  );
+function includedReviewPaths(manifest: ReviewPromptManifest): Set<string> {
+  return new Set(manifest.includedFiles.map((file) => normalizePath(file.path)));
 }
 
 function assertIncludedPath(path: string, included: ReadonlySet<string>, label: string): void {
@@ -117,6 +117,16 @@ function assertIncludedPath(path: string, included: ReadonlySet<string>, label: 
   assertSafePath(path, label);
   if (!included.has(normalized)) {
     throwMalformed(`${label} was not included in review context: ${path}`);
+  }
+}
+
+function assertVerifiableEvidence(
+  evidence: ReviewOutput["findings"][number]["evidence"][number],
+): void {
+  const hasLineRange = evidence.startLine !== null || evidence.endLine !== null;
+  const hasQuote = evidence.quote !== null && evidence.quote.trim().length > 0;
+  if (!hasLineRange && !hasQuote) {
+    throwMalformed(`evidence must include a line range or quote: ${evidence.path}`);
   }
 }
 
@@ -160,6 +170,7 @@ async function readIncludedFile(root: string, path: string, truncated: boolean):
 function assertLineRange(
   contents: string,
   evidence: ReviewOutput["findings"][number]["evidence"][number],
+  promptFile: ReviewPromptManifest["includedFiles"][number],
 ): void {
   const { startLine, endLine } = evidence;
   if (startLine === null && endLine === null) {
@@ -177,6 +188,19 @@ function assertLineRange(
       `evidence line range exceeds file length: ${evidence.path}:${startLine}-${endLine}`,
     );
   }
+  if (!rangeIncluded(startLine, endLine, promptFile.includedLineRanges)) {
+    throwMalformed(
+      `evidence line range was not included in review context: ${evidence.path}:${startLine}-${endLine}`,
+    );
+  }
+}
+
+function rangeIncluded(
+  startLine: number,
+  endLine: number,
+  ranges: readonly { startLine: number; endLine: number }[],
+): boolean {
+  return ranges.some((range) => startLine >= range.startLine && endLine <= range.endLine);
 }
 
 function reviewLineCount(contents: string): number {

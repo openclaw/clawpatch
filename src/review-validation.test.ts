@@ -38,6 +38,51 @@ describe("validateReviewOutput", () => {
     ).resolves.toMatchObject({ findings: [{ title: "Bug" }] });
   });
 
+  it("accepts evidence from linked tests included in review context", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-test-file-");
+    await writeFixture(root, "src/index.ts", "const value = 'safe';\n");
+    await writeFixture(root, "src/index.test.ts", "const value = 'TODO_BUG';\n");
+
+    await expect(
+      validateReviewOutput(
+        root,
+        {
+          ...feature("src/index.ts"),
+          tests: [{ path: "src/index.test.ts", command: null }],
+        },
+        defaultConfig(),
+        manifest("src/index.test.ts", { role: "test" }),
+        output("src/index.test.ts"),
+      ),
+    ).resolves.toMatchObject({ findings: [{ title: "Bug" }] });
+  });
+
+  it("accepts evidence from files selected after duplicate prompt refs are skipped", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-duplicate-context-");
+    await writeFixture(root, "src/index.ts", "const value = 'safe';\n");
+    await writeFixture(root, "src/context-one.ts", "const value = 'safe';\n");
+    await writeFixture(root, "src/context-two.ts", "const value = 'TODO_BUG';\n");
+    const config = defaultConfig();
+    config.review.maxContextFiles = 2;
+
+    await expect(
+      validateReviewOutput(
+        root,
+        {
+          ...feature("src/index.ts"),
+          contextFiles: [
+            { path: "src/index.ts", reason: "duplicate owned file" },
+            { path: "src/context-one.ts", reason: "context" },
+            { path: "src/context-two.ts", reason: "context" },
+          ],
+        },
+        config,
+        manifest("src/context-two.ts", { role: "context" }),
+        output("src/context-two.ts"),
+      ),
+    ).resolves.toMatchObject({ findings: [{ title: "Bug" }] });
+  });
+
   it("rejects evidence for files that were not included in review context", async () => {
     const root = await fixtureRoot("clawpatch-review-validation-path-");
     await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
@@ -100,6 +145,38 @@ describe("validateReviewOutput", () => {
         defaultConfig(),
         manifest("src/index.ts"),
         output("src/index.ts", { startLine: 2, endLine: 2, quote: "TODO_BUG" }),
+      ),
+    ).rejects.toMatchObject({ code: "malformed-output" });
+  });
+
+  it("rejects line-only evidence outside the included prompt range", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-prompt-range-");
+    await writeFixture(root, "src/index.ts", "const first = 'safe';\nconst second = 'TODO_BUG';\n");
+
+    await expect(
+      validateReviewOutput(
+        root,
+        feature("src/index.ts"),
+        defaultConfig(),
+        manifest("src/index.ts", {
+          includedLineRanges: [{ startLine: 1, endLine: 1 }],
+        }),
+        output("src/index.ts", { startLine: 2, endLine: 2, quote: null }),
+      ),
+    ).rejects.toMatchObject({ code: "malformed-output" });
+  });
+
+  it("rejects evidence without a line range or quote", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-empty-evidence-");
+    await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");
+
+    await expect(
+      validateReviewOutput(
+        root,
+        feature("src/index.ts"),
+        defaultConfig(),
+        manifest("src/index.ts"),
+        output("src/index.ts", { startLine: null, endLine: null, quote: null }),
       ),
     ).rejects.toMatchObject({ code: "malformed-output" });
   });
@@ -249,7 +326,11 @@ function feature(path: string): FeatureRecord {
 
 function output(
   path: string,
-  evidence: { startLine?: number | null; endLine?: number | null; quote?: string | null } = {},
+  evidence: {
+    startLine?: number | null;
+    endLine?: number | null;
+    quote?: string | null;
+  } = {},
 ): ReviewOutput {
   return {
     findings: [
@@ -261,10 +342,10 @@ function output(
         evidence: [
           {
             path,
-            startLine: evidence.startLine ?? 1,
-            endLine: evidence.endLine ?? 1,
+            startLine: "startLine" in evidence ? evidence.startLine! : 1,
+            endLine: "endLine" in evidence ? evidence.endLine! : 1,
             symbol: null,
-            quote: evidence.quote ?? "TODO_BUG",
+            quote: "quote" in evidence ? evidence.quote! : "TODO_BUG",
           },
         ],
         reasoning: "Reason.",
@@ -281,18 +362,29 @@ function output(
 
 function manifest(
   path: string,
-  options: { truncated?: boolean; readable?: boolean } = {},
+  options: {
+    truncated?: boolean;
+    readable?: boolean;
+    includedLineRanges?: Array<{ startLine: number; endLine: number }>;
+    role?: "owned" | "context" | "test";
+  } = {},
 ): ReviewPromptManifest {
   const readable = options.readable ?? true;
+  const includedLineRanges = readable
+    ? (options.includedLineRanges ?? [{ startLine: 1, endLine: 1 }])
+    : [];
   return {
     maxOwnedFiles: defaultConfig().review.maxOwnedFiles,
     maxContextFiles: defaultConfig().review.maxContextFiles,
     includedFiles: [
       {
         path,
-        role: "owned",
+        role: options.role ?? "owned",
         bytes: readable ? 1 : 0,
         includedBytes: readable ? 1 : 0,
+        includedStartLine: includedLineRanges[0]?.startLine ?? null,
+        includedEndLine: includedLineRanges.at(-1)?.endLine ?? null,
+        includedLineRanges,
         truncated: options.truncated ?? false,
         readable,
         skippedReason: readable ? null : "unreadable",

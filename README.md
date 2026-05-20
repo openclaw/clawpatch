@@ -119,6 +119,7 @@ Supported provider names today:
 - `acpx`: any ACP-compatible coding agent (Codex / Claude / Pi / Gemini / ...) via openclaw/acpx
 - `grok`: local Grok Build CLI
 - `opencode`: local OpenCode CLI
+- `cursor`: local Cursor Agent CLI (experimental; `doctor` is enabled by default)
 - `mock`: deterministic test provider
 - `mock-fail`: failure test provider
 

@@ -18,6 +18,7 @@ Provider names today:
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
+- `cursor`: shells out to `cursor-agent -p --output-format json`
 - `mock`: deterministic provider for tests and fixtures
 - `mock-fail`: failure provider for tests
 
@@ -195,7 +196,65 @@ review and revalidate, but enforcement depends on pi honoring the tool allowlist
 For write operations during `fix`, the agent has full filesystem and shell access.
 For untrusted code, run `clawpatch fix --provider pi` inside an isolated checkout.
 
+## Cursor
+
+The `cursor` provider shells out to the local Cursor Agent CLI in headless print
+mode. It is experimental and disabled for `map`, `review`, `fix`, and
+`revalidate` by default while HITL verification is incomplete.
+
+Verify local availability:
+
+```bash
+cursor-agent --version
+clawpatch doctor --provider cursor
+```
+
+Experimental provider selection:
+
+```bash
+CURSOR_API_KEY=... CLAWPATCH_CURSOR_EXPERIMENTAL=1 clawpatch review --provider cursor
+CURSOR_API_KEY=... CLAWPATCH_CURSOR_EXPERIMENTAL=1 CLAWPATCH_PROVIDER=cursor clawpatch review
+CURSOR_API_KEY=... CLAWPATCH_CURSOR_EXPERIMENTAL=1 CLAWPATCH_CURSOR_ALLOW_WRITE=1 clawpatch fix --finding <id> --provider cursor --model <model>
+clawpatch doctor --provider cursor
+```
+
+How the Cursor provider works:
+
+- Headless mode: `cursor-agent --trust -p --output-format json --workspace <root>`
+- Read-only operations: also pass Cursor's documented `--mode ask`
+- Output: parses Cursor's `type: "result"` JSON envelope and then extracts the
+  Clawpatch JSON object from the `result` text
+- Prompt delivery: writes the full Clawpatch prompt to Cursor's stdin
+- Model selection: passes `--model <model>` when configured
+- Model names: pass Cursor model ids, for example `composer-2.5` for Composer
+  2.5 without fast mode
+- Reasoning effort and `skipGitRepoCheck`: not mapped to Cursor CLI flags
+- Authentication: experimental execution uses the host user environment and
+  passes `CURSOR_API_KEY` through when present. Prefer API-key auth for headless
+  runs; relying on the user's Cursor login can touch the macOS login keychain.
+  Clawpatch also sets `NO_OPEN_BROWSER=1` to reduce browser prompts during
+  headless runs.
+- Read-only guard: map, review, and revalidate pass `--mode ask` and include
+  read-only instructions in the prompt. Clawpatch does not set
+  `CURSOR_CONFIG_DIR`, because that can bypass the user's existing Cursor auth
+  profile and trigger browser login prompts.
+- Timeout: 300 seconds by default, override with
+  `CLAWPATCH_CURSOR_TIMEOUT_MS` or `CLAWPATCH_PROVIDER_TIMEOUT_MS`
+- Advisory handling: semver-like Cursor CLI versions below `2.5.0` are blocked
+  for CVE-2026-26268 / GHSA-8pcm-8jpx-hv8r. Date-formatted CLI builds are
+  allowed only when Clawpatch can verify a semver Cursor app version from the
+  local macOS app bundle.
+
+Permission caveat: Cursor's print mode is documented as having access to tools,
+including write and shell. Clawpatch therefore keeps Cursor execution behind
+`CLAWPATCH_CURSOR_EXPERIMENTAL=1`, uses `--mode ask` for read-only operations,
+and separately requires `CLAWPATCH_CURSOR_ALLOW_WRITE=1` for `fix`. The
+implementation uses `--trust` for the explicit trusted-workspace path and never
+uses `--force` or `--yolo`. Complete HITL verification before promoting this to
+default provider support, especially for ambient rules, MCP configuration,
+positional prompt exposure, timeout behavior, and any claimed read-only mode.
+
 Direct OpenAI API, local-model, and multi-model panel providers are not
 implemented yet. The `acpx` provider is the generic route for ACP-compatible
-agents; the `grok`, `opencode`, and `pi` providers are direct integrations
+agents; the `grok`, `opencode`, `pi`, and `cursor` providers are direct integrations
 for local CLIs.

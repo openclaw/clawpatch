@@ -6,13 +6,21 @@ export type ReviewMode = "default" | "deslopify";
 
 export const REVIEW_PROMPT_FILE_CHAR_LIMIT = 24_000;
 
-export type ReviewPromptFileRole = "owned" | "context";
+export type ReviewPromptFileRole = "owned" | "context" | "test";
+
+export type ReviewPromptLineRange = {
+  startLine: number;
+  endLine: number;
+};
 
 export type ReviewPromptFileManifest = {
   path: string;
   role: ReviewPromptFileRole;
   bytes: number;
   includedBytes: number;
+  includedStartLine: number | null;
+  includedEndLine: number | null;
+  includedLineRanges: ReviewPromptLineRange[];
   truncated: boolean;
   readable: boolean;
   skippedReason: string | null;
@@ -101,19 +109,23 @@ export async function buildReviewPromptBundle(
   mode: ReviewMode = "default",
   customPrompt: string | null = null,
 ): Promise<ReviewPromptBundle> {
-  const owned = feature.ownedFiles.slice(0, config.review.maxOwnedFiles);
-  const context = feature.contextFiles.slice(0, config.review.maxContextFiles);
+  const seenPromptFiles = new Set<string>();
+  const owned = uniquePromptRefs(feature.ownedFiles, config.review.maxOwnedFiles, seenPromptFiles);
+  const context = uniquePromptRefs(
+    feature.contextFiles,
+    config.review.maxContextFiles,
+    seenPromptFiles,
+  );
+  const tests = uniquePromptRefs(feature.tests, config.review.maxContextFiles, seenPromptFiles);
+  const includedPromptPaths = new Set([
+    ...owned.map((ref) => normalizePromptPath(ref.path)),
+    ...context.map((ref) => normalizePromptPath(ref.path)),
+    ...tests.map((ref) => normalizePromptPath(ref.path)),
+  ]);
   const omittedFiles = [
-    ...feature.ownedFiles.slice(config.review.maxOwnedFiles).map((ref) => ({
-      path: ref.path,
-      role: "owned" as const,
-      reason: "maxOwnedFiles",
-    })),
-    ...feature.contextFiles.slice(config.review.maxContextFiles).map((ref) => ({
-      path: ref.path,
-      role: "context" as const,
-      reason: "maxContextFiles",
-    })),
+    ...omittedPromptRefs(feature.ownedFiles, "owned", "maxOwnedFiles", includedPromptPaths),
+    ...omittedPromptRefs(feature.contextFiles, "context", "maxContextFiles", includedPromptPaths),
+    ...omittedPromptRefs(feature.tests, "test", "maxContextFiles", includedPromptPaths),
   ];
   const fileBlocks: string[] = [];
   const includedFiles: ReviewPromptFileManifest[] = [];
@@ -124,6 +136,11 @@ export async function buildReviewPromptBundle(
   }
   for (const ref of context) {
     const file = await fileBlockWithManifest(root, ref.path, "context");
+    fileBlocks.push(file.block);
+    includedFiles.push(file.manifest);
+  }
+  for (const ref of tests) {
+    const file = await fileBlockWithManifest(root, ref.path, "test");
     fileBlocks.push(file.block);
     includedFiles.push(file.manifest);
   }
@@ -138,15 +155,32 @@ ${customPrompt.trim()}
   const promptContext = {
     maxOwnedFiles: config.review.maxOwnedFiles,
     maxContextFiles: config.review.maxContextFiles,
-    includedFiles: includedFiles.map(({ path, role, bytes, includedBytes, truncated }) => ({
-      path,
-      role,
-      bytes,
-      includedBytes,
-      truncated,
-    })),
+    includedFiles: includedFiles.map(
+      ({
+        path,
+        role,
+        bytes,
+        includedBytes,
+        includedStartLine,
+        includedEndLine,
+        includedLineRanges,
+        truncated,
+      }) => ({
+        path,
+        role,
+        bytes,
+        includedBytes,
+        includedStartLine,
+        includedEndLine,
+        includedLineRanges,
+        truncated,
+      }),
+    ),
     omittedFiles,
   };
+  const validEvidencePaths = [
+    ...new Set(includedFiles.filter((file) => file.readable).map((file) => file.path)),
+  ];
   const prompt = `You are reviewing one semantic feature for clawpatch.
 
 Return strict JSON only. No markdown fences.
@@ -155,7 +189,7 @@ Project:
 ${JSON.stringify({ name: project.name, detected: project.detected }, null, 2)}
 
 Feature:
-${JSON.stringify(feature, null, 2)}
+${JSON.stringify(reviewFeatureView(feature), null, 2)}
 
 ${customBlock}Review categories:
 - correctness bugs
@@ -180,6 +214,13 @@ issues: when the same bug pattern appears in multiple owned files, emit one find
 with multiple evidence refs instead of separate one-off findings.
 
 Avoid speculative low-evidence findings. Evidence must point at included files.
+Valid evidence paths are exactly:
+${validEvidencePaths.map((path) => `- ${path}`).join("\n")}
+Feature metadata paths are not valid evidence unless listed above.
+When providing evidence line ranges, use the line-number gutter in the Files section.
+Do not inspect files beyond the shown excerpts for evidence. If an excerpt is truncated,
+only cite lines that appear in the Files section.
+Set evidence.quote to null; line ranges are enough for validation.
 
 Prompt context:
 ${JSON.stringify(promptContext, null, 2)}
@@ -217,6 +258,66 @@ ${fileBlocks.join("\n\n")}`;
       approximateTokens: Math.ceil(prompt.length / 4),
     },
   };
+}
+
+function reviewFeatureView(feature: FeatureRecord): object {
+  return {
+    featureId: feature.featureId,
+    title: feature.title,
+    summary: feature.summary,
+    kind: feature.kind,
+    source: feature.source,
+    confidence: feature.confidence,
+    entrypoints: feature.entrypoints,
+    ownedFiles: feature.ownedFiles,
+    contextFiles: feature.contextFiles,
+    tests: feature.tests,
+    tags: feature.tags,
+    trustBoundaries: feature.trustBoundaries,
+  };
+}
+
+function uniquePromptRefs<T extends { path: string }>(
+  refs: readonly T[],
+  limit: number,
+  seen: Set<string>,
+): T[] {
+  const selected: T[] = [];
+  for (const ref of refs) {
+    if (selected.length >= limit) {
+      break;
+    }
+    const normalizedPath = normalizePromptPath(ref.path);
+    if (seen.has(normalizedPath)) {
+      continue;
+    }
+    seen.add(normalizedPath);
+    selected.push(ref);
+  }
+  return selected;
+}
+
+function omittedPromptRefs<T extends { path: string }>(
+  refs: readonly T[],
+  role: ReviewPromptFileRole,
+  reason: string,
+  includedPaths: ReadonlySet<string>,
+): Array<{ path: string; role: ReviewPromptFileRole; reason: string }> {
+  const omitted: Array<{ path: string; role: ReviewPromptFileRole; reason: string }> = [];
+  const seen = new Set<string>();
+  for (const ref of refs) {
+    const normalizedPath = normalizePromptPath(ref.path);
+    if (includedPaths.has(normalizedPath) || seen.has(normalizedPath)) {
+      continue;
+    }
+    seen.add(normalizedPath);
+    omitted.push({ path: ref.path, role, reason });
+  }
+  return omitted;
+}
+
+function normalizePromptPath(path: string): string {
+  return path.replace(/\\/gu, "/").replace(/^\.\/+/u, "");
 }
 
 function reviewModeInstructions(mode: ReviewMode): string {
@@ -301,20 +402,34 @@ function fixPromptPaths(
   const owned = feature.ownedFiles.slice(0, config.review.maxOwnedFiles);
   const context = feature.contextFiles.slice(0, config.review.maxContextFiles);
   const tests = feature.tests.slice(0, config.review.maxContextFiles);
-  const allowed = new Set([
-    ...feature.ownedFiles.map((ref) => ref.path),
-    ...feature.contextFiles.map((ref) => ref.path),
-    ...feature.tests.map((test) => test.path),
-    ...feature.entrypoints.map((entrypoint) => entrypoint.path),
-  ]);
+  const allowed = new Map<string, string>();
+  const allowPath = (path: string): void => {
+    const normalizedPath = normalizePromptPath(path);
+    if (!allowed.has(normalizedPath)) {
+      allowed.set(normalizedPath, path);
+    }
+  };
+  for (const ref of feature.ownedFiles) {
+    allowPath(ref.path);
+  }
+  for (const ref of feature.contextFiles) {
+    allowPath(ref.path);
+  }
+  for (const test of feature.tests) {
+    allowPath(test.path);
+  }
+  for (const entrypoint of feature.entrypoints) {
+    allowPath(entrypoint.path);
+  }
   const push = (path: string): void => {
     if (!paths.includes(path)) {
       paths.push(path);
     }
   };
   for (const evidence of finding.evidence) {
-    if (allowed.has(evidence.path)) {
-      push(evidence.path);
+    const allowedPath = allowed.get(normalizePromptPath(evidence.path));
+    if (allowedPath !== undefined) {
+      push(allowedPath);
     }
   }
   for (const ref of owned) {
@@ -356,6 +471,9 @@ async function fileBlockWithManifest(
         role,
         bytes: 0,
         includedBytes: 0,
+        includedStartLine: null,
+        includedEndLine: null,
+        includedLineRanges: [],
         truncated: false,
         readable: false,
         skippedReason: "unreadable",
@@ -363,18 +481,20 @@ async function fileBlockWithManifest(
     };
   }
   const bytes = Buffer.byteLength(contents, "utf8");
-  const truncated = contents.length > REVIEW_PROMPT_FILE_CHAR_LIMIT;
-  const trimmed = truncated
-    ? `${contents.slice(0, REVIEW_PROMPT_FILE_CHAR_LIMIT)}\n...[truncated]`
-    : contents;
+  const excerpt = prefixExcerpt(contents);
   return {
-    block: `--- ${path}\n${trimmed}`,
+    block: `--- ${path} (${role}, ${rangeLabel(excerpt.includedLineRanges)}${
+      excerpt.truncated ? ", truncated" : ""
+    })\n${excerpt.body}`,
     manifest: {
       path,
       role,
       bytes,
-      includedBytes: Buffer.byteLength(trimmed, "utf8"),
-      truncated,
+      includedBytes: Buffer.byteLength(excerpt.includedContents, "utf8"),
+      includedStartLine: excerpt.includedLineRanges[0]?.startLine ?? null,
+      includedEndLine: excerpt.includedLineRanges.at(-1)?.endLine ?? null,
+      includedLineRanges: excerpt.includedLineRanges,
+      truncated: excerpt.truncated,
       readable: true,
       skippedReason: null,
     },
@@ -393,11 +513,63 @@ function skippedFileBlock(
       role,
       bytes: 0,
       includedBytes: 0,
+      includedStartLine: null,
+      includedEndLine: null,
+      includedLineRanges: [],
       truncated: false,
       readable: false,
       skippedReason: reason,
     },
   };
+}
+
+function prefixExcerpt(contents: string): {
+  body: string;
+  includedContents: string;
+  includedLineRanges: ReviewPromptLineRange[];
+  truncated: boolean;
+} {
+  const truncated = contents.length > REVIEW_PROMPT_FILE_CHAR_LIMIT;
+  const includedContents = truncated ? contents.slice(0, REVIEW_PROMPT_FILE_CHAR_LIMIT) : contents;
+  const includedEndLine = reviewLineCount(includedContents);
+  const body = `${numberedFileContents(includedContents, 1)}${
+    truncated ? `\n...[truncated after line ${includedEndLine}]` : ""
+  }`;
+  return {
+    body,
+    includedContents,
+    includedLineRanges: [{ startLine: 1, endLine: includedEndLine }],
+    truncated,
+  };
+}
+
+function rangeLabel(ranges: readonly ReviewPromptLineRange[]): string {
+  if (ranges.length === 0) {
+    return "no lines";
+  }
+  if (ranges.length === 1) {
+    const range = ranges[0]!;
+    return `lines ${range.startLine}-${range.endLine}`;
+  }
+  return `lines ${ranges.map((range) => `${range.startLine}-${range.endLine}`).join(", ")}`;
+}
+
+function numberedFileContents(contents: string, startLine: number): string {
+  return splitReviewLines(contents)
+    .map((line, index) => `${startLine + index} | ${line}`)
+    .join("\n");
+}
+
+function reviewLineCount(contents: string): number {
+  return splitReviewLines(contents).length;
+}
+
+function splitReviewLines(contents: string): string[] {
+  if (contents.length === 0) {
+    return [""];
+  }
+  const lines = contents.split("\n");
+  return contents.endsWith("\n") ? lines.slice(0, -1) : lines;
 }
 
 function isInside(root: string, candidate: string): boolean {
