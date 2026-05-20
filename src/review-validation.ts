@@ -11,7 +11,9 @@ export async function validateReviewOutput(
   manifest: ReviewPromptManifest,
   output: ReviewOutput,
 ): Promise<ReviewOutput> {
-  const included = includedReviewPaths(feature, config);
+  void feature;
+  void config;
+  const included = includedReviewPaths(manifest);
   const promptFiles = new Map(
     manifest.includedFiles.map((file) => [normalizePath(file.path), file]),
   );
@@ -35,14 +37,8 @@ export async function validateReviewOutput(
   return { ...output, findings };
 }
 
-function includedReviewPaths(feature: FeatureRecord, config: ClawpatchConfig): Set<string> {
-  return new Set(
-    [
-      ...feature.ownedFiles.slice(0, config.review.maxOwnedFiles).map((ref) => ref.path),
-      ...feature.contextFiles.slice(0, config.review.maxContextFiles).map((ref) => ref.path),
-      ...feature.tests.slice(0, config.review.maxContextFiles).map((ref) => ref.path),
-    ].map(normalizePath),
-  );
+function includedReviewPaths(manifest: ReviewPromptManifest): Set<string> {
+  return new Set(manifest.includedFiles.map((file) => normalizePath(file.path)));
 }
 
 function assertIncludedPath(path: string, included: ReadonlySet<string>, label: string): void {

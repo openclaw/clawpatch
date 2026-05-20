@@ -57,6 +57,32 @@ describe("validateReviewOutput", () => {
     ).resolves.toMatchObject({ findings: [{ title: "Bug" }] });
   });
 
+  it("accepts evidence from files selected after duplicate prompt refs are skipped", async () => {
+    const root = await fixtureRoot("clawpatch-review-validation-duplicate-context-");
+    await writeFixture(root, "src/index.ts", "const value = 'safe';\n");
+    await writeFixture(root, "src/context-one.ts", "const value = 'safe';\n");
+    await writeFixture(root, "src/context-two.ts", "const value = 'TODO_BUG';\n");
+    const config = defaultConfig();
+    config.review.maxContextFiles = 2;
+
+    await expect(
+      validateReviewOutput(
+        root,
+        {
+          ...feature("src/index.ts"),
+          contextFiles: [
+            { path: "src/index.ts", reason: "duplicate owned file" },
+            { path: "src/context-one.ts", reason: "context" },
+            { path: "src/context-two.ts", reason: "context" },
+          ],
+        },
+        config,
+        manifest("src/context-two.ts", { role: "context" }),
+        output("src/context-two.ts"),
+      ),
+    ).resolves.toMatchObject({ findings: [{ title: "Bug" }] });
+  });
+
   it("rejects evidence for files that were not included in review context", async () => {
     const root = await fixtureRoot("clawpatch-review-validation-path-");
     await writeFixture(root, "src/index.ts", "const value = 'TODO_BUG';\n");

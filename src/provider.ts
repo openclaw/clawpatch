@@ -533,7 +533,11 @@ function isCursorDateBuildVersion(version: string): boolean {
 }
 
 function parseSemver(version: string): [number, number, number] | null {
-  const match = /^v?(\d+)\.(\d+)(?:\.(\d+))?/u.exec(version.trim());
+  const trimmed = version.trim();
+  if (isCursorDateBuildVersion(trimmed)) {
+    return null;
+  }
+  const match = /^v?(\d+)\.(\d+)(?:\.(\d+))?$/u.exec(trimmed);
   if (match === null) {
     return null;
   }

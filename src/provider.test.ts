@@ -489,7 +489,9 @@ describe("Cursor provider", () => {
   it("parses semver for Cursor advisory checks", () => {
     expect(parseSemver("2.4.9")).toEqual([2, 4, 9]);
     expect(parseSemver("v2.5")).toEqual([2, 5, 0]);
-    expect(parseSemver("2026.05.16-0338208")).toEqual([2026, 5, 16]);
+    expect(parseSemver("2026.05.16-0338208")).toBeNull();
+    expect(parseSemver("2.5.0-beta")).toBeNull();
+    expect(parseSemver("2.5beta")).toBeNull();
   });
 
   it("uses Cursor app version for date-formatted CLI builds", () => {
@@ -503,6 +505,12 @@ describe("Cursor provider", () => {
     expect(() => assertCursorRuntimeVersionAllowed("2026.05.16-0338208", null)).toThrow(
       /could not verify Cursor app\/runtime version/u,
     );
+  });
+
+  it("does not treat date-formatted app builds as advisory proof", () => {
+    expect(() =>
+      assertCursorRuntimeVersionAllowed("2026.05.16-0338208", "2026.05.16-0338208"),
+    ).toThrow(/could not verify Cursor app\/runtime version/u);
   });
 });
 
