@@ -225,7 +225,6 @@ else
   review_cmd=("$codex_bin" "${codex_args[@]}" review --base "$base_ref")
 fi
 
-repo_url=$(git -C "$repo_root" config --get remote.origin.url 2>/dev/null || true)
 case "$openclaw_maintainer_validation" in
   1|true|True|TRUE|yes|Yes|YES|on|On|ON) openclaw_maintainer_validation=1 ;;
   *) openclaw_maintainer_validation=0 ;;
@@ -239,7 +238,7 @@ if [[ -z "$parallel_tests" && "$openclaw_maintainer_validation" != 1 ]] &&
     parallel_tests_auto=true
   fi
 fi
-if [[ "$repo_url" == *"openclaw/openclaw"* && "$openclaw_maintainer_validation" == 1 ]]; then
+if [[ "$openclaw_maintainer_validation" == 1 ]]; then
   codex_review_prompt=$(cat <<'EOF'
 OpenClaw maintainer autoreview validation policy:
 - Review the diff by reading code, tests, and dependency contracts.
