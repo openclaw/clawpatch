@@ -32,7 +32,7 @@ permissions:
 jobs:
   hydrate:
     name: hydrate
-    runs-on: [self-hosted, "${{ inputs.crabbox_runner_label }}"]
+    runs-on: [self-hosted, crabbox, openclaw, clawpatch, "${{ inputs.crabbox_runner_label }}"]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
@@ -42,7 +42,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: pnpm
 
       - name: Prepare pnpm workspace
         shell: bash

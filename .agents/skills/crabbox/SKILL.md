@@ -36,7 +36,7 @@ the user asks for Testbox/Blacksmith.
 ```sh
 command -v crabbox
 ../crabbox/bin/crabbox --version
-pnpm crabbox:run -- --help | sed -n '1,120p'
+../crabbox/bin/crabbox run --help | sed -n '1,120p'
 ../crabbox/bin/crabbox desktop launch --help
 ../crabbox/bin/crabbox webvnc --help
 ```
@@ -144,7 +144,7 @@ prepared Blacksmith Testbox CI environment.
 Changed gate:
 
 ```sh
-pnpm crabbox:run -- \
+../crabbox/bin/crabbox run \
   --idle-timeout 90m \
   --ttl 240m \
   --timing-json \
@@ -155,7 +155,7 @@ pnpm crabbox:run -- \
 Full suite:
 
 ```sh
-pnpm crabbox:run -- \
+../crabbox/bin/crabbox run \
   --idle-timeout 90m \
   --ttl 240m \
   --timing-json \
@@ -166,7 +166,7 @@ pnpm crabbox:run -- \
 Focused rerun:
 
 ```sh
-pnpm crabbox:run -- \
+../crabbox/bin/crabbox run \
   --idle-timeout 90m \
   --ttl 240m \
   --timing-json \
@@ -287,7 +287,7 @@ Live-provider debug template for direct AWS/Hetzner leases:
 
 ```sh
 mkdir -p .crabbox/logs
-pnpm crabbox:run -- --provider aws \
+../crabbox/bin/crabbox run --provider aws \
   --preflight \
   --allow-env OPENAI_API_KEY,OPENAI_BASE_URL \
   --timing-json \
@@ -427,13 +427,13 @@ multiple manual commands on the same hydrated box.
 If Crabbox returns a reusable id or you intentionally keep a lease:
 
 ```sh
-pnpm crabbox:run -- --id <cbx_id-or-slug> --no-sync --timing-json --shell -- "pnpm test <path>"
+../crabbox/bin/crabbox run --id <cbx_id-or-slug> --no-sync --timing-json --shell -- "pnpm test <path>"
 ```
 
 Stop boxes you created before handoff:
 
 ```sh
-pnpm crabbox:stop -- <id-or-slug>
+../crabbox/bin/crabbox stop <id-or-slug>
 blacksmith testbox stop --id <tbx_id>
 ```
 
@@ -510,7 +510,7 @@ Fast checks:
 ```sh
 command -v crabbox
 ../crabbox/bin/crabbox --version
-pnpm crabbox:run -- --help | sed -n '1,140p'
+../crabbox/bin/crabbox run --help | sed -n '1,140p'
 ../crabbox/bin/crabbox doctor
 command -v blacksmith
 blacksmith --version
@@ -543,14 +543,14 @@ If brokered AWS cannot dispatch, sync, attach, or stop, retry once with
 `--debug` and `--timing-json`:
 
 ```sh
-pnpm crabbox:run -- --debug --timing-json -- \
+../crabbox/bin/crabbox run --debug --timing-json -- \
   CI=1 NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS=900000 pnpm test:changed
 ```
 
 Full suite:
 
 ```sh
-pnpm crabbox:run -- --debug --timing-json -- \
+../crabbox/bin/crabbox run --debug --timing-json -- \
   CI=1 NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS=900000 pnpm test
 ```
 
@@ -590,7 +590,7 @@ execution, timing, logs/results, and cleanup.
 Minimal Blacksmith-backed Crabbox run, from repo root:
 
 ```sh
-pnpm crabbox:run -- --provider blacksmith-testbox --timing-json -- \
+../crabbox/bin/crabbox run --provider blacksmith-testbox --timing-json -- \
   CI=1 NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 pnpm test:changed
 ```
 
@@ -615,10 +615,10 @@ selects brokered AWS, so omit `--provider` unless you are testing a different
 provider deliberately.
 
 ```sh
-pnpm crabbox:warmup -- --class beast --market on-demand --idle-timeout 90m
-pnpm crabbox:hydrate -- --id <cbx_id-or-slug>
-pnpm crabbox:run -- --id <cbx_id-or-slug> --timing-json --shell -- "env NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS=900000 pnpm test:changed"
-pnpm crabbox:stop -- <cbx_id-or-slug>
+../crabbox/bin/crabbox warmup --class beast --market on-demand --idle-timeout 90m
+../crabbox/bin/crabbox hydrate --id <cbx_id-or-slug>
+../crabbox/bin/crabbox run --id <cbx_id-or-slug> --timing-json --shell -- "env NODE_OPTIONS=--max-old-space-size=4096 OPENCLAW_TEST_PROJECTS_PARALLEL=6 OPENCLAW_VITEST_MAX_WORKERS=1 OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS=900000 pnpm test:changed"
+../crabbox/bin/crabbox stop <cbx_id-or-slug>
 ```
 
 Install/auth for owned Crabbox if needed:
