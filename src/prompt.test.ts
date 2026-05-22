@@ -195,6 +195,112 @@ describe("review prompt provenance", () => {
   });
 });
 
+describe("CUDA prompt guidance", () => {
+  it("includes CUDA review guidance for a feature that owns a .cu file", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-cuda-review-");
+    await writeFixture(root, "src/kernel.cu", "__global__ void k(void) {}\n");
+    const cudaFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [],
+      ownedFiles: [{ path: "src/kernel.cu", reason: "kernel" }],
+      contextFiles: [],
+    };
+    const bundle = await buildReviewPromptBundle(root, project(root), cudaFeature, defaultConfig());
+
+    expect(bundle.prompt).toContain("CUDA hazards");
+  });
+
+  it("omits CUDA review guidance for a non-CUDA feature", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-noncuda-review-");
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const tsFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [],
+      ownedFiles: [{ path: "src/index.ts", reason: "primary" }],
+      contextFiles: [],
+    };
+    const bundle = await buildReviewPromptBundle(root, project(root), tsFeature, defaultConfig());
+
+    expect(bundle.prompt).not.toContain("CUDA hazards");
+  });
+
+  it("omits CUDA review guidance in deslopify mode even for a CUDA feature", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-cuda-deslopify-");
+    await writeFixture(root, "src/kernel.cu", "__global__ void k(void) {}\n");
+    const cudaFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [],
+      ownedFiles: [{ path: "src/kernel.cu", reason: "kernel" }],
+      contextFiles: [],
+    };
+    const bundle = await buildReviewPromptBundle(
+      root,
+      project(root),
+      cudaFeature,
+      defaultConfig(),
+      "deslopify",
+    );
+
+    expect(bundle.prompt).not.toContain("CUDA hazards");
+  });
+
+  it("includes CUDA review guidance for a mixed feature whose entrypoint is C++ but owns a .cu file", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-cuda-mixed-");
+    await writeFixture(root, "src/main.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/kernel.cu", "__global__ void k(void) {}\n");
+    const mixedFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [{ path: "src/main.cpp", symbol: "main", route: null, command: null }],
+      ownedFiles: [
+        { path: "src/main.cpp", reason: "host" },
+        { path: "src/kernel.cu", reason: "kernel" },
+      ],
+      contextFiles: [],
+    };
+    const bundle = await buildReviewPromptBundle(
+      root,
+      project(root),
+      mixedFeature,
+      defaultConfig(),
+    );
+
+    expect(bundle.prompt).toContain("CUDA hazards");
+  });
+
+  it("includes CUDA guidance in the fix prompt for a CUDA feature", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-cuda-fix-");
+    await writeFixture(root, "src/kernel.cu", "__global__ void k(void) {}\n");
+    const cudaFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [],
+      ownedFiles: [{ path: "src/kernel.cu", reason: "kernel" }],
+      contextFiles: [],
+    };
+    const prompt = await buildFixPrompt(
+      root,
+      finding("src/kernel.cu"),
+      cudaFeature,
+      defaultConfig(),
+    );
+
+    expect(prompt).toContain("CUDA hazards");
+  });
+
+  it("omits CUDA guidance in the fix prompt for a non-CUDA feature", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-noncuda-fix-");
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const tsFeature: FeatureRecord = {
+      ...feature(),
+      entrypoints: [],
+      ownedFiles: [{ path: "src/index.ts", reason: "primary" }],
+      contextFiles: [],
+    };
+    const prompt = await buildFixPrompt(root, finding("src/index.ts"), tsFeature, defaultConfig());
+
+    expect(prompt).not.toContain("CUDA hazards");
+  });
+});
+
 function project(root: string): ProjectRecord {
   return {
     schemaVersion: 1,
