@@ -120,5 +120,15 @@ Categories requested from the provider:
 - `build-release`
 - `maintainability`
 
+## CUDA-aware review
+
+When a feature owns CUDA `.cu` / `.cuh` sources, `clawpatch review` (in the
+default mode) and `clawpatch fix` add CUDA-specific guidance to the provider
+prompt: kernel data races and synchronization barriers, unchecked CUDA runtime
+calls and missing post-launch error checks, host versus device pointer
+confusion, unsafe global- and shared-memory access, stream and event
+synchronization, and device-memory leaks. Findings still use the existing
+categories; there is no CUDA-specific category. Deslopify mode is unaffected.
+
 Review does not edit files. Use `clawpatch fix --finding <id>` for the explicit
 patch loop.

@@ -54,7 +54,7 @@ Supported deterministic mappers today:
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites,
   Rails configs, routes, views, assets, and database files
 - Rust Cargo commands, libraries, workspace crates, and integration tests
-- C/C++ standalone `main()` files, CMake targets, and autotools targets
+- C/C++/CUDA standalone `main()` files, CMake targets, and autotools targets
 - C#/.NET projects from `.sln`, `.slnx`, `.csproj`, `.fsproj`, and `.vbproj`,
   ASP.NET Core controllers, minimal API endpoints, C#/F#/Visual Basic source
   groups, and .NET test projects
@@ -155,7 +155,14 @@ files are skipped.
 C/C++ mapping covers generic project shapes only: standalone source files with
 `main()`, CMake `add_executable` / `add_library`, and autotools `bin_PROGRAMS` /
 `lib_LTLIBRARIES`. It deliberately avoids project-specific C dialects such as
-php-src extension metadata.
+php-src extension metadata. CUDA `.cu` / `.cuh` files are mapped through the same
+C/C++ shapes, including the legacy `FindCUDA` `cuda_add_executable` /
+`cuda_add_library` commands; CUDA targets are tagged `cuda`, and a repository with
+`.cu` / `.cuh` sources is detected as a `cuda` project. Source files not owned by
+any build target are grouped per directory into bounded, low-confidence source
+groups. C/C++/CUDA validation commands are emitted only when the project declares
+them: a root `Makefile` `check`/`test` target, or a `CMakePresets.json` build
+workflow. Otherwise they stay null.
 
 Python mapping covers `pyproject.toml`, `setup.cfg`, `setup.py`, and
 `requirements.txt` metadata; `[project.scripts]`, `[tool.poetry.scripts]`,
