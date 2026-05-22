@@ -716,7 +716,10 @@ async function makefileDefaultCommands(root: string): Promise<ProjectCommands | 
     : makefileHasTarget(source, "test")
       ? "make test"
       : null;
-  return { typecheck: "make", lint: null, format: null, test };
+  if (test === null) {
+    return null;
+  }
+  return { typecheck: null, lint: null, format: null, test };
 }
 
 function makefileHasTarget(source: string, target: string): boolean {

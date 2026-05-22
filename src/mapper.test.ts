@@ -11921,25 +11921,25 @@ add_executable(headerapp include/headers.hpp)
     expect(titles).toContain("Project config configure.ac");
   });
 
-  it("defaults C/C++ validation to make when the Makefile declares a check target", async () => {
+  it("emits `make check` as the C/C++ test command when the Makefile declares a check target", async () => {
     const root = await fixtureRoot("clawpatch-cpp-makefile-check-");
     await writeFixture(root, "Makefile", "all:\n\tcc -o app main.c\n\ncheck:\n\t./app\n");
     await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
 
     const project = await detectProject(root);
 
-    expect(project.detected.commands.typecheck).toBe("make");
+    expect(project.detected.commands.typecheck).toBeNull();
     expect(project.detected.commands.test).toBe("make check");
   });
 
-  it("defaults C/C++ validation to make with no test command when the Makefile has none", async () => {
+  it("emits no C/C++ validation commands when the Makefile has no check or test target", async () => {
     const root = await fixtureRoot("clawpatch-cpp-makefile-notest-");
     await writeFixture(root, "Makefile", "all:\n\tcc -o app main.c\n");
     await writeFixture(root, "main.c", "int main(void) { return 0; }\n");
 
     const project = await detectProject(root);
 
-    expect(project.detected.commands.typecheck).toBe("make");
+    expect(project.detected.commands.typecheck).toBeNull();
     expect(project.detected.commands.test).toBeNull();
   });
 
