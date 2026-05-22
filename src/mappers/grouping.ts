@@ -75,7 +75,7 @@ function partitionAt(
   return groups;
 }
 
-function chunkFiles(label: string, files: string[], maxFiles: number): FileGroup[] {
+export function chunkFiles(label: string, files: string[], maxFiles: number): FileGroup[] {
   if (files.length === 0) {
     return [];
   }

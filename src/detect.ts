@@ -249,6 +249,9 @@ async function languageDefaultCommands(
   if (languages.includes("ruby")) {
     return rubyDefaultCommands(root);
   }
+  if (languages.includes("c") || languages.includes("cpp") || languages.includes("cuda")) {
+    return cOrCppDefaultCommands(root);
+  }
 
   return {
     typecheck: null,
@@ -689,6 +692,116 @@ async function rubyDefaultCommands(root: string): Promise<ProjectCommands> {
     format: null,
     test: hasRspec ? `${run}rspec` : hasMinitest ? `${run}rake test` : null,
   };
+}
+
+async function cOrCppDefaultCommands(root: string): Promise<ProjectCommands> {
+  const makefileCommands = await makefileDefaultCommands(root);
+  if (makefileCommands !== null) {
+    return makefileCommands;
+  }
+  const presetCommands = await cmakePresetDefaultCommands(root);
+  if (presetCommands !== null) {
+    return presetCommands;
+  }
+  return { typecheck: null, lint: null, format: null, test: null };
+}
+
+async function makefileDefaultCommands(root: string): Promise<ProjectCommands | null> {
+  if (!(await pathExists(join(root, "Makefile")))) {
+    return null;
+  }
+  const source = await readFile(join(root, "Makefile"), "utf8").catch(() => "");
+  const test = makefileHasTarget(source, "check")
+    ? "make check"
+    : makefileHasTarget(source, "test")
+      ? "make test"
+      : null;
+  return { typecheck: "make", lint: null, format: null, test };
+}
+
+function makefileHasTarget(source: string, target: string): boolean {
+  return new RegExp(`^${target}\\s*:(?!=)`, "mu").test(source);
+}
+
+type CMakePresetSets = {
+  workflowPresets: string[];
+  configurePresets: string[];
+  buildPresets: string[];
+  testPresets: string[];
+};
+
+async function cmakePresetDefaultCommands(root: string): Promise<ProjectCommands | null> {
+  if (!(await pathExists(join(root, "CMakePresets.json")))) {
+    return null;
+  }
+  const presets = await readCMakePresets(root);
+  if (presets === null) {
+    return null;
+  }
+  const testPreset = singlePresetName(presets.testPresets);
+  return {
+    typecheck: cmakeBuildCommand(presets),
+    lint: null,
+    format: null,
+    test: testPreset === null ? null : `ctest --preset ${testPreset}`,
+  };
+}
+
+function cmakeBuildCommand(presets: CMakePresetSets): string | null {
+  const workflow = singlePresetName(presets.workflowPresets);
+  if (workflow !== null) {
+    return `cmake --workflow --preset ${workflow}`;
+  }
+  const configure = singlePresetName(presets.configurePresets);
+  const build = singlePresetName(presets.buildPresets);
+  if (configure !== null && build !== null) {
+    return `cmake --preset ${configure} && cmake --build --preset ${build}`;
+  }
+  return null;
+}
+
+function singlePresetName(names: string[]): string | null {
+  return names.length === 1 ? (names[0] ?? null) : null;
+}
+
+async function readCMakePresets(root: string): Promise<CMakePresetSets | null> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(join(root, "CMakePresets.json"), "utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return null;
+  }
+  const record = parsed as Record<string, unknown>;
+  return {
+    workflowPresets: cmakePresetNames(record["workflowPresets"]),
+    configurePresets: cmakePresetNames(record["configurePresets"]),
+    buildPresets: cmakePresetNames(record["buildPresets"]),
+    testPresets: cmakePresetNames(record["testPresets"]),
+  };
+}
+
+function cmakePresetNames(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const names: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const preset = entry as { name?: unknown; hidden?: unknown };
+    if (
+      typeof preset.name === "string" &&
+      preset.hidden !== true &&
+      /^[A-Za-z0-9._-]+$/u.test(preset.name)
+    ) {
+      names.push(preset.name);
+    }
+  }
+  return names;
 }
 
 async function mixProjectInfo(root: string): Promise<MixProjectInfo> {
@@ -1285,6 +1398,9 @@ async function detectLanguages(root: string): Promise<string[]> {
   if (!languages.includes("cpp") && (await containsCppFile(root))) {
     languages.push("cpp");
   }
+  if (!languages.includes("cuda") && (await containsCudaFile(root))) {
+    languages.push("cuda");
+  }
   if (!languages.includes("php") && (await containsReviewablePhpFile(root))) {
     languages.push("php");
   }
@@ -1337,6 +1453,13 @@ async function containsReviewableCsharpFile(root: string): Promise<boolean> {
 
 async function containsCFile(root: string): Promise<boolean> {
   return containsFileWithExtension(root, ".c", 5, shouldSkipCOrCppSearchEntry);
+}
+
+async function containsCudaFile(root: string): Promise<boolean> {
+  return (
+    (await containsFileWithExtensionIgnoringCase(root, ".cu", 5, shouldSkipCOrCppSearchEntry)) ||
+    (await containsFileWithExtensionIgnoringCase(root, ".cuh", 5, shouldSkipCOrCppSearchEntry))
+  );
 }
 
 async function containsCppFile(root: string): Promise<boolean> {

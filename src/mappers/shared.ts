@@ -392,7 +392,7 @@ function isJsTestPath(path: string): boolean {
 }
 
 export function isCOrCppPath(path: string): boolean {
-  return /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/iu.test(path);
+  return /\.(?:c|cc|cpp|cxx|cu|cuh|h|hh|hpp|hxx)$/iu.test(path);
 }
 
 export function isCOrCppTestPath(path: string): boolean {
@@ -403,6 +403,29 @@ export function isCOrCppTestPath(path: string): boolean {
     /(?:^|[_-])tests?\./iu.test(base) ||
     /Tests?\.[^.]+$/u.test(base)
   );
+}
+
+export type LanguageTag = "c" | "cpp" | "cuda";
+
+export function languageTag(path: string): LanguageTag {
+  if (/\.cuh?$/iu.test(path)) {
+    return "cuda";
+  }
+  return /\.(?:C|H)$/u.test(path) || /\.(?:cc|cpp|cxx|hh|hpp|hxx)$/iu.test(path) ? "cpp" : "c";
+}
+
+export function languageLabel(tag: LanguageTag): string {
+  return tag === "cuda" ? "CUDA" : tag === "cpp" ? "C++" : "C";
+}
+
+export function withCudaConcurrency(
+  boundaries: TrustBoundary[],
+  tag: LanguageTag,
+): TrustBoundary[] {
+  if (tag !== "cuda" || boundaries.includes("concurrency")) {
+    return boundaries;
+  }
+  return [...boundaries, "concurrency"];
 }
 
 function shouldSkipCOrCppNearbyPath(path: string): boolean {

@@ -23,6 +23,9 @@ export async function configSeeds(root: string): Promise<FeatureSeed[]> {
     "composer.lock",
     "phpunit.xml",
     "Makefile",
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    "configure.ac",
   ];
   const seeds: FeatureSeed[] = [];
   for (const file of candidates) {
