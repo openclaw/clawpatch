@@ -21,7 +21,13 @@
     "format:check": "oxfmt --check .",
     "website:smoke": "node scripts/website-smoke.mjs",
     "test": "vitest run",
-    "pack:smoke": "node scripts/package-smoke.mjs"
+    "pack:smoke": "node scripts/package-smoke.mjs",
+    "check:changed": "pnpm run test",
+    "test:changed": "pnpm run test",
+    "crabbox:hydrate": "crabbox actions hydrate",
+    "crabbox:run": "crabbox run",
+    "crabbox:stop": "crabbox stop",
+    "crabbox:warmup": "crabbox warmup"
   },
   "dependencies": {
     "zod": "^4.4.3"
