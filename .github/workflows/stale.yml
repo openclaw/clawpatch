@@ -14,6 +14,11 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
+      - name: Ensure stale label
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh label create stale --description "Inactive issue or pull request" --color ededed --force
+
       - name: Mark stale unassigned issues and pull requests
         uses: actions/stale@v10
         with:
