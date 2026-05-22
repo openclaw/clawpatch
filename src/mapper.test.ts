@@ -11886,6 +11886,25 @@ add_executable(headerapp include/headers.hpp)
     expect(gpuapp?.trustBoundaries).toContain("concurrency");
   });
 
+  it("tags mixed CMake targets as CUDA when any owned source is .cu", async () => {
+    const root = await fixtureRoot("clawpatch-cmake-mixed-cuda-");
+    await writeFixture(
+      root,
+      "CMakeLists.txt",
+      "project(gpuapp CUDA CXX)\nadd_executable(gpuapp src/main.cpp src/kernel.cu)\n",
+    );
+    await writeFixture(root, "src/main.cpp", "int main(void) { return 0; }\n");
+    await writeFixture(root, "src/kernel.cu", "__global__ void scale(float *x) { x[0] = 1.0f; }\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const gpuapp = result.features.find((feature) => feature.title === "CMake binary gpuapp");
+
+    expect(gpuapp?.entrypoints[0]).toMatchObject({ path: "src/main.cpp", symbol: "main" });
+    expect(gpuapp?.tags).toContain("cuda");
+    expect(gpuapp?.trustBoundaries).toContain("concurrency");
+  });
+
   it("maps CMake and autotools build files as config features", async () => {
     const root = await fixtureRoot("clawpatch-build-config-");
     await writeFixture(root, "CMakeLists.txt", "project(app CXX)\nadd_executable(app main.cpp)\n");

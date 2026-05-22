@@ -10,6 +10,7 @@ import {
   packageTrustBoundaries,
   shouldSkip,
   stripLineComments,
+  targetLanguageTag,
   walk,
   withCudaConcurrency,
 } from "./shared.js";
@@ -78,7 +79,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
       if (entryPath === null) {
         continue;
       }
-      const tag = languageTag(entryPath);
+      const tag = targetLanguageTag(entryPath, sourcePaths);
       seeds.push({
         title: `Autotools binary ${target}`,
         summary: `Autotools bin_PROGRAMS target declared in ${makefile}.`,
@@ -106,7 +107,7 @@ async function autotoolsTargets(root: string, files: string[]): Promise<FeatureS
         continue;
       }
       const entryPath = pickEntry(sourcePaths, target) ?? makefile;
-      const tag = languageTag(entryPath);
+      const tag = targetLanguageTag(entryPath, sourcePaths);
       seeds.push({
         title: `Autotools library ${target}`,
         summary: `Autotools lib_LTLIBRARIES target declared in ${makefile}.`,
@@ -178,6 +179,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
       }
       const testEntryPath = cmakeTestExecutableEntry(target, entryPath);
       if (testEntryPath !== null) {
+        const testTag = targetLanguageTag(testEntryPath, sourcePaths);
         seeds.push({
           title: `CMake test suite ${target}`,
           summary: `CMake test executable ${target} declared in ${cmakeFile}.`,
@@ -188,8 +190,8 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
           symbol: null,
           route: null,
           command: null,
-          tags: [languageTag(testEntryPath), "test"],
-          trustBoundaries: withCudaConcurrency([], languageTag(testEntryPath)),
+          tags: [testTag, "test"],
+          trustBoundaries: withCudaConcurrency([], testTag),
           ownedFiles: targetSourceRefs(sourcePaths),
           contextFiles: cmakeTargetContextFiles(
             cmakeFile,
@@ -201,7 +203,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         });
         continue;
       }
-      const tag = languageTag(entryPath);
+      const tag = targetLanguageTag(entryPath, sourcePaths);
       seeds.push({
         title: `CMake binary ${target}`,
         summary: `CMake ${command}(${target}) declared in ${cmakeFile}.`,
@@ -240,7 +242,7 @@ async function cmakeTargets(root: string, files: string[]): Promise<FeatureSeed[
         continue;
       }
       const entryPath = pickEntry(sourcePaths, target) ?? cmakeFile;
-      const tag = languageTag(entryPath);
+      const tag = targetLanguageTag(entryPath, sourcePaths);
       seeds.push({
         title: `CMake library ${target}`,
         summary: `CMake ${command}(${target}) declared in ${cmakeFile}.`,

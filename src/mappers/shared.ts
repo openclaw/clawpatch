@@ -418,6 +418,13 @@ export function languageLabel(tag: LanguageTag): string {
   return tag === "cuda" ? "CUDA" : tag === "cpp" ? "C++" : "C";
 }
 
+export function targetLanguageTag(entryPath: string, sourcePaths: readonly string[]): LanguageTag {
+  if (sourcePaths.some((path) => languageTag(path) === "cuda")) {
+    return "cuda";
+  }
+  return languageTag(entryPath);
+}
+
 export function withCudaConcurrency(
   boundaries: TrustBoundary[],
   tag: LanguageTag,
