@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathExists } from "../fs.js";
+import { shellQuotePath } from "../shell.js";
 import { packageKind, pathMatchesPrefix, shouldSkip, stripLineComments, walk } from "./shared.js";
 import { FeatureSeed, SeedTestRef } from "./types.js";
 
@@ -301,7 +302,7 @@ function associatedTests(files: string[], testFiles: string[]): SeedTestRef[] {
   return testFiles
     .filter((path) => prefixes.some((prefix) => pathMatchesPrefix(path, prefix)))
     .slice(0, elixirTestGroupMaxFiles)
-    .map((path) => ({ path, command: `mix test ${path}` }));
+    .map((path) => ({ path, command: `mix test ${shellQuotePath(path)}` }));
 }
 
 function testPrefixesForSource(path: string): string[] {

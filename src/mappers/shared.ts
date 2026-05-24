@@ -1,6 +1,7 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { pathExists } from "../fs.js";
+import { shellQuotePath } from "../shell.js";
 import { TrustBoundary } from "../types.js";
 import { FeatureSeed } from "./types.js";
 
@@ -359,22 +360,26 @@ export function nodeScriptCommand(
   packageRoot: string,
   script: string,
 ): string {
+  const quotedRoot = shellQuotePath(packageRoot);
+  const quotedScript = shellQuotePath(script);
   if (packageRoot === ".") {
     if (packageManager === "bun") {
-      return `bun run ${script}`;
+      return `bun run ${quotedScript}`;
     }
-    return packageManager === "npm" ? `npm run ${script}` : `${packageManager} ${script}`;
+    return packageManager === "npm"
+      ? `npm run ${quotedScript}`
+      : `${packageManager} ${quotedScript}`;
   }
   if (packageManager === "pnpm") {
-    return `pnpm --dir ${packageRoot} ${script}`;
+    return `pnpm --dir ${quotedRoot} ${quotedScript}`;
   }
   if (packageManager === "yarn") {
-    return `yarn --cwd ${packageRoot} ${script}`;
+    return `yarn --cwd ${quotedRoot} ${quotedScript}`;
   }
   if (packageManager === "bun") {
-    return `bun --cwd ${packageRoot} run ${script}`;
+    return `bun --cwd ${quotedRoot} run ${quotedScript}`;
   }
-  return `npm --prefix ${packageRoot} run ${script}`;
+  return `npm --prefix ${quotedRoot} run ${quotedScript}`;
 }
 
 function isTestPath(path: string): boolean {
