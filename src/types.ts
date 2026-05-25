@@ -112,6 +112,7 @@ export const projectRecordSchema = z.object({
     frameworks: z.array(z.string()),
     packageManagers: z.array(z.string()),
     commands: projectCommandsSchema,
+    nativeCommands: projectCommandsSchema.nullable().optional().default(null),
   }),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -130,6 +131,7 @@ export const configSchema = z.object({
     reasoningEffort: reasoningEffortSchema.nullable().optional().default(null),
   }),
   commands: projectCommandsSchema,
+  nativeCommands: projectCommandsSchema.nullable().optional().default(null),
   review: z.object({
     maxContextFiles: z.number().int().positive(),
     maxOwnedFiles: z.number().int().positive(),

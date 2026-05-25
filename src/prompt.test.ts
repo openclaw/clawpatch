@@ -318,6 +318,7 @@ function project(root: string): ProjectRecord {
       frameworks: [],
       packageManagers: ["npm"],
       commands: defaultConfig().commands,
+      nativeCommands: null,
     },
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

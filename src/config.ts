@@ -49,6 +49,7 @@ export function defaultConfig(): ClawpatchConfig {
       reasoningEffort: null,
     },
     commands: defaultCommands,
+    nativeCommands: null,
     review: {
       maxContextFiles: 24,
       maxOwnedFiles: 12,

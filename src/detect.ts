@@ -46,6 +46,7 @@ export async function detectProject(root: string): Promise<ProjectRecord> {
   const frameworks = await detectFrameworks(root, pkg, composer);
   const languages = await detectLanguages(root);
   const commands = await detectCommands(root, pkg, composer, languages, packageManagers);
+  const nativeCommands = await detectNativeCommands(root, languages, commands);
   const name =
     typeof pkg?.name === "string"
       ? pkg.name
@@ -69,6 +70,7 @@ export async function detectProject(root: string): Promise<ProjectRecord> {
       frameworks,
       packageManagers,
       commands,
+      nativeCommands,
     },
     createdAt: now,
     updatedAt: now,
@@ -692,6 +694,32 @@ async function rubyDefaultCommands(root: string): Promise<ProjectCommands> {
     format: null,
     test: hasRspec ? `${run}rspec` : hasMinitest ? `${run}rake test` : null,
   };
+}
+
+async function detectNativeCommands(
+  root: string,
+  languages: string[],
+  primary: ProjectCommands,
+): Promise<ProjectCommands | null> {
+  if (
+    !languages.some((language) => language === "c" || language === "cpp" || language === "cuda")
+  ) {
+    return null;
+  }
+  const native = await cOrCppDefaultCommands(root);
+  if (!hasValidationCommand(native)) {
+    return null;
+  }
+  if (projectCommandsEqual(native, primary)) {
+    return null;
+  }
+  return native;
+}
+
+function projectCommandsEqual(a: ProjectCommands, b: ProjectCommands): boolean {
+  return (
+    a.typecheck === b.typecheck && a.lint === b.lint && a.format === b.format && a.test === b.test
+  );
 }
 
 async function cOrCppDefaultCommands(root: string): Promise<ProjectCommands> {

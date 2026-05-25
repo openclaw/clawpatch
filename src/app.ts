@@ -94,7 +94,11 @@ export async function initCommand(
   const paths = statePaths(stateDir);
   await ensureStateDirs(paths);
   const project = await detectProject(context.root);
-  const detectedConfig = { ...config, commands: project.detected.commands };
+  const detectedConfig = {
+    ...config,
+    commands: project.detected.commands,
+    nativeCommands: project.detected.nativeCommands ?? null,
+  };
   const previous = await readProject(paths);
   if (previous !== null && flags["force"] !== true) {
     throw new ClawpatchError("project already initialized; use --force", 2, "already-initialized");
@@ -550,7 +554,11 @@ export async function showCommand(
   const record = assertDefined(finding, `finding not found: ${findingId}`);
   const feature = features.find((candidate) => candidate.featureId === record.featureId) ?? null;
   const linkedPatches = patches.filter((patch) => patch.findingIds.includes(record.findingId));
-  const validation = validationCommandsForFeature(feature, loaded.config.commands);
+  const validation = validationCommandsForFeature(
+    feature,
+    loaded.config.commands,
+    loaded.config.nativeCommands ?? null,
+  );
   if (context.options.json) {
     return {
       finding: findingSummary(record, feature),
@@ -1032,7 +1040,11 @@ export async function fixCommand(
   };
   const prompt = await buildFixPrompt(loaded.root, finding, feature, config);
   if (flags["dryRun"] === true) {
-    const validationCommands = validationCommandsForFeature(feature, config.commands);
+    const validationCommands = validationCommandsForFeature(
+      feature,
+      config.commands,
+      config.nativeCommands ?? null,
+    );
     return {
       finding: finding.findingId,
       dryRun: true,
@@ -1073,7 +1085,11 @@ export async function fixCommand(
     });
     throw error;
   }
-  const validationCommands = validationCommandsForFeature(feature, config.commands);
+  const validationCommands = validationCommandsForFeature(
+    feature,
+    config.commands,
+    config.nativeCommands ?? null,
+  );
   const commandsRun: CommandResult[] = [];
   for (const command of validationCommands) {
     commandsRun.push(await runCommand(command, loaded.root));

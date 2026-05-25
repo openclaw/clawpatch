@@ -11870,6 +11870,37 @@ add_executable(headerapp include/headers.hpp)
     expect(project.detected.languages).toContain("cuda");
   });
 
+  it("surfaces native commands on mixed Python + CUDA projects", async () => {
+    const root = await fixtureRoot("clawpatch-cuda-mixed-py-");
+    await writeFixture(root, "pyproject.toml", '[project]\nname="demo"\ndependencies=["pytest"]\n');
+    await writeFixture(root, "tests/test_demo.py", "def test_ok(): assert True\n");
+    await writeFixture(root, "src/kernel.cu", "__global__ void noop(void) {}\n");
+    await writeFixture(root, "Makefile", "all:\n\techo build\n\ncheck:\n\techo run native tests\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.languages).toContain("cuda");
+    expect(project.detected.languages).toContain("python");
+    expect(project.detected.commands.test).toBe("pytest");
+    expect(project.detected.nativeCommands).toEqual({
+      typecheck: null,
+      lint: null,
+      format: null,
+      test: "make check",
+    });
+  });
+
+  it("leaves nativeCommands null when the primary command set already covers C/C++/CUDA", async () => {
+    const root = await fixtureRoot("clawpatch-cuda-native-only-");
+    await writeFixture(root, "src/kernel.cu", "__global__ void noop(void) {}\n");
+    await writeFixture(root, "Makefile", "all:\n\techo build\n\ncheck:\n\techo run native tests\n");
+
+    const project = await detectProject(root);
+
+    expect(project.detected.commands.test).toBe("make check");
+    expect(project.detected.nativeCommands).toBeNull();
+  });
+
   it("tags CUDA build targets with the concurrency trust boundary", async () => {
     const root = await fixtureRoot("clawpatch-cuda-concurrency-");
     await writeFixture(
