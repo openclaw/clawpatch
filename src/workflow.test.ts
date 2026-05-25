@@ -2143,6 +2143,34 @@ describe("workflow", () => {
     expect(config.commands.test).toBe("npm run test");
   });
 
+  it("loads pre-existing config files that pre-date nativeCommands", async () => {
+    const root = await fixtureRoot("clawpatch-config-pre-native-");
+    await writeFixture(
+      root,
+      ".clawpatch/config.json",
+      JSON.stringify({
+        schemaVersion: 1,
+        stateDir: ".clawpatch",
+        include: ["**/*"],
+        exclude: [".clawpatch/**"],
+        provider: { name: "codex", model: null },
+        commands: { typecheck: null, lint: null, format: null, test: "pytest" },
+        review: {
+          maxContextFiles: 24,
+          maxOwnedFiles: 12,
+          maxFindingsPerFeature: 10,
+          minConfidenceToFix: "medium",
+        },
+        git: { requireCleanWorktreeForFix: true, commit: false, openPr: false },
+      }),
+    );
+
+    const config = await loadConfig(root, testOptions(root));
+
+    expect(config.commands.test).toBe("pytest");
+    expect(config.nativeCommands).toBeNull();
+  });
+
   it("clean-locks requeues claimed features", async () => {
     const root = await fixtureRoot("clawpatch-clean-locks-");
     await writeFixture(

@@ -162,7 +162,13 @@ C/C++ shapes, including the legacy `FindCUDA` `cuda_add_executable` /
 any build target are grouped per directory into bounded, low-confidence source
 groups. C/C++/CUDA validation commands are emitted only when the project declares
 them: a root `Makefile` `check`/`test` target, or a `CMakePresets.json` build
-workflow. Otherwise they stay null.
+workflow. Otherwise they stay null. When a project mixes C/C++/CUDA sources
+with another language whose defaults sit higher in the language-priority
+order, such as a Python repository with CUDA kernels, the C/C++/CUDA commands
+are also persisted alongside the primary command set as `nativeCommands`, and
+`clawpatch fix` selects them for features tagged `c`, `cpp`, or `cuda` so a
+CUDA repair is validated with the declared Makefile or CMake preset commands
+rather than the project's primary test runner.
 
 Python mapping covers `pyproject.toml`, `setup.cfg`, `setup.py`, and
 `requirements.txt` metadata; `[project.scripts]`, `[tool.poetry.scripts]`,

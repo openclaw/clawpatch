@@ -5,6 +5,7 @@
 - Added CUDA support to the C/C++ mapper, mapping `.cu` / `.cuh` sources as standalone `main()` files and as CMake and autotools targets, including the legacy `FindCUDA` `cuda_add_executable` / `cuda_add_library` commands. Repositories containing CUDA sources are detected as `cuda` projects; CUDA targets are tagged `cuda` and carry the `concurrency` trust boundary.
 - Added C/C++/CUDA source-group mapping, so source files not owned by any CMake, autotools, or `main()` target are grouped per directory into bounded review slices.
 - Added conservative C/C++/CUDA validation command defaults from a root `Makefile` `check` / `test` target or a declared `CMakePresets.json` build workflow, and mapped `CMakeLists.txt`, `CMakePresets.json`, and `configure.ac` as config features.
+- Added per-feature selection of the C/C++/CUDA validation commands so features tagged `c`, `cpp`, or `cuda` use the declared Makefile or CMake preset commands even when another language wins the project's language-priority defaults, for example a Python repository with CUDA kernels. The detected native command set is persisted as a nullable `nativeCommands` field on the project record and config, and existing `.clawpatch/config.json` files load without migration.
 - Made `clawpatch review` and `clawpatch fix` CUDA-aware, injecting CUDA-specific reviewer guidance (kernel races, unchecked CUDA runtime calls, host/device pointer confusion, memory-access hazards, and synchronization mistakes) for features that own `.cu` / `.cuh` sources.
 
 ## 0.4.0 - 2026-05-22
