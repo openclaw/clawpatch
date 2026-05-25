@@ -999,12 +999,16 @@ async function detectNodePackageManager(root: string): Promise<string> {
   return "npm";
 }
 
-function nxCommand(packageManager: string, target: string, projectName: string): string {
+export function nxCommand(packageManager: string, target: string, projectName: string): string {
+  // `projectName` is repo-derived (Nx project.json / package.json name / dir
+  // basename), so it must be shell-quoted before reaching the `shell: true`
+  // runner. `target` comes from the validationTaskNames allowlist.
+  const quotedName = shellQuotePath(projectName);
   if (packageManager === "npm") {
-    return `npx nx ${target} ${projectName}`;
+    return `npx nx ${target} ${quotedName}`;
   }
   if (packageManager === "bun") {
-    return `bunx nx ${target} ${projectName}`;
+    return `bunx nx ${target} ${quotedName}`;
   }
-  return `${packageManager} nx ${target} ${projectName}`;
+  return `${packageManager} nx ${target} ${quotedName}`;
 }

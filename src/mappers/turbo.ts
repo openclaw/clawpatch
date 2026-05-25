@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { packageScripts } from "../detect.js";
 import { pathExists } from "../fs.js";
+import { shellQuotePath } from "../shell.js";
 import type { NodeProjectInfo } from "./projects.js";
 import { detectNodePackageManager } from "./shared.js";
 import {
@@ -124,17 +125,21 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
-function turboCommand(packageManager: string, task: string, filter: string): string {
+export function turboCommand(packageManager: string, task: string, filter: string): string {
+  // `filter` is repo-derived (package.json name or on-disk root), so it must be
+  // shell-quoted before reaching the `shell: true` runner — same as the other
+  // validation commands. `task` comes from the validationTaskNames allowlist.
+  const quotedFilter = shellQuotePath(filter);
   if (packageManager === "pnpm") {
-    return `pnpm turbo run ${task} --filter ${filter}`;
+    return `pnpm turbo run ${task} --filter ${quotedFilter}`;
   }
   if (packageManager === "yarn") {
-    return `yarn turbo run ${task} --filter ${filter}`;
+    return `yarn turbo run ${task} --filter ${quotedFilter}`;
   }
   if (packageManager === "bun") {
-    return `bunx turbo run ${task} --filter ${filter}`;
+    return `bunx turbo run ${task} --filter ${quotedFilter}`;
   }
-  return `npx turbo run ${task} --filter ${filter}`;
+  return `npx turbo run ${task} --filter ${quotedFilter}`;
 }
 
 function turboPackageName(project: NodeProjectInfo): string | null {

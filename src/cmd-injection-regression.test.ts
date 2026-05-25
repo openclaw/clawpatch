@@ -19,8 +19,9 @@ import { describe, expect, it } from "vitest";
 import { mapFeatures } from "./mapper.js";
 import { validationCommandsForFeature } from "./validation.js";
 import { detectProject } from "./detect.js";
-import { scriptCommand } from "./mappers/projects.js";
+import { scriptCommand, nxCommand } from "./mappers/projects.js";
 import { nodeScriptCommand } from "./mappers/shared.js";
+import { turboCommand } from "./mappers/turbo.js";
 
 function isShellSafe(command: string): boolean {
   // Strip double-quoted segments — anything `$(...)` or `;` inside `"..."`
@@ -68,6 +69,40 @@ describe("validation pipeline shell-quotes filesystem-derived names (regression)
   it("nodeScriptCommand: ordinary inputs are unchanged", () => {
     expect(nodeScriptCommand("pnpm", "apps/web", "test")).toBe("pnpm --dir apps/web test");
     expect(nodeScriptCommand("npm", "apps/web", "test")).toBe("npm --prefix apps/web run test");
+  });
+
+  it("turboCommand: malicious turbo --filter (package name or root) is shell-quoted", () => {
+    for (const pm of ["pnpm", "yarn", "bun", "npm"] as const) {
+      // package.json `name`
+      expect(
+        isShellSafe(turboCommand(pm, "test", "$(id)")),
+        `pm=${pm}`,
+      ).toBe(true);
+      // root fallback `./${project.root}`
+      expect(
+        isShellSafe(turboCommand(pm, "test", "./packages/$(id)-pkg")),
+        `pm=${pm}`,
+      ).toBe(true);
+    }
+  });
+
+  it("turboCommand: ordinary inputs are unchanged (no over-quoting)", () => {
+    expect(turboCommand("pnpm", "test", "my-pkg")).toBe("pnpm turbo run test --filter my-pkg");
+    expect(turboCommand("npm", "test", "./packages/ui")).toBe(
+      "npx turbo run test --filter ./packages/ui",
+    );
+  });
+
+  it("nxCommand: malicious Nx project name is shell-quoted", () => {
+    for (const pm of ["npm", "bun", "pnpm", "yarn"] as const) {
+      const cmd = nxCommand(pm, "test", "$(id)");
+      expect(isShellSafe(cmd), `pm=${pm} cmd=${cmd}`).toBe(true);
+    }
+  });
+
+  it("nxCommand: ordinary inputs are unchanged", () => {
+    expect(nxCommand("npm", "test", "my-app")).toBe("npx nx test my-app");
+    expect(nxCommand("pnpm", "build", "my-app")).toBe("pnpm nx build my-app");
   });
 
   it("swift end-to-end: malicious package-root directory cannot inject into swift test --package-path", async () => {
