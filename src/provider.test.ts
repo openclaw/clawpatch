@@ -1,3 +1,6 @@
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
@@ -22,6 +25,7 @@ const {
   claudeFailureMessage,
   claudeTimeoutMs,
   codexFailureMessage,
+  codexTimeoutMs,
   cursorAgentArgs,
   cursorEnv,
   cursorFailureMessage,
@@ -221,12 +225,24 @@ describe("parseCodexJson", () => {
 
 describe("Codex provider args", () => {
   const originalCodexSandbox = process.env["CLAWPATCH_CODEX_SANDBOX"];
+  const originalCodexTimeout = process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+  const originalProviderTimeout = process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
 
   afterEach(() => {
     if (originalCodexSandbox === undefined) {
       delete process.env["CLAWPATCH_CODEX_SANDBOX"];
     } else {
       process.env["CLAWPATCH_CODEX_SANDBOX"] = originalCodexSandbox;
+    }
+    if (originalCodexTimeout === undefined) {
+      delete process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+    } else {
+      process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = originalCodexTimeout;
+    }
+    if (originalProviderTimeout === undefined) {
+      delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+    } else {
+      process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"] = originalProviderTimeout;
     }
   });
 
@@ -292,6 +308,69 @@ describe("Codex provider args", () => {
     addCodexModelArgs(args, { model: null, reasoningEffort: null, skipGitRepoCheck: false });
 
     expect(args).toEqual(["exec"]);
+  });
+
+  it("uses a 180 second default timeout for Codex", () => {
+    delete process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+    delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+
+    expect(codexTimeoutMs()).toBe(180_000);
+  });
+
+  it("uses Codex-specific timeout before generic provider timeout", () => {
+    delete process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+    delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+
+    process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"] = "2000";
+    expect(codexTimeoutMs()).toBe(2000);
+
+    process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = "3000";
+    expect(codexTimeoutMs()).toBe(3000);
+
+    process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = "bad";
+    expect(codexTimeoutMs()).toBe(180_000);
+  });
+
+  it("times out stalled Codex provider executions", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawpatch-codex-timeout-"));
+    const binDir = join(root, "bin");
+    const codexShim = join(binDir, "codex");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      codexShim,
+      [
+        "#!/usr/bin/env node",
+        'if (process.argv.includes("--version")) {',
+        '  console.log("codex fake 0.133.0");',
+        "  process.exit(0);",
+        "}",
+        "setInterval(() => {}, 1000);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await chmod(codexShim, 0o755);
+
+    const previousPath = process.env["PATH"];
+    process.env["PATH"] = `${binDir}${delimiter}${previousPath ?? ""}`;
+    process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = "50";
+    delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+
+    try {
+      await expect(
+        providerByName("codex").revalidate(root, "return strict JSON", {
+          model: null,
+          reasoningEffort: null,
+          skipGitRepoCheck: false,
+        }),
+      ).rejects.toThrow(/command timed out after 50ms/u);
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env["PATH"];
+      } else {
+        process.env["PATH"] = previousPath;
+      }
+    }
   });
 });
 

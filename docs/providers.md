@@ -32,6 +32,8 @@ Codex invocation:
 - fix: workspace-write sandbox
 - output: strict JSON schema via `--output-schema`
 - final message capture: `--output-last-message`
+- timeout: 180 seconds by default, override with `CLAWPATCH_CODEX_TIMEOUT_MS`
+  or `CLAWPATCH_PROVIDER_TIMEOUT_MS`
 
 Model selection:
 
