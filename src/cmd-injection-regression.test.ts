@@ -74,15 +74,9 @@ describe("validation pipeline shell-quotes filesystem-derived names (regression)
   it("turboCommand: malicious turbo --filter (package name or root) is shell-quoted", () => {
     for (const pm of ["pnpm", "yarn", "bun", "npm"] as const) {
       // package.json `name`
-      expect(
-        isShellSafe(turboCommand(pm, "test", "$(id)")),
-        `pm=${pm}`,
-      ).toBe(true);
+      expect(isShellSafe(turboCommand(pm, "test", "$(id)")), `pm=${pm}`).toBe(true);
       // root fallback `./${project.root}`
-      expect(
-        isShellSafe(turboCommand(pm, "test", "./packages/$(id)-pkg")),
-        `pm=${pm}`,
-      ).toBe(true);
+      expect(isShellSafe(turboCommand(pm, "test", "./packages/$(id)-pkg")), `pm=${pm}`).toBe(true);
     }
   });
 
@@ -135,6 +129,47 @@ describe("validation pipeline shell-quotes filesystem-derived names (regression)
         for (const c of commands) {
           expect(isShellSafe(c), `unsafe command produced: ${c}`).toBe(true);
         }
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rust end-to-end: malicious conventional crate directory cannot inject into cargo --manifest-path", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawpatch-cmd-inj-rust-"));
+    try {
+      // A workspace with no declared members triggers conventional crate
+      // discovery, which reads `crates/*` straight off disk — so the directory
+      // name flows into `cargo test --manifest-path <dir>/Cargo.toml`.
+      await writeFile(join(root, "Cargo.toml"), '[workspace]\nresolver = "2"\n');
+      const maliciousCrate = join("crates", "$(id)-crate");
+      await mkdir(join(root, maliciousCrate, "src"), { recursive: true });
+      await writeFile(
+        join(root, maliciousCrate, "Cargo.toml"),
+        '[package]\nname = "evil"\nversion = "0.1.0"\nedition = "2021"\n',
+      );
+      await writeFile(join(root, maliciousCrate, "src", "lib.rs"), "pub fn evil() {}\n");
+      await mkdir(join(root, maliciousCrate, "tests"), { recursive: true });
+      await writeFile(join(root, maliciousCrate, "tests", "it.rs"), "#[test]\nfn it() {}\n");
+
+      const project = await detectProject(root);
+      const result = await mapFeatures(root, project, []);
+      const allCommands = result.features.flatMap((feature) =>
+        validationCommandsForFeature(feature, {
+          typecheck: null,
+          lint: null,
+          format: null,
+          test: null,
+        }),
+      );
+      // Guard against a silently-empty assertion: the malicious crate must
+      // actually produce the manifest-path command we're checking.
+      expect(
+        allCommands.some((c) => c.includes("--manifest-path")),
+        `expected a --manifest-path command, got: ${JSON.stringify(allCommands)}`,
+      ).toBe(true);
+      for (const c of allCommands) {
+        expect(isShellSafe(c), `unsafe command produced: ${c}`).toBe(true);
       }
     } finally {
       await rm(root, { recursive: true, force: true });
