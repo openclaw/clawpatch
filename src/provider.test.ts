@@ -1,3 +1,6 @@
+import { mkdtemp, readlink, rm, stat } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
@@ -18,6 +21,7 @@ const {
   claudeArgs,
   claudeEffort,
   claudeEnv,
+  symlinkClaudeAuth,
   claudeExitCode,
   claudeFailureMessage,
   claudeTimeoutMs,
@@ -724,6 +728,70 @@ describe("Claude provider helpers", () => {
     });
   });
 
+  it("passes Vertex AI env vars when includeAuth is true", () => {
+    process.env = {
+      PATH: "/bin",
+      ANTHROPIC_API_KEY: "secret",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_VERTEX_PROJECT_ID: "my-project",
+      ANTHROPIC_VERTEX_REGION: "us-east5",
+      CLOUD_ML_REGION: "us-east5",
+      GOOGLE_APPLICATION_CREDENTIALS: "/path/to/creds.json",
+    };
+
+    const env = claudeEnv(true, "/tmp/claude");
+    expect(env).toMatchObject({
+      ANTHROPIC_API_KEY: "secret",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_VERTEX_PROJECT_ID: "my-project",
+      ANTHROPIC_VERTEX_REGION: "us-east5",
+      CLOUD_ML_REGION: "us-east5",
+      GOOGLE_APPLICATION_CREDENTIALS: "/path/to/creds.json",
+    });
+
+    const envNoAuth = claudeEnv(false, "/tmp/claude");
+    expect(envNoAuth).not.toHaveProperty("CLAUDE_CODE_USE_VERTEX");
+    expect(envNoAuth).not.toHaveProperty("ANTHROPIC_VERTEX_PROJECT_ID");
+  });
+
+  it("passes Bedrock env vars when includeAuth is true", () => {
+    process.env = {
+      PATH: "/bin",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock.us-east-1.amazonaws.com",
+      AWS_REGION: "us-east-1",
+      AWS_ACCESS_KEY_ID: "AKIA...",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      AWS_SESSION_TOKEN: "token",
+    };
+
+    const env = claudeEnv(true, "/tmp/claude");
+    expect(env).toMatchObject({
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock.us-east-1.amazonaws.com",
+      AWS_REGION: "us-east-1",
+      AWS_ACCESS_KEY_ID: "AKIA...",
+      AWS_SECRET_ACCESS_KEY: "secret",
+      AWS_SESSION_TOKEN: "token",
+    });
+  });
+
+  it("does not leak unrelated secrets through Claude env", () => {
+    process.env = {
+      PATH: "/bin",
+      ANTHROPIC_API_KEY: "secret",
+      OPENAI_API_KEY: "must-not-leak",
+      CLAUDE_CODE_OAUTH_TOKEN: "must-not-leak",
+      DATABASE_URL: "must-not-leak",
+      CLAUDE_CODE_USE_VERTEX: "1",
+    };
+
+    const env = claudeEnv(true, "/tmp/claude");
+    expect(env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(env).not.toHaveProperty("DATABASE_URL");
+  });
+
   it("preserves a Windows-style Path variable in the Claude env allowlist", () => {
     process.env = {
       Path: "C:\\Tools",
@@ -735,6 +803,28 @@ describe("Claude provider helpers", () => {
       ANTHROPIC_API_KEY: "secret",
     });
     expect(claudeEnv(true, "C:\\Temp\\claude")).not.toHaveProperty("PATH");
+  });
+
+  it("symlinks auth directories into the sandbox HOME", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawpatch-claude-test-"));
+    try {
+      await symlinkClaudeAuth(dir);
+      const sandboxHome = join(dir, "home");
+      const claudeLink = join(sandboxHome, ".claude");
+      const claudeStat = await stat(claudeLink).catch(() => null);
+      if (claudeStat !== null) {
+        const target = await readlink(claudeLink);
+        expect(target).toBe(join(homedir(), ".claude"));
+      }
+      const gcloudLink = join(sandboxHome, ".config", "gcloud");
+      const gcloudStat = await stat(gcloudLink).catch(() => null);
+      if (gcloudStat !== null) {
+        const target = await readlink(gcloudLink);
+        expect(target).toBe(join(homedir(), ".config", "gcloud"));
+      }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("extracts structured_output from Claude JSON envelopes", () => {

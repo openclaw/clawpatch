@@ -1,5 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { z, type ZodError, type ZodIssue, type ZodType } from "zod";
 import { runCommandArgs } from "./exec.js";
@@ -955,6 +955,9 @@ async function runClaudeCommand(
   const dir = await mkdtemp(join(tmpdir(), "clawpatch-claude-"));
   try {
     const env = claudeEnv(options.includeAuth, dir);
+    if (options.includeAuth) {
+      await symlinkClaudeAuth(dir);
+    }
     return await runCommandArgs(claudeExecutable(), args, root, input, {
       trimOutput: false,
       timeoutMs: options.timeoutMs,
@@ -981,8 +984,33 @@ function claudeEnv(includeAuth: boolean, baseDir: string): NodeJS.ProcessEnv {
   env["TMP"] = baseDir;
   if (includeAuth) {
     copyEnv(env, "ANTHROPIC_API_KEY");
+    copyEnv(env, "CLAUDE_CODE_USE_VERTEX");
+    copyEnv(env, "ANTHROPIC_VERTEX_PROJECT_ID");
+    copyEnv(env, "ANTHROPIC_VERTEX_REGION");
+    copyEnv(env, "CLOUD_ML_REGION");
+    copyEnv(env, "CLAUDE_CODE_USE_BEDROCK");
+    copyEnv(env, "ANTHROPIC_BEDROCK_BASE_URL");
+    copyEnv(env, "AWS_REGION");
+    copyEnv(env, "AWS_ACCESS_KEY_ID");
+    copyEnv(env, "AWS_SECRET_ACCESS_KEY");
+    copyEnv(env, "AWS_SESSION_TOKEN");
+    copyEnv(env, "GOOGLE_APPLICATION_CREDENTIALS");
   }
   return env;
+}
+
+async function symlinkClaudeAuth(baseDir: string): Promise<void> {
+  const realHome = homedir();
+  const sandboxHome = join(baseDir, "home");
+  await mkdir(sandboxHome, { recursive: true });
+  const claudeDir = join(realHome, ".claude");
+  await symlink(claudeDir, join(sandboxHome, ".claude")).catch(() => {});
+  const gcloudDir = join(realHome, ".config", "gcloud");
+  const sandboxConfig = join(sandboxHome, ".config");
+  await mkdir(sandboxConfig, { recursive: true });
+  await symlink(gcloudDir, join(sandboxConfig, "gcloud")).catch(() => {});
+  const awsDir = join(realHome, ".aws");
+  await symlink(awsDir, join(sandboxHome, ".aws")).catch(() => {});
 }
 
 function copyPathEnv(target: NodeJS.ProcessEnv): void {
@@ -2225,6 +2253,7 @@ export const __testing = {
   claudeArgs,
   claudeEffort,
   claudeEnv,
+  symlinkClaudeAuth,
   claudeExitCode,
   claudeFailureMessage,
   claudeTimeoutMs,
