@@ -144,9 +144,14 @@ How the Claude provider works:
   versions. It does not validate auth or make a network call; auth failures are
   reported on the first provider-backed command.
 - Auth/isolation: provider runs use `--bare` with a default-deny environment.
-  Clawpatch forwards only minimal execution variables and `ANTHROPIC_API_KEY`;
-  it does not pass host `HOME`, OAuth/keychain state, or whole Claude
-  config/cache directories.
+  Clawpatch forwards only minimal execution variables plus explicit Anthropic
+  API key, Vertex AI, Google ADC, cloud-gateway, and Bedrock/AWS auth variables.
+  It does not pass host `HOME`, OAuth/keychain state, or whole Claude
+  config/cache directories; OAuth subscription auth is not available in Claude
+  Code `--bare` mode. Cloud auth env is available to Claude Code itself, while
+  Claude tool subprocess env scrubbing is enabled. AWS profile names are
+  forwarded only when `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` points
+  at explicit profile files.
 - Structured output: provider runs use `--output-format json --json-schema`
   and parse the returned `structured_output` field.
 - Read-only operations (map, review, revalidate): use

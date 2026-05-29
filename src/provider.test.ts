@@ -738,6 +738,7 @@ describe("Claude provider helpers", () => {
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
     });
     expect(claudeEnv(true, "/tmp/claude")).toEqual({
       PATH: "/bin",
@@ -748,7 +749,118 @@ describe("Claude provider helpers", () => {
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
       ANTHROPIC_API_KEY: "secret",
+    });
+  });
+
+  it("passes Vertex AI auth env vars only when auth is included", () => {
+    process.env = {
+      PATH: "/bin",
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_BASE_URL: "https://llm-gateway.example.com",
+      ANTHROPIC_AUTH_TOKEN: "gateway-token",
+      ANTHROPIC_VERTEX_PROJECT_ID: "project-id",
+      ANTHROPIC_VERTEX_REGION: "us-east5",
+      ANTHROPIC_VERTEX_BASE_URL: "https://vertex-gateway.example.com",
+      CLOUD_ML_REGION: "us-east5",
+      GOOGLE_APPLICATION_CREDENTIALS: "/var/creds/google.json",
+      GOOGLE_CLOUD_PROJECT: "project-id",
+      GCLOUD_PROJECT: "legacy-project",
+      CLOUDSDK_CORE_PROJECT: "sdk-project",
+      CLAUDE_CODE_SKIP_VERTEX_AUTH: "1",
+      OPENAI_API_KEY: "must-not-leak",
+    };
+
+    expect(claudeEnv(false, "/tmp/claude")).toEqual({
+      PATH: "/bin",
+      HOME: "/tmp/claude/home",
+      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
+      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
+      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      TMPDIR: "/tmp/claude",
+      TEMP: "/tmp/claude",
+      TMP: "/tmp/claude",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+    });
+    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+      CLAUDE_CODE_USE_VERTEX: "1",
+      ANTHROPIC_BASE_URL: "https://llm-gateway.example.com",
+      ANTHROPIC_AUTH_TOKEN: "gateway-token",
+      ANTHROPIC_VERTEX_PROJECT_ID: "project-id",
+      ANTHROPIC_VERTEX_REGION: "us-east5",
+      ANTHROPIC_VERTEX_BASE_URL: "https://vertex-gateway.example.com",
+      CLOUD_ML_REGION: "us-east5",
+      GOOGLE_APPLICATION_CREDENTIALS: "/var/creds/google.json",
+      GOOGLE_CLOUD_PROJECT: "project-id",
+      GCLOUD_PROJECT: "legacy-project",
+      CLOUDSDK_CORE_PROJECT: "sdk-project",
+      CLAUDE_CODE_SKIP_VERTEX_AUTH: "1",
+    });
+    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("OPENAI_API_KEY");
+  });
+
+  it("passes Bedrock auth env vars only when auth is included", () => {
+    process.env = {
+      PATH: "/bin",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      CLAUDE_CODE_SKIP_BEDROCK_AUTH: "1",
+      ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock-runtime.us-east-1.amazonaws.com",
+      AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
+      AWS_REGION: "us-east-1",
+      AWS_DEFAULT_REGION: "us-east-1",
+      AWS_PROFILE: "clawpatch",
+      AWS_ACCESS_KEY_ID: "access-key",
+      AWS_SECRET_ACCESS_KEY: "secret-key",
+      AWS_SESSION_TOKEN: "session-token",
+      AWS_SHARED_CREDENTIALS_FILE: "/var/aws/credentials",
+      AWS_CONFIG_FILE: "/var/aws/config",
+      AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/clawpatch",
+      AWS_WEB_IDENTITY_TOKEN_FILE: "/var/aws/web-identity-token",
+      DATABASE_URL: "must-not-leak",
+    };
+
+    expect(claudeEnv(false, "/tmp/claude")).not.toHaveProperty("CLAUDE_CODE_USE_BEDROCK");
+    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      CLAUDE_CODE_SKIP_BEDROCK_AUTH: "1",
+      ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock-runtime.us-east-1.amazonaws.com",
+      AWS_REGION: "us-east-1",
+      AWS_DEFAULT_REGION: "us-east-1",
+      AWS_PROFILE: "clawpatch",
+      AWS_ACCESS_KEY_ID: "access-key",
+      AWS_SECRET_ACCESS_KEY: "secret-key",
+      AWS_SESSION_TOKEN: "session-token",
+      AWS_BEARER_TOKEN_BEDROCK: "bedrock-token",
+      AWS_SHARED_CREDENTIALS_FILE: "/var/aws/credentials",
+      AWS_CONFIG_FILE: "/var/aws/config",
+      AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/clawpatch",
+      AWS_WEB_IDENTITY_TOKEN_FILE: "/var/aws/web-identity-token",
+    });
+    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("DATABASE_URL");
+  });
+
+  it("passes AWS_PROFILE only with explicit AWS config or credentials file paths", () => {
+    process.env = {
+      PATH: "/bin",
+      CLAUDE_CODE_USE_BEDROCK: "1",
+      AWS_REGION: "us-east-1",
+      AWS_PROFILE: "clawpatch",
+    };
+
+    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("AWS_PROFILE");
+
+    process.env["AWS_CONFIG_FILE"] = "/var/aws/config";
+    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+      AWS_CONFIG_FILE: "/var/aws/config",
+      AWS_PROFILE: "clawpatch",
+    });
+
+    delete process.env["AWS_CONFIG_FILE"];
+    process.env["AWS_SHARED_CREDENTIALS_FILE"] = "/var/aws/credentials";
+    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+      AWS_SHARED_CREDENTIALS_FILE: "/var/aws/credentials",
+      AWS_PROFILE: "clawpatch",
     });
   });
 
