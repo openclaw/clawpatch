@@ -13461,6 +13461,107 @@ add_executable(headerapp include/headers.hpp)
     expect(suite?.tests).toEqual([{ path: "tests/test_pep758.py", command: "pytest" }]);
   });
 
+  it("uses nearest Python runtime metadata for nested source packages", async () => {
+    const root = await fixtureRoot("clawpatch-python-nested-runtime-context-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace"\nrequires-python = ">=3.14"\n',
+    );
+    await writeFixture(root, ".python-version", "3.14\n");
+    await writeFixture(root, "apps/api/.python-version", "3.13\n");
+    await writeFixture(root, "apps/api/service.py", "def service():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "apps/api/service.py"),
+    );
+
+    expect(source?.contextFiles).toContainEqual({
+      path: "apps/api/.python-version",
+      reason: "python target runtime metadata",
+    });
+    expect(source?.contextFiles).not.toContainEqual({
+      path: ".python-version",
+      reason: "python target runtime metadata",
+    });
+    expect(source?.contextFiles).not.toContainEqual({
+      path: "pyproject.toml",
+      reason: "python target runtime metadata",
+    });
+  });
+
+  it("inherits Python runtime metadata past nested package files without version constraints", async () => {
+    const root = await fixtureRoot("clawpatch-python-inherited-runtime-context-");
+    await writeFixture(root, ".python-version", "3.14\n");
+    await writeFixture(root, "apps/api/pyproject.toml", '[project]\nname = "api"\n');
+    await writeFixture(root, "apps/api/service.py", "def service():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "apps/api/service.py"),
+    );
+
+    expect(source?.contextFiles).toContainEqual({
+      path: "apps/api/pyproject.toml",
+      reason: "python target runtime metadata",
+    });
+    expect(source?.contextFiles).toContainEqual({
+      path: ".python-version",
+      reason: "python target runtime metadata",
+    });
+  });
+
+  it("uses nested Poetry Python constraints instead of ancestor runtime metadata", async () => {
+    const root = await fixtureRoot("clawpatch-python-poetry-runtime-context-");
+    await writeFixture(root, ".python-version", "3.14\n");
+    await writeFixture(
+      root,
+      "apps/api/pyproject.toml",
+      '[tool.poetry]\nname = "api"\n\n[tool.poetry.dependencies]\npython = "^3.13"\n',
+    );
+    await writeFixture(root, "apps/api/service.py", "def service():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "apps/api/service.py"),
+    );
+
+    expect(source?.contextFiles).toContainEqual({
+      path: "apps/api/pyproject.toml",
+      reason: "python target runtime metadata",
+    });
+    expect(source?.contextFiles).not.toContainEqual({
+      path: ".python-version",
+      reason: "python target runtime metadata",
+    });
+  });
+
+  it("does not treat non-Python tool versions as a Python runtime constraint", async () => {
+    const root = await fixtureRoot("clawpatch-python-tool-versions-context-");
+    await writeFixture(root, ".python-version", "3.14\n");
+    await writeFixture(root, "apps/api/.tool-versions", "nodejs 22.0.0\n");
+    await writeFixture(root, "apps/api/service.py", "def service():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const source = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "apps/api/service.py"),
+    );
+
+    expect(source?.contextFiles).toContainEqual({
+      path: "apps/api/.tool-versions",
+      reason: "python target runtime metadata",
+    });
+    expect(source?.contextFiles).toContainEqual({
+      path: ".python-version",
+      reason: "python target runtime metadata",
+    });
+  });
+
   it("maps Flask routes under web source roots", async () => {
     const root = await fixtureRoot("clawpatch-python-flask-routes-");
     await writeFixture(root, "requirements.txt", "Flask\npytest\n");

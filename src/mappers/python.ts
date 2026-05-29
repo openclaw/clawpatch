@@ -91,7 +91,6 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
   }
   const metadata = await readPythonProjectMetadata(root);
   const metadataFiles = await pythonMetadataFiles(root);
-  const runtimeContextFiles = await pythonRuntimeContextFiles(root);
   const testCommand = await pythonTestCommand(root, metadata);
   const testFiles = await pythonTestFiles(root);
   const seeds: FeatureSeed[] = [];
@@ -139,7 +138,7 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
           ? [{ path: script.metadataPath, reason: "console script metadata" }]
           : [{ path: resolved.entryPath, reason: "console script source" }],
       contextFiles: [
-        ...runtimeContextFiles,
+        ...(await pythonRuntimeContextFiles(root, [resolved.entryPath])),
         ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
       ],
       tests,
@@ -179,7 +178,7 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
       command: null,
       ownedFiles: group.files.map((path) => ({ path, reason: `source group ${group.label}` })),
       contextFiles: [
-        ...runtimeContextFiles,
+        ...(await pythonRuntimeContextFiles(root, group.files)),
         ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
       ],
       tests,
@@ -190,7 +189,7 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
-  for (const test of standaloneTestSuites(testFiles, testCommand, runtimeContextFiles)) {
+  for (const test of await standaloneTestSuites(root, testFiles, testCommand)) {
     seeds.push(test);
   }
 
@@ -245,14 +244,85 @@ async function pythonMetadataFiles(root: string): Promise<string[]> {
   return files;
 }
 
-async function pythonRuntimeContextFiles(root: string): Promise<SeedFileRef[]> {
+async function pythonRuntimeContextFiles(
+  root: string,
+  featurePaths: readonly string[] = [""],
+): Promise<SeedFileRef[]> {
   const files: SeedFileRef[] = [];
-  for (const path of runtimeMetadataFiles) {
-    if (await pathExists(join(root, path))) {
-      files.push({ path, reason: "python target runtime metadata" });
+  const seen = new Set<string>();
+  for (const featurePath of uniquePaths([...featurePaths])) {
+    for (const ref of await nearestPythonRuntimeContextFiles(root, featurePath)) {
+      if (!seen.has(ref.path)) {
+        seen.add(ref.path);
+        files.push(ref);
+      }
     }
   }
   return files;
+}
+
+async function nearestPythonRuntimeContextFiles(
+  root: string,
+  featurePath: string,
+): Promise<SeedFileRef[]> {
+  const refs: SeedFileRef[] = [];
+  for (const dir of ancestorDirs(dirname(featurePath))) {
+    let foundRuntimeConstraint = false;
+    for (const fileName of runtimeMetadataFiles) {
+      const path = dir.length === 0 ? fileName : `${dir}/${fileName}`;
+      if (await pathExists(join(root, path))) {
+        refs.push({ path, reason: "python target runtime metadata" });
+        foundRuntimeConstraint ||= await pythonRuntimeFileDeclaresVersion(root, path);
+      }
+    }
+    if (foundRuntimeConstraint) {
+      return refs;
+    }
+  }
+  return refs;
+}
+
+async function pythonRuntimeFileDeclaresVersion(root: string, path: string): Promise<boolean> {
+  const name = basename(path);
+  if (name === ".python-version" || name === "runtime.txt") {
+    return true;
+  }
+  if (name === ".tool-versions") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /^\s*(?:python|python3)\s+\S+/mu.test(source);
+  }
+  if (name === "pyproject.toml") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return (
+      /^\s*requires-python\s*=/mu.test(source) ||
+      tomlStringValue(table(source, "tool.poetry.dependencies"), "python") !== null
+    );
+  }
+  if (name === "setup.cfg") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /^\s*python_requires\s*=/mu.test(source);
+  }
+  if (name === "setup.py") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /\bpython_requires\s*=/u.test(source);
+  }
+  return false;
+}
+
+function ancestorDirs(start: string): string[] {
+  const dirs: string[] = [];
+  let current = normalizeRelativeDir(start);
+  for (;;) {
+    dirs.push(current);
+    if (current.length === 0) {
+      return dirs;
+    }
+    current = normalizeRelativeDir(dirname(current));
+  }
+}
+
+function normalizeRelativeDir(path: string): string {
+  return path === "." ? "" : path.replace(/\/+$/u, "");
 }
 
 async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promise<string | null> {
@@ -421,7 +491,6 @@ async function djangoRouteSeeds(
     ...(await rootPythonSourceFiles(root)),
     ...(await walk(root, await pythonSourceRoots(root))).filter(isReviewablePythonSourceFile),
   ]);
-  const runtimeContextFiles = await pythonRuntimeContextFiles(root);
   const seeds: FeatureSeed[] = [];
   const routesByFile = new Map<string, DjangoRoute[]>();
   for (const filePath of routeFiles) {
@@ -457,7 +526,7 @@ async function djangoRouteSeeds(
           command: null,
           ownedFiles: [{ path: expanded.filePath, reason: "Django URL route declaration" }],
           contextFiles: [
-            ...runtimeContextFiles,
+            ...(await pythonRuntimeContextFiles(root, [expanded.filePath])),
             ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
           ],
           tests,
@@ -1062,7 +1131,6 @@ async function fastApiRouteSeeds(
     ...(await rootPythonSourceFiles(root)),
     ...(await walk(root, await pythonSourceRoots(root))).filter(isReviewablePythonSourceFile),
   ]);
-  const runtimeContextFiles = await pythonRuntimeContextFiles(root);
   const seeds: FeatureSeed[] = [];
   for (const filePath of routeFiles) {
     const source = await readFile(join(root, filePath), "utf8");
@@ -1089,7 +1157,7 @@ async function fastApiRouteSeeds(
           { path: route.filePath, reason: `FastAPI route handler ${route.functionName}` },
         ],
         contextFiles: [
-          ...runtimeContextFiles,
+          ...(await pythonRuntimeContextFiles(root, [route.filePath])),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ],
         tests,
@@ -1288,7 +1356,6 @@ async function flaskRouteSeeds(
 ): Promise<FeatureSeed[]> {
   const hasFlaskDependency = await pythonDependencyHas(root, "flask");
   const routeFiles = await flaskRouteFiles(root);
-  const runtimeContextFiles = await pythonRuntimeContextFiles(root);
   const seeds: FeatureSeed[] = [];
   for (const filePath of routeFiles) {
     const source = await readFile(join(root, filePath), "utf8");
@@ -1311,7 +1378,7 @@ async function flaskRouteSeeds(
         command: null,
         ownedFiles: [{ path: route.filePath, reason: `Flask route handler ${route.functionName}` }],
         contextFiles: [
-          ...runtimeContextFiles,
+          ...(await pythonRuntimeContextFiles(root, [route.filePath])),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ],
         tests,
@@ -1666,36 +1733,40 @@ function fastApiRouteTrustBoundaries(route: FastApiRoute): FeatureSeed["trustBou
   return boundaries;
 }
 
-function standaloneTestSuites(
+async function standaloneTestSuites(
+  root: string,
   testFiles: string[],
   command: string | null,
-  runtimeContextFiles: SeedFileRef[],
-): FeatureSeed[] {
+): Promise<FeatureSeed[]> {
   if (testFiles.length === 0) {
     return [];
   }
   const groups: FileGroup[] = [];
-  for (const [root, files] of groupedTestFiles(testFiles)) {
-    groups.push(...partitionFileGroups(root, files, sourceGroupMaxOwnedFiles));
+  for (const [suiteRoot, files] of groupedTestFiles(testFiles)) {
+    groups.push(...partitionFileGroups(suiteRoot, files, sourceGroupMaxOwnedFiles));
   }
-  return groups.map((group) => ({
-    title: `Python test suite ${group.label}`,
-    summary: `Python pytest files in ${group.label}.`,
-    kind: "test-suite",
-    source: "python-test-suite",
-    confidence: "medium",
-    entryPath: group.label,
-    symbol: group.label,
-    route: null,
-    command: null,
-    ownedFiles: group.files.map((path) => ({ path, reason: "pytest file" })),
-    contextFiles: [...runtimeContextFiles],
-    tests: group.files.map((path) => ({ path, command })),
-    tags: ["python", "test"],
-    trustBoundaries: [],
-    testCommand: command,
-    skipNearbyTests: true,
-  }));
+  const seeds: FeatureSeed[] = [];
+  for (const group of groups) {
+    seeds.push({
+      title: `Python test suite ${group.label}`,
+      summary: `Python pytest files in ${group.label}.`,
+      kind: "test-suite",
+      source: "python-test-suite",
+      confidence: "medium",
+      entryPath: group.label,
+      symbol: group.label,
+      route: null,
+      command: null,
+      ownedFiles: group.files.map((path) => ({ path, reason: "pytest file" })),
+      contextFiles: await pythonRuntimeContextFiles(root, group.files),
+      tests: group.files.map((path) => ({ path, command })),
+      tags: ["python", "test"],
+      trustBoundaries: [],
+      testCommand: command,
+      skipNearbyTests: true,
+    });
+  }
+  return seeds;
 }
 
 function groupedTestFiles(testFiles: string[]): Map<string, string[]> {
