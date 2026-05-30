@@ -2,6 +2,8 @@
 
 ## 0.4.1 - Unreleased
 
+- Fixed mapper-generated validation commands to quote repository-derived paths, package names, script names, and test paths before shell execution, thanks @rohitjavvadi.
+
 ## 0.4.0 - 2026-05-22
 
 - Added `clawpatch ci` to initialize, map, review, write a report, and append a GitHub Actions step summary in one CI-friendly command.
