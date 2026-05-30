@@ -2,6 +2,9 @@
 
 ## 0.4.1 - Unreleased
 
+- Fixed Codex provider calls to time out stalled `codex exec` children and release review locks, thanks @camwest.
+- Fixed Claude provider auth isolation to pass explicit Vertex AI, Google ADC, and Bedrock/AWS auth environment variables, thanks @zanetworker.
+- Fixed Python review prompts to include target runtime metadata and avoid flagging Python 3.14 syntax such as PEP 758 exception handlers as invalid, thanks @rohitjavvadi.
 - Fixed mapper-generated validation commands to quote repository-derived paths, package names, script names, and test paths before shell execution, thanks @rohitjavvadi.
 
 ## 0.4.0 - 2026-05-22

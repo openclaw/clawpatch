@@ -181,6 +181,7 @@ ${customPrompt.trim()}
   const validEvidencePaths = [
     ...new Set(includedFiles.filter((file) => file.readable).map((file) => file.path)),
   ];
+  const languageGuidance = reviewLanguageGuidance(project);
   const prompt = `You are reviewing one semantic feature for clawpatch.
 
 Return strict JSON only. No markdown fences.
@@ -205,6 +206,8 @@ ${customBlock}Review categories:
 - maintainability risks with concrete impact
 
 ${reviewModeInstructions(mode)}
+
+${languageGuidance}
 
 Inspect owned files, context files, and linked tests. Treat included tests as first-class
 evidence of intended behavior. If tests contradict a suspected bug, either skip it or
@@ -275,6 +278,15 @@ function reviewFeatureView(feature: FeatureRecord): object {
     tags: feature.tags,
     trustBoundaries: feature.trustBoundaries,
   };
+}
+
+function reviewLanguageGuidance(project: ProjectRecord): string {
+  if (!project.detected.languages.includes("python")) {
+    return "";
+  }
+  return `Python compatibility guidance:
+- Treat included target-runtime metadata such as .python-version, pyproject.toml requires-python, setup.cfg/setup.py python_requires, runtime.txt, and .tool-versions as authoritative when assessing syntax compatibility.
+- For Python 3.14 or newer, PEP 758 permits unparenthesized multiple exception types in except/except* clauses when no as target is used; do not report that syntax as invalid for Python 3.14+ projects.`;
 }
 
 function uniquePromptRefs<T extends { path: string }>(

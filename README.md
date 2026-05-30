@@ -1,5 +1,7 @@
 # 🩹 clawpatch
 
+![clawpatch banner](docs/assets/readme-banner.jpg)
+
 Automated code review that lands fixes.
 
 `clawpatch` maps a repo into semantic feature slices, reviews each slice with a

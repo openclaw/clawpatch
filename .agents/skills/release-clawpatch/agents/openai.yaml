@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clawpatch Release"
+  short_description: "Release clawpatch to npm and GitHub"
+  default_prompt: "Use $release-clawpatch to publish the next clawpatch npm release and verify it."

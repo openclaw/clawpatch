@@ -67,6 +67,14 @@ const projectMetadataFiles = [
   "setup.cfg",
   "requirements.txt",
 ] as const;
+const runtimeMetadataFiles = [
+  "pyproject.toml",
+  "setup.py",
+  "setup.cfg",
+  ".python-version",
+  "runtime.txt",
+  ".tool-versions",
+] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
 const flaskRootEntryFiles = [
@@ -129,7 +137,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
         resolved.entryPath === script.metadataPath
           ? [{ path: script.metadataPath, reason: "console script metadata" }]
           : [{ path: resolved.entryPath, reason: "console script source" }],
-      contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      contextFiles: [
+        ...(await pythonRuntimeContextFiles(root, [resolved.entryPath])),
+        ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      ],
       tests,
       tags: ["python", "cli"],
       trustBoundaries: ["user-input", "filesystem", "process-exec"],
@@ -166,7 +177,10 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
       route: null,
       command: null,
       ownedFiles: group.files.map((path) => ({ path, reason: `source group ${group.label}` })),
-      contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      contextFiles: [
+        ...(await pythonRuntimeContextFiles(root, group.files)),
+        ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
+      ],
       tests,
       tags: ["python", "source-group"],
       trustBoundaries: packageTrustBoundaries(group.label),
@@ -175,7 +189,7 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
     });
   }
 
-  for (const test of standaloneTestSuites(testFiles, testCommand)) {
+  for (const test of await standaloneTestSuites(root, testFiles, testCommand)) {
     seeds.push(test);
   }
 
@@ -228,6 +242,87 @@ async function pythonMetadataFiles(root: string): Promise<string[]> {
     }
   }
   return files;
+}
+
+async function pythonRuntimeContextFiles(
+  root: string,
+  featurePaths: readonly string[] = [""],
+): Promise<SeedFileRef[]> {
+  const files: SeedFileRef[] = [];
+  const seen = new Set<string>();
+  for (const featurePath of uniquePaths([...featurePaths])) {
+    for (const ref of await nearestPythonRuntimeContextFiles(root, featurePath)) {
+      if (!seen.has(ref.path)) {
+        seen.add(ref.path);
+        files.push(ref);
+      }
+    }
+  }
+  return files;
+}
+
+async function nearestPythonRuntimeContextFiles(
+  root: string,
+  featurePath: string,
+): Promise<SeedFileRef[]> {
+  const refs: SeedFileRef[] = [];
+  for (const dir of ancestorDirs(dirname(featurePath))) {
+    let foundRuntimeConstraint = false;
+    for (const fileName of runtimeMetadataFiles) {
+      const path = dir.length === 0 ? fileName : `${dir}/${fileName}`;
+      if (await pathExists(join(root, path))) {
+        refs.push({ path, reason: "python target runtime metadata" });
+        foundRuntimeConstraint ||= await pythonRuntimeFileDeclaresVersion(root, path);
+      }
+    }
+    if (foundRuntimeConstraint) {
+      return refs;
+    }
+  }
+  return refs;
+}
+
+async function pythonRuntimeFileDeclaresVersion(root: string, path: string): Promise<boolean> {
+  const name = basename(path);
+  if (name === ".python-version" || name === "runtime.txt") {
+    return true;
+  }
+  if (name === ".tool-versions") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /^\s*(?:python|python3)\s+\S+/mu.test(source);
+  }
+  if (name === "pyproject.toml") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return (
+      /^\s*requires-python\s*=/mu.test(source) ||
+      tomlStringValue(table(source, "tool.poetry.dependencies"), "python") !== null
+    );
+  }
+  if (name === "setup.cfg") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /^\s*python_requires\s*=/mu.test(source);
+  }
+  if (name === "setup.py") {
+    const source = await readFile(join(root, path), "utf8").catch(() => "");
+    return /\bpython_requires\s*=/u.test(source);
+  }
+  return false;
+}
+
+function ancestorDirs(start: string): string[] {
+  const dirs: string[] = [];
+  let current = normalizeRelativeDir(start);
+  for (;;) {
+    dirs.push(current);
+    if (current.length === 0) {
+      return dirs;
+    }
+    current = normalizeRelativeDir(dirname(current));
+  }
+}
+
+function normalizeRelativeDir(path: string): string {
+  return path === "." ? "" : path.replace(/\/+$/u, "");
 }
 
 async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promise<string | null> {
@@ -430,7 +525,10 @@ async function djangoRouteSeeds(
           route: expanded.routePath,
           command: null,
           ownedFiles: [{ path: expanded.filePath, reason: "Django URL route declaration" }],
-          contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+          contextFiles: [
+            ...(await pythonRuntimeContextFiles(root, [expanded.filePath])),
+            ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
+          ],
           tests,
           tags: ["python", "django", "route"],
           trustBoundaries: djangoRouteTrustBoundaries(expanded),
@@ -1058,7 +1156,10 @@ async function fastApiRouteSeeds(
         ownedFiles: [
           { path: route.filePath, reason: `FastAPI route handler ${route.functionName}` },
         ],
-        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        contextFiles: [
+          ...(await pythonRuntimeContextFiles(root, [route.filePath])),
+          ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        ],
         tests,
         tags: ["python", "fastapi", "route"],
         trustBoundaries: fastApiRouteTrustBoundaries(route),
@@ -1276,7 +1377,10 @@ async function flaskRouteSeeds(
         route: `${methodLabel} ${route.routePath}`,
         command: null,
         ownedFiles: [{ path: route.filePath, reason: `Flask route handler ${route.functionName}` }],
-        contextFiles: tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        contextFiles: [
+          ...(await pythonRuntimeContextFiles(root, [route.filePath])),
+          ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
+        ],
         tests,
         tags: ["python", "flask", "route"],
         trustBoundaries: flaskRouteTrustBoundaries(route),
@@ -1629,32 +1733,40 @@ function fastApiRouteTrustBoundaries(route: FastApiRoute): FeatureSeed["trustBou
   return boundaries;
 }
 
-function standaloneTestSuites(testFiles: string[], command: string | null): FeatureSeed[] {
+async function standaloneTestSuites(
+  root: string,
+  testFiles: string[],
+  command: string | null,
+): Promise<FeatureSeed[]> {
   if (testFiles.length === 0) {
     return [];
   }
   const groups: FileGroup[] = [];
-  for (const [root, files] of groupedTestFiles(testFiles)) {
-    groups.push(...partitionFileGroups(root, files, sourceGroupMaxOwnedFiles));
+  for (const [suiteRoot, files] of groupedTestFiles(testFiles)) {
+    groups.push(...partitionFileGroups(suiteRoot, files, sourceGroupMaxOwnedFiles));
   }
-  return groups.map((group) => ({
-    title: `Python test suite ${group.label}`,
-    summary: `Python pytest files in ${group.label}.`,
-    kind: "test-suite",
-    source: "python-test-suite",
-    confidence: "medium",
-    entryPath: group.label,
-    symbol: group.label,
-    route: null,
-    command: null,
-    ownedFiles: group.files.map((path) => ({ path, reason: "pytest file" })),
-    contextFiles: [],
-    tests: group.files.map((path) => ({ path, command })),
-    tags: ["python", "test"],
-    trustBoundaries: [],
-    testCommand: command,
-    skipNearbyTests: true,
-  }));
+  const seeds: FeatureSeed[] = [];
+  for (const group of groups) {
+    seeds.push({
+      title: `Python test suite ${group.label}`,
+      summary: `Python pytest files in ${group.label}.`,
+      kind: "test-suite",
+      source: "python-test-suite",
+      confidence: "medium",
+      entryPath: group.label,
+      symbol: group.label,
+      route: null,
+      command: null,
+      ownedFiles: group.files.map((path) => ({ path, reason: "pytest file" })),
+      contextFiles: await pythonRuntimeContextFiles(root, group.files),
+      tests: group.files.map((path) => ({ path, command })),
+      tags: ["python", "test"],
+      trustBoundaries: [],
+      testCommand: command,
+      skipNearbyTests: true,
+    });
+  }
+  return seeds;
 }
 
 function groupedTestFiles(testFiles: string[]): Map<string, string[]> {

@@ -325,6 +325,8 @@ const codexProvider: Provider = {
   },
 };
 
+const CODEX_DEFAULT_TIMEOUT_MS = 300_000;
+
 const opencodeProvider: Provider = {
   name: "opencode",
   async check(root: string): Promise<string> {
@@ -831,6 +833,34 @@ function compareSemver(left: [number, number, number], right: [number, number, n
 const CLAUDE_DEFAULT_TIMEOUT_MS = 180_000;
 const CLAUDE_READ_ONLY_TOOLS = "Read,Grep,Glob";
 const CLAUDE_WRITE_TOOLS = "default";
+const CLAUDE_AUTH_ENV_KEYS = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_AUTH_TOKEN",
+  "CLAUDE_CODE_USE_VERTEX",
+  "ANTHROPIC_VERTEX_PROJECT_ID",
+  "ANTHROPIC_VERTEX_REGION",
+  "ANTHROPIC_VERTEX_BASE_URL",
+  "CLOUD_ML_REGION",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "GOOGLE_CLOUD_PROJECT",
+  "GCLOUD_PROJECT",
+  "CLOUDSDK_CORE_PROJECT",
+  "CLAUDE_CODE_SKIP_VERTEX_AUTH",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_SKIP_BEDROCK_AUTH",
+  "ANTHROPIC_BEDROCK_BASE_URL",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_REGION",
+  "AWS_DEFAULT_REGION",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_SHARED_CREDENTIALS_FILE",
+  "AWS_CONFIG_FILE",
+  "AWS_ROLE_ARN",
+  "AWS_WEB_IDENTITY_TOKEN_FILE",
+] as const;
 
 const claudeProvider: Provider = {
   name: "claude",
@@ -979,8 +1009,17 @@ function claudeEnv(includeAuth: boolean, baseDir: string): NodeJS.ProcessEnv {
   env["TMPDIR"] = baseDir;
   env["TEMP"] = baseDir;
   env["TMP"] = baseDir;
+  env["CLAUDE_CODE_SUBPROCESS_ENV_SCRUB"] = "1";
   if (includeAuth) {
-    copyEnv(env, "ANTHROPIC_API_KEY");
+    for (const key of CLAUDE_AUTH_ENV_KEYS) {
+      copyEnv(env, key);
+    }
+    if (
+      process.env["AWS_CONFIG_FILE"] !== undefined ||
+      process.env["AWS_SHARED_CREDENTIALS_FILE"] !== undefined
+    ) {
+      copyEnv(env, "AWS_PROFILE");
+    }
   }
   return env;
 }
@@ -1542,7 +1581,9 @@ async function runCodexJson(
     addCodexSandboxArgs(args, sandbox);
     addCodexModelArgs(args, options);
     args.push("-");
-    const result = await runCommandArgs("codex", args, root, prompt);
+    const result = await runCommandArgs("codex", args, root, prompt, {
+      timeoutMs: codexTimeoutMs(),
+    });
     if (result.exitCode !== 0) {
       throw new ClawpatchError(
         codexFailureMessage(result.stdout, result.stderr),
@@ -1566,6 +1607,16 @@ function codexFailureMessage(stdout: string, stderr: string): string {
     ? "\nCodex/OpenAI auth is missing Responses API write access (`api.responses.write`). Check the active credentials, organization/project role, and restricted key scopes."
     : "";
   return `codex provider failed: ${output}${scopeAdvice}`;
+}
+
+function codexTimeoutMs(): number {
+  const raw =
+    process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] ?? process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+  if (raw === undefined) {
+    return CODEX_DEFAULT_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : CODEX_DEFAULT_TIMEOUT_MS;
 }
 
 function addCodexSandboxArgs(args: string[], sandbox: string): void {
@@ -2229,6 +2280,7 @@ export const __testing = {
   claudeFailureMessage,
   claudeTimeoutMs,
   codexFailureMessage,
+  codexTimeoutMs,
   cursorAgentArgs,
   cursorEnv,
   cursorFailureMessage,

@@ -193,9 +193,44 @@ describe("review prompt provenance", () => {
     expect(prompt).not.toContain("1 | export const value = 1;");
     expect(prompt).not.toContain("--- src/other.ts");
   });
+
+  it("includes Python runtime syntax guidance in review prompts", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-python-runtime-guidance-");
+    await writeFixture(
+      root,
+      "main.py",
+      [
+        "def parse(value):",
+        "    try:",
+        "        return float(value)",
+        "    except TypeError, ValueError:",
+        "        return 0",
+        "",
+      ].join("\n"),
+    );
+    await writeFixture(root, ".python-version", "3.14\n");
+    const pythonFeature = {
+      ...feature(),
+      ownedFiles: [{ path: "main.py", reason: "source group root" }],
+      contextFiles: [{ path: ".python-version", reason: "python target runtime metadata" }],
+      tests: [],
+    };
+
+    const bundle = await buildReviewPromptBundle(
+      root,
+      project(root, ["python"]),
+      pythonFeature,
+      defaultConfig(),
+    );
+
+    expect(bundle.prompt).toContain("Python compatibility guidance:");
+    expect(bundle.prompt).toContain(".python-version");
+    expect(bundle.prompt).toContain("PEP 758 permits unparenthesized multiple exception types");
+    expect(bundle.prompt).toContain("--- .python-version (context, lines 1-1)");
+  });
 });
 
-function project(root: string): ProjectRecord {
+function project(root: string, languages: string[] = ["typescript"]): ProjectRecord {
   return {
     schemaVersion: 1,
     projectId: "proj_prompt",
@@ -208,7 +243,7 @@ function project(root: string): ProjectRecord {
       headSha: null,
     },
     detected: {
-      languages: ["typescript"],
+      languages,
       frameworks: [],
       packageManagers: ["npm"],
       commands: defaultConfig().commands,

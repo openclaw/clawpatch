@@ -671,6 +671,73 @@ describe("workflow", () => {
     },
   );
 
+  it.runIf(process.platform !== "win32")(
+    "times out wedged codex exec review children",
+    async () => {
+      const root = await fixtureRoot("clawpatch-codex-timeout-e2e-");
+      await writeFixture(
+        root,
+        "package.json",
+        JSON.stringify({
+          name: "codex-timeout",
+          bin: { app: "src/index.ts" },
+        }),
+      );
+      await writeFixture(root, "src/index.ts", "export const value = 'ok';\n");
+      const binDir = join(root, "bin");
+      const codexShim = join(binDir, "codex");
+      await writeFixture(
+        root,
+        "bin/codex",
+        [
+          "#!/usr/bin/env node",
+          "const args = process.argv.slice(2);",
+          'if (args.includes("--version")) { console.log("codex fake 0.130.0"); process.exit(0); }',
+          "process.stdin.resume();",
+          "setInterval(() => {}, 1000);",
+          "",
+        ].join("\n"),
+      );
+      await chmod(codexShim, 0o755);
+      const previousProvider = process.env["CLAWPATCH_PROVIDER"];
+      const previousPath = process.env["PATH"];
+      const previousCodexTimeout = process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+      process.env["CLAWPATCH_PROVIDER"] = "codex";
+      process.env["PATH"] = `${binDir}${delimiter}${previousPath ?? ""}`;
+      process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = "50";
+      try {
+        const context = await makeContext(testOptions(root));
+
+        await initCommand(context, {});
+        await mapCommand(context);
+        await expect(reviewCommand(context, { limit: "1" })).rejects.toThrow(
+          /command timed out after 50ms/u,
+        );
+        const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+
+        expect(features[0]?.status).toBe("error");
+        expect(features[0]?.lock).toBeNull();
+        expect(await readdir(join(root, ".clawpatch/locks"))).toEqual([]);
+      } finally {
+        if (previousProvider === undefined) {
+          delete process.env["CLAWPATCH_PROVIDER"];
+        } else {
+          process.env["CLAWPATCH_PROVIDER"] = previousProvider;
+        }
+        if (previousPath === undefined) {
+          delete process.env["PATH"];
+        } else {
+          process.env["PATH"] = previousPath;
+        }
+        if (previousCodexTimeout === undefined) {
+          delete process.env["CLAWPATCH_CODEX_TIMEOUT_MS"];
+        } else {
+          process.env["CLAWPATCH_CODEX_TIMEOUT_MS"] = previousCodexTimeout;
+        }
+      }
+    },
+  );
+
   it("selects review features whose owned files overlap the diff range", async () => {
     const root = await sinceFixture("clawpatch-since-owned-");
     const context = await makeContext(testOptions(root));
