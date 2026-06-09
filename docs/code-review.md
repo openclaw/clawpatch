@@ -37,6 +37,19 @@ Current behavior:
 
 ## Flags
 
+### --feature-list <path>
+
+Review exactly the feature ids listed in the file, in file order. The file must
+contain one feature id per line. Blank lines are ignored and duplicate ids are
+de-duplicated by first occurrence.
+
+This mode is explicit feature selection, so it cannot be combined with
+`--feature`, `--project`, `--since`, or `--include-dirty`.
+
+```bash
+clawpatch review --feature-list /tmp/features.txt
+```
+
 ### --since <ref>
 
 Restrict review to features whose owned or context files have changed in

@@ -42,6 +42,7 @@ import {
   limitFeatures,
   nextFinding,
   selectReviewCandidates,
+  selectFeaturesByIdList,
 } from "./selection.js";
 import {
   claimFeature,
@@ -347,7 +348,9 @@ export async function reviewCommand(
             mode,
             customPrompt,
             limiter,
-            allowNonPendingFeatureReview: stringFlag(flags, "feature") !== undefined,
+            allowNonPendingFeatureReview:
+              stringFlag(flags, "feature") !== undefined ||
+              stringFlag(flags, "featureList") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
           for (const dropped of reviewed.droppedFindings) {
@@ -1989,7 +1992,31 @@ async function selectReviewFeatures(
   loaded: Awaited<ReturnType<typeof loadProjectState>>,
   flags: Record<string, string | boolean>,
 ): Promise<FeatureRecord[]> {
-  const candidates = selectReviewCandidates(await readFeatures(loaded.paths), flags);
+  const featureListPath = stringFlag(flags, "featureList");
+  const features = await readFeatures(loaded.paths);
+  if (featureListPath !== undefined) {
+    const featureIds = await loadFeatureIdList(featureListPath);
+    const selected = selectFeaturesByIdList(features, featureIds);
+    const missing = featureIds
+      .filter((featureId, index) => featureIds.indexOf(featureId) === index)
+      .filter((featureId) => !selected.some((feature) => feature.featureId === featureId));
+    if (missing.length > 0) {
+      throw new ClawpatchError(
+        `unknown feature ids in --feature-list: ${missing.join(", ")}`,
+        2,
+        "invalid-usage",
+      );
+    }
+    if (selected.length === 0) {
+      throw new ClawpatchError(
+        "--feature-list did not include any feature ids",
+        2,
+        "invalid-usage",
+      );
+    }
+    return stringFlag(flags, "limit") === undefined ? selected : limitFeatures(selected, flags);
+  }
+  const candidates = selectReviewCandidates(features, flags);
   const sinceFiltered = await filterFeaturesByFilesSince(loaded.root, candidates, flags);
   return limitFeatures(sinceFiltered, flags);
 }
@@ -2087,6 +2114,28 @@ async function loadCustomReviewPrompt(
       "invalid-usage",
     );
   }
+}
+
+async function loadFeatureIdList(path: string): Promise<string[]> {
+  let contents: string;
+  try {
+    contents = await readFile(resolve(path), "utf8");
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ClawpatchError(
+      `failed to read --feature-list ${path}: ${message}`,
+      2,
+      "invalid-usage",
+    );
+  }
+  const featureIds = contents
+    .split(/\r?\n/gu)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (featureIds.length === 0) {
+    throw new ClawpatchError("--feature-list did not include any feature ids", 2, "invalid-usage");
+  }
+  return featureIds;
 }
 
 async function readStdinToString(): Promise<string> {

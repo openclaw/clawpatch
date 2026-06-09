@@ -3187,6 +3187,27 @@ describe("workflow", () => {
     });
   });
 
+  it("parses --feature-list as a review value flag", () => {
+    expect(parseArgs(["review", "--feature-list", "/tmp/features.txt"]).flags).toMatchObject({
+      featureList: "/tmp/features.txt",
+    });
+  });
+
+  it("rejects incompatible review flags when --feature-list is set", () => {
+    expect(() =>
+      parseArgs(["review", "--feature-list", "/tmp/features.txt", "--feature", "feat_a"]),
+    ).toThrow("--feature-list cannot be combined with --feature");
+    expect(() =>
+      parseArgs(["review", "--feature-list", "/tmp/features.txt", "--project", "apps/web"]),
+    ).toThrow("--feature-list cannot be combined with --project");
+    expect(() =>
+      parseArgs(["review", "--feature-list", "/tmp/features.txt", "--since", "origin/main"]),
+    ).toThrow("--feature-list cannot be combined with --since");
+    expect(() =>
+      parseArgs(["review", "--feature-list", "/tmp/features.txt", "--include-dirty"]),
+    ).toThrow("--feature-list cannot be combined with --include-dirty");
+  });
+
   it("runs review --prompt-file through the CLI entrypoint", async () => {
     const root = await fixtureRoot("clawpatch-prompt-file-cli-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "prompt-file-cli" }));
@@ -3204,6 +3225,113 @@ describe("workflow", () => {
         join(root, "missing.md"),
       ]),
     ).rejects.toThrow("failed to read --prompt-file");
+  });
+
+  it("runs review --feature-list through the CLI entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-feature-list-cli-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "feature-list-cli" }));
+
+    await runCli(["--root", root, "--json", "--quiet", "init"]);
+
+    await expect(
+      runCli([
+        "--root",
+        root,
+        "--json",
+        "--quiet",
+        "review",
+        "--feature-list",
+        join(root, "missing.txt"),
+      ]),
+    ).rejects.toThrow("failed to read --feature-list");
+  });
+
+  it("uses --feature-list order and de-duplicates repeated ids", async () => {
+    const root = await sinceFixture("clawpatch-feature-list-order-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const selected = features
+      .filter((feature) => feature.title.includes("CLI command"))
+      .sort((left, right) => left.title.localeCompare(right.title));
+    expect(selected).toHaveLength(3);
+    const featureListPath = join(root, "feature-list.txt");
+    await writeFixture(
+      root,
+      "feature-list.txt",
+      `${selected[2]!.featureId}\n${selected[0]!.featureId}\n${selected[2]!.featureId}\n`,
+    );
+
+    const reviewed = (await reviewCommand(context, {
+      featureList: featureListPath,
+      dryRun: true,
+    })) as { featureIds: string[]; wouldReview: number };
+
+    expect(reviewed).toMatchObject({
+      dryRun: true,
+      wouldReview: 2,
+      featureIds: [selected[2]!.featureId, selected[0]!.featureId],
+    });
+  });
+
+  it("rejects unknown ids in --feature-list", async () => {
+    const root = await sinceFixture("clawpatch-feature-list-missing-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const featureListPath = join(root, "feature-list.txt");
+    await writeFixture(root, "feature-list.txt", "feat_missing\n");
+
+    await expect(
+      reviewCommand(context, {
+        featureList: featureListPath,
+        dryRun: true,
+      }),
+    ).rejects.toThrow("unknown feature ids in --feature-list: feat_missing");
+  });
+
+  it("allows --feature-list to review a skipped feature explicitly", async () => {
+    const root = await fixtureRoot("clawpatch-feature-list-skipped-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "feature-list-skipped",
+        bin: { app: "src/index.ts" },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 'TODO_BUG';\n");
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const paths = statePaths(join(root, ".clawpatch"));
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    await writeFeature(paths, {
+      ...feature!,
+      status: "skipped",
+    });
+    const featureListPath = join(root, "feature-list.txt");
+    await writeFixture(root, "feature-list.txt", `${feature!.featureId}\n`);
+
+    const reviewed = (await reviewCommand(context, {
+      featureList: featureListPath,
+      limit: "1",
+    })) as { reviewed: number; findings: number };
+    const updated = await readFeatures(paths);
+    const reviewedFeature = updated.find((candidate) => candidate.featureId === feature!.featureId);
+
+    expect(reviewed).toMatchObject({ reviewed: 1 });
+    expect(reviewed.findings).toBeGreaterThan(0);
+    expect(reviewedFeature?.status).toBe("needs-fix");
+    delete process.env["CLAWPATCH_PROVIDER"];
   });
 
   it("writes a tribunal-shaped JSONL ledger when --export-tribunal-ledger is set", async () => {

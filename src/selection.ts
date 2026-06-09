@@ -13,6 +13,26 @@ export function selectReviewCandidates(features: FeatureRecord[], flags: Flags):
   return projectFilter === undefined ? selected : selected.toSorted(featureReviewRank);
 }
 
+export function selectFeaturesByIdList(
+  features: FeatureRecord[],
+  featureIds: readonly string[],
+): FeatureRecord[] {
+  const featuresById = new Map(features.map((feature) => [feature.featureId, feature]));
+  const selected: FeatureRecord[] = [];
+  const seen = new Set<string>();
+  for (const featureId of featureIds) {
+    if (seen.has(featureId)) {
+      continue;
+    }
+    seen.add(featureId);
+    const feature = featuresById.get(featureId);
+    if (feature !== undefined) {
+      selected.push(feature);
+    }
+  }
+  return selected;
+}
+
 export function filterFeaturesByChangedFiles(
   features: FeatureRecord[],
   changed: Set<string>,

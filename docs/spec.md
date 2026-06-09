@@ -206,7 +206,7 @@ Review feature slices and persist findings.
 Usage:
 
 ```bash
-clawpatch review [--feature <id>] [--kind <kind>] [--limit <n>] [--jobs <n>] [--rate-limit-per-minute <n>] [--since <ref>] [--mode <mode>] [--dry-run] [--provider <name>] [--model <name>] [--reasoning-effort <level>] [--resume <runId>]
+clawpatch review [--feature <id> | --feature-list <path>] [--kind <kind>] [--limit <n>] [--jobs <n>] [--rate-limit-per-minute <n>] [--since <ref>] [--mode <mode>] [--dry-run] [--provider <name>] [--model <name>] [--reasoning-effort <level>] [--resume <runId>]
 ```
 
 Behavior:
@@ -228,6 +228,7 @@ Behavior:
 Selection:
 
 - Explicit `--feature` wins.
+- Explicit `--feature-list` reviews exactly the listed feature ids in file order.
 - Else pending/errored features, filtered by `--kind`.
 - `--limit` caps claimed features.
 

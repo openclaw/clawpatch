@@ -156,6 +156,7 @@ const commandFlags = {
   status: new Set<string>(),
   review: new Set([
     "feature",
+    "featureList",
     "project",
     "limit",
     "since",
@@ -221,6 +222,7 @@ const valueFlagNames = new Set([
   "state-dir",
   "config",
   "feature",
+  "feature-list",
   "finding",
   "limit",
   "since",
@@ -314,6 +316,24 @@ function validateCommandRequirements(
     flags["mode"] !== "deslopify"
   ) {
     throw new ClawpatchError("invalid --mode; expected default or deslopify", 2, "invalid-usage");
+  }
+  if (command === "review" && typeof flags["featureList"] === "string") {
+    for (const conflictingFlag of ["feature", "project", "since"] as const) {
+      if (typeof flags[conflictingFlag] === "string") {
+        throw new ClawpatchError(
+          `--feature-list cannot be combined with --${kebab(conflictingFlag)}`,
+          2,
+          "invalid-usage",
+        );
+      }
+    }
+    if (flags["includeDirty"] === true) {
+      throw new ClawpatchError(
+        "--feature-list cannot be combined with --include-dirty",
+        2,
+        "invalid-usage",
+      );
+    }
   }
 }
 
@@ -414,6 +434,7 @@ Usage:
 
 Flags:
   --feature <id>
+  --feature-list <path>
   --project <name-or-root>
   --limit <n>
   --since <ref>
