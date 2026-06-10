@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 - Unreleased
+
+- Added a MiniMax HTTP provider for `map`, `review`, and `revalidate`, with local schema validation and explicit unsupported `fix` handling, thanks @ferminquant.
+
 ## 0.5.1 - 2026-06-10
 
 - Added npm trusted publishing through GitHub Actions OIDC, plus secops ownership, verified-secret scanning, and stale issue and pull request automation.

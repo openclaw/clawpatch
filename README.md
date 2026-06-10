@@ -124,6 +124,7 @@ Supported provider names today:
 - `claude`: local Claude Code CLI in print mode
 - `cursor`: local Cursor Agent CLI (experimental; `doctor` is enabled by default)
 - `grok`: local Grok Build CLI
+- `minimax`: MiniMax OpenAI-compatible HTTP API; supports `map`, `review`, and `revalidate`, but not `fix`
 - `opencode`: local OpenCode CLI
 - `pi`: local Pi coding agent in print mode
 - `mock`: deterministic test provider
