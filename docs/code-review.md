@@ -145,3 +145,43 @@ CUDA-specific category. Deslopify mode is unaffected.
 
 Review does not edit files. Use `clawpatch fix --finding <id>` for the explicit
 patch loop.
+
+## Registry verifier
+
+After per-finding evidence validation, review can run an opt-in npm-registry
+verifier. Findings whose entire title and reasoning both state the same bounded
+`pkg@semver` publication claim such as `mongodb@7.0.0 is unpublished on npm`
+get resolved against
+`https://registry.npmjs.org/{name}/{version}`. When the registry confirms
+the version is published, the finding is partitioned into
+`droppedFindings` with `layer: "registry-verifier"` instead of being
+surfaced as a real finding.
+
+This addresses a recurring failure mode where providers backed by an LLM
+with a fixed knowledge cutoff confidently flag post-cutoff package
+versions as nonexistent. (See _We Have a Package for You!_ — Spracklen et
+al., USENIX Security 2025, [arXiv:2406.10279][slop-paper] — for measured
+hallucination rates of the symmetric failure: invented package names.
+The registry-grounded mitigation is the same.)
+
+The verifier is intentionally biased toward keeping findings:
+
+| Registry response                      | Verdict              | Action       |
+| -------------------------------------- | -------------------- | ------------ |
+| 200 with matching `name` AND `version` | `verified-published` | drop finding |
+| 404                                    | `verified-missing`   | keep finding |
+| 5xx, transport error, timeout          | `unknown`            | keep finding |
+| 200 with non-JSON content-type         | `unknown`            | keep finding |
+| 200 with mismatched body name/version  | `unknown`            | keep finding |
+| 200 with body > 1 MiB                  | `unknown`            | keep finding |
+| Any redirect (`redirect: "error"`)     | `unknown`            | keep finding |
+
+Failure of the verifier never creates a false negative — only refutable
+single-package claims drop. Compound, multi-package, or context-disagreeing findings are always kept. The verifier is
+disabled by default because it sends package
+coordinates to the public npm registry. Enable it explicitly with
+`registryVerifier.enabled = true` in `.clawpatch/config.json`; the
+`--no-registry-verify` flag can still disable it for a single run. Within a single review run it
+deduplicates registry calls per `(name, version)`.
+
+[slop-paper]: https://arxiv.org/abs/2406.10279

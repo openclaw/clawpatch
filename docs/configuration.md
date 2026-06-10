@@ -51,9 +51,19 @@ Default shape:
     "requireCleanWorktreeForFix": true,
     "commit": false,
     "openPr": false
+  },
+  "registryVerifier": {
+    "enabled": false
   }
 }
 ```
+
+`registryVerifier.enabled` controls the npm-registry post-validator that
+drops direct `pkg@semver` public-npm publication claims refuted by
+the public npm registry. It is disabled by default because lookups disclose
+package coordinates; set it to `true` only when that network access is acceptable. See
+[Code review > Registry verifier](code-review.md#registry-verifier) for
+the full verdict matrix.
 
 Environment overrides:
 

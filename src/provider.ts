@@ -157,16 +157,20 @@ export type ProviderOptions = {
  * One review finding rejected by per-finding validation. `layer` records
  * which gate dropped it: `schema` is the per-finding `reviewFindingSchema`
  * Zod parse, `validation` is the evidence/quote/line-range check in
- * `validateReviewOutputPartitioned`. Operators can use `layer` to tell
- * "the model emitted nonsense for this finding" (schema) apart from
- * "the model cited a real-looking finding but pointed at the wrong file
- * or quoted text that isn't there" (validation).
+ * `validateReviewOutputPartitioned`, and `registry-verifier` is the
+ * post-validation pass that drops findings whose central claim about a
+ * package version's nonexistence is refuted by the npm registry.
+ * Operators can use `layer` to tell these apart: "the model emitted
+ * nonsense" (schema), "the model cited a real-looking finding but quoted
+ * text that isn't there" (validation), or "the model asserted a package
+ * version is unpublished but the registry says otherwise"
+ * (registry-verifier).
  */
 export type DroppedFinding = {
   path: (string | number)[];
   message: string;
   sample: string;
-  layer?: "schema" | "validation";
+  layer?: "schema" | "validation" | "registry-verifier";
 };
 
 export type PartitionedReviewOutput = {

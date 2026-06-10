@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { __testing as appTesting, AppContext } from "./app.js";
+import { defaultConfig } from "./config.js";
 import { ClawpatchError } from "./errors.js";
 import type { ReviewOutput } from "./types.js";
 
 // eslint-disable-next-line no-underscore-dangle
-const { isRetryableReviewError, reviewRetries, runProviderReviewWithRetry } = appTesting;
+const { isRetryableReviewError, reviewFlagSubset, reviewRetries, runProviderReviewWithRetry } =
+  appTesting;
 
 const QUIET_CONTEXT: AppContext = {
   root: "/tmp/test-root",
@@ -23,6 +25,14 @@ const QUIET_CONTEXT: AppContext = {
 function emptyReview(): ReviewOutput {
   return { findings: [], inspected: { files: [], symbols: [], notes: ["ok"] } };
 }
+
+it("forwards the registry-verifier opt-out into CI review flags", () => {
+  expect(reviewFlagSubset({ noRegistryVerify: true })).toEqual({ noRegistryVerify: true });
+});
+
+it("keeps public registry verification opt-in", () => {
+  expect(defaultConfig().registryVerifier.enabled).toBe(false);
+});
 
 function withEnv(name: string, value: string | undefined, fn: () => void): void {
   const previous = process.env[name];

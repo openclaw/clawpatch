@@ -32,7 +32,12 @@ import {
   renderFindingDetail,
   renderReport,
 } from "./reporting.js";
-import { validateReviewOutputPartitioned } from "./review-validation.js";
+import {
+  buildRegistryVerifierValidator,
+  validateReviewOutputPartitioned,
+  type FindingPostValidator,
+  type ValidatePartitionedOptions,
+} from "./review-validation.js";
 import {
   filterFeaturesByChangedFiles,
   filterFeaturesByProject,
@@ -320,6 +325,9 @@ export async function reviewCommand(
   const limiter = createRpmLimiter(
     rpmFromFlag(stringFlag(flags, "rateLimitPerMinute"), process.env["CLAWPATCH_RPM"]),
   );
+  const registryPostValidator = config.registryVerifier.enabled
+    ? buildRegistryVerifierValidator()
+    : undefined;
   let cursor = 0;
   emitProgress(context, "review", "start", {
     run: currentRunId,
@@ -348,13 +356,19 @@ export async function reviewCommand(
             mode,
             customPrompt,
             limiter,
+            registryPostValidator,
             allowNonPendingFeatureReview:
               stringFlag(flags, "feature") !== undefined ||
               stringFlag(flags, "featureList") !== undefined,
           });
           findingIds.push(...reviewed.findingIds);
           for (const dropped of reviewed.droppedFindings) {
-            const code = dropped.layer === "validation" ? "validation-drop" : "schema-drop";
+            const code =
+              dropped.layer === "validation"
+                ? "validation-drop"
+                : dropped.layer === "registry-verifier"
+                  ? "registry-verifier-drop"
+                  : "schema-drop";
             errors.push({
               message:
                 `dropped 1 finding from feature ${feature.featureId} ` +
@@ -374,7 +388,10 @@ export async function reviewCommand(
     }),
   );
   const fatalErrors = errors.filter(
-    (entry) => entry.code !== "schema-drop" && entry.code !== "validation-drop",
+    (entry) =>
+      entry.code !== "schema-drop" &&
+      entry.code !== "validation-drop" &&
+      entry.code !== "registry-verifier-drop",
   );
   if (fatalErrors.length > 0) {
     await writeRun(loaded.paths, {
@@ -660,6 +677,7 @@ type ReviewFeatureOptions = {
   mode: ReviewMode;
   customPrompt: string | null;
   limiter: RpmLimiter;
+  registryPostValidator: FindingPostValidator | undefined;
   allowNonPendingFeatureReview: boolean;
 };
 
@@ -678,6 +696,7 @@ async function reviewFeature(
     mode,
     customPrompt,
     limiter,
+    registryPostValidator,
     allowNonPendingFeatureReview,
   } = options;
   const started = Date.now();
@@ -729,12 +748,19 @@ async function reviewFeature(
     // Layer 2 drops: per-finding evidence validation (line ranges, quotes,
     // included files). Partition so a single bad finding doesn't lose the
     // whole feature.
+    // Layer 3 drops (optional): registry verifier rejects findings whose
+    // "package X@Y is unpublished" claim is refuted by the npm registry.
+    const validatePartitionedOptions: ValidatePartitionedOptions = {};
+    if (registryPostValidator !== undefined) {
+      validatePartitionedOptions.postValidator = registryPostValidator;
+    }
     const validated = await validateReviewOutputPartitioned(
       loaded.root,
       lockedFeature,
       config,
       reviewPrompt.manifest,
       reviewOutput,
+      validatePartitionedOptions,
     );
     droppedFindings.push(...validated.droppedFindings);
     const records = validated.findings.map((finding) =>
@@ -1410,6 +1436,14 @@ function applyProviderFlags(
       reasoningEffort: reasoningEffort ?? config.provider.reasoningEffort,
       skipGitRepoCheck: flags["skipGitRepoCheck"] === true,
     },
+    registryVerifier: {
+      ...config.registryVerifier,
+      // CLI flag is one-way: --no-registry-verify forces off, but absence
+      // of the flag preserves whatever config.json says. This matches the
+      // negative-flag convention (`--no-color`, `--no-input`) used
+      // elsewhere in the CLI surface.
+      enabled: flags["noRegistryVerify"] === true ? false : config.registryVerifier.enabled,
+    },
   };
 }
 
@@ -1441,6 +1475,9 @@ function reviewFlagSubset(
   }
   if (flags["includeDirty"] === true) {
     subset["includeDirty"] = true;
+  }
+  if (flags["noRegistryVerify"] === true) {
+    subset["noRegistryVerify"] = true;
   }
   return subset;
 }
@@ -2229,6 +2266,7 @@ function stringFlag(flags: Record<string, string | boolean>, name: string): stri
 // eslint-disable-next-line no-underscore-dangle
 export const __testing = {
   isRetryableReviewError,
+  reviewFlagSubset,
   reviewRetries,
   runProviderReviewWithRetry,
 };

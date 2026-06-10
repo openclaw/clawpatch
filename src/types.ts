@@ -141,6 +141,19 @@ export const configSchema = z.object({
     commit: z.boolean(),
     openPr: z.boolean(),
   }),
+  /**
+   * Post-validation registry verifier — drops review findings that claim
+   * a package version is unpublished when the npm registry says
+   * otherwise. Explicit opt-in because lookups send package coordinates
+   * to the public npm registry. Only `verified-published`
+   * outcomes drop a finding; 404, network errors, and unknown responses
+   * keep it). See `src/registry-verifier.ts` for the verdict matrix.
+   */
+  registryVerifier: z
+    .object({
+      enabled: z.boolean().default(false),
+    })
+    .default({ enabled: false }),
 });
 
 export type ClawpatchConfig = z.infer<typeof configSchema>;

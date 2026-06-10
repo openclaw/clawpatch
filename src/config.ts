@@ -60,6 +60,9 @@ export function defaultConfig(): ClawpatchConfig {
       commit: false,
       openPr: false,
     },
+    registryVerifier: {
+      enabled: false,
+    },
   };
 }
 
