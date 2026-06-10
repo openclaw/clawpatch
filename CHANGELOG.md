@@ -2,6 +2,7 @@
 
 ## 0.5.1 - Unreleased
 
+- Added opt-in npm registry verification that drops only matching single-package, whole-title-and-reasoning public-npm publication claims when the exact version is confirmed published, thanks @coletebou.
 - Fixed revalidation to include linked patch attempts, validation results, feature context, and current relevant files so repaired findings can move out of `uncertain`.
 - Added `clawpatch review --feature-list <path>` for reviewing an explicit ordered, de-duplicated set of feature IDs, thanks @camwest.
 

@@ -440,6 +440,9 @@ Initial config:
     "requireCleanWorktreeForFix": true,
     "commit": false,
     "openPr": false
+  },
+  "registryVerifier": {
+    "enabled": false
   }
 }
 ```

@@ -171,6 +171,7 @@ const commandFlags = {
     "promptFile",
     "exportTribunalLedger",
     "includeDirty",
+    "noRegistryVerify",
   ]),
   ci: new Set([
     "limit",
@@ -183,6 +184,7 @@ const commandFlags = {
     "skipGitRepoCheck",
     "output",
     "includeDirty",
+    "noRegistryVerify",
   ]),
   report: new Set(["status", "severity", "feature", "project", "category", "triage", "output"]),
   show: new Set(["finding"]),
@@ -262,6 +264,7 @@ const booleanFlagNames = new Set([
   "all",
   "draft",
   "include-dirty",
+  "no-registry-verify",
 ]);
 
 const shortFlagNames = new Set(["-h", "-q", "-v", "-o"]);
@@ -454,6 +457,11 @@ Flags:
                           JSONL file with one line per finding shaped
                           for downstream Tribunal-style signed-ledger
                           ingest. Opt-in; no effect when omitted.
+  --no-registry-verify    disable a configured npm-registry post-validator that
+                          drops findings whose "package X@Y is
+                          unpublished" claim is refuted by the registry.
+                          Set registryVerifier.enabled=true in config.json
+                          to opt in; this flag disables it for one run.
   --json
   -q, --quiet
 `);
@@ -494,6 +502,7 @@ Flags:
   --reasoning-effort <none|minimal|low|medium|high|xhigh>
   --skip-git-repo-check
   --output <path>
+  --no-registry-verify    see clawpatch review --help for details
   --json
 `);
     return;
