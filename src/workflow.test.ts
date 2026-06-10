@@ -3255,7 +3255,7 @@ describe("workflow", () => {
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
     const selected = features
       .filter((feature) => feature.title.includes("CLI command"))
-      .sort((left, right) => left.title.localeCompare(right.title));
+      .toSorted((left, right) => left.title.localeCompare(right.title));
     expect(selected).toHaveLength(3);
     const featureListPath = join(root, "feature-list.txt");
     await writeFixture(
