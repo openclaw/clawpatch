@@ -43,14 +43,13 @@ describe("package smoke harness", () => {
       npmCache: "/tmp/cache",
     });
     expect(packArgs).toEqual([
+      "--dir",
+      dependencySource,
+      "--config.ignore-scripts=true",
       "pack",
       "--json",
-      "--ignore-scripts",
-      "--cache",
-      "/tmp/cache",
       "--pack-destination",
       "/tmp",
-      dependencySource,
     ]);
 
     const installArgs = smoke.installArgs({

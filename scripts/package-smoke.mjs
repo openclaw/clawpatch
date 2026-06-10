@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const moduleRequire = createRequire(import.meta.url);
@@ -149,7 +149,7 @@ function runSmoke(context) {
       },
     ),
   );
-  const tarball = join(context.tmp, packFilename(packOutput));
+  const tarball = packPath(context.tmp, packOutput);
   const dependencyTarballs = runtimeDependencyTarballs(context);
   mkdirSync(context.installRoot, { recursive: true });
   run(
@@ -232,11 +232,16 @@ function runSmoke(context) {
   );
 }
 function packFilename(output) {
-  const filename = Array.isArray(output) ? output[0]?.filename : null;
+  const filename = Array.isArray(output) ? output[0]?.filename : output?.filename;
   if (typeof filename !== "string" || filename.length === 0) {
     throw new Error("npm pack did not report a tarball filename");
   }
   return filename;
+}
+
+function packPath(destination, output) {
+  const filename = packFilename(output);
+  return isAbsolute(filename) ? filename : join(destination, filename);
 }
 
 function runtimeDependencyPaths(rootPath = root) {
@@ -260,30 +265,28 @@ function packDependency(context, dependencyPath) {
   const packOutput = JSON.parse(
     run(
       context,
-      "npm",
+      "pnpm",
       packDependencyArgs({
         dependencyPath,
         destination: context.tmp,
-        npmCache: context.npmCache,
       }),
       {
         stdio: "pipe",
       },
     ),
   );
-  return join(context.tmp, packFilename(packOutput));
+  return packPath(context.tmp, packOutput);
 }
 
-function packDependencyArgs({ dependencyPath, destination, npmCache }) {
+function packDependencyArgs({ dependencyPath, destination }) {
   return [
+    "--dir",
+    dependencyPath,
+    "--config.ignore-scripts=true",
     "pack",
     "--json",
-    "--ignore-scripts",
-    "--cache",
-    npmCache,
     "--pack-destination",
     destination,
-    dependencyPath,
   ];
 }
 
