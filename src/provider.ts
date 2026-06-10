@@ -1502,6 +1502,17 @@ const mockProvider: Provider = {
     };
   },
   async revalidate(_root: string, prompt: string): Promise<RevalidateOutput> {
+    if (prompt.includes("REVALIDATE_PATCH_EVIDENCE")) {
+      const hasValidatedPatch = prompt.includes('"status": "validated"');
+      const hasMatchedValidation = prompt.includes('"matchedExpectedValidation": true');
+      const hasSuccessfulValidation = prompt.includes('"exitCode": 0');
+      const leakedOutput =
+        prompt.includes("SECRET_OUTPUT_MUST_NOT_REACH_REVALIDATION") ||
+        prompt.includes("PRIVATE_ERROR_MUST_NOT_REACH_REVALIDATION");
+      return hasValidatedPatch && hasMatchedValidation && hasSuccessfulValidation && !leakedOutput
+        ? { outcome: "fixed", reasoning: "mock patch evidence supports fix", commands: [] }
+        : { outcome: "uncertain", reasoning: "mock patch evidence incomplete", commands: [] };
+    }
     if (prompt.includes("REVALIDATE_FIXED")) {
       return { outcome: "fixed", reasoning: "mock fixed outcome", commands: ["mock fixed"] };
     }

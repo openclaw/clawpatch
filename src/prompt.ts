@@ -1,10 +1,19 @@
 import { readFile, realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
-import { ClawpatchConfig, FeatureRecord, FindingRecord, ProjectRecord } from "./types.js";
+import { createHash } from "node:crypto";
+import { basename, isAbsolute, relative, resolve } from "node:path";
+import {
+  ClawpatchConfig,
+  FeatureRecord,
+  FindingRecord,
+  PatchAttempt,
+  ProjectRecord,
+} from "./types.js";
+import { validationCommandsForFeature } from "./validation.js";
 
 export type ReviewMode = "default" | "deslopify";
 
 export const REVIEW_PROMPT_FILE_CHAR_LIMIT = 24_000;
+const REVALIDATE_FILE_CONTEXT_CHAR_LIMIT = 120_000;
 
 export type ReviewPromptFileRole = "owned" | "context" | "test";
 
@@ -384,18 +393,107 @@ function reviewModeInstructions(mode: ReviewMode): string {
   throw new Error(`Unsupported review mode: ${mode}`);
 }
 
-export async function buildRevalidatePrompt(root: string, findingJson: string): Promise<string> {
+export async function buildRevalidatePrompt(
+  root: string,
+  finding: FindingRecord,
+  feature: FeatureRecord,
+  patchAttempts: PatchAttempt[],
+  config: ClawpatchConfig,
+): Promise<string> {
+  const fileBlocks: string[] = [];
+  const newestPatchAttempts = patchAttempts.toSorted((left, right) =>
+    right.updatedAt.localeCompare(left.updatedAt),
+  );
+  const promptPatchAttempts = newestPatchAttempts.slice(0, 3);
+  const paths = [
+    ...fixPromptPaths(finding, feature, config),
+    ...promptPatchAttempts.flatMap((patch) => patch.filesChanged.slice(0, 50)),
+  ].filter((path, index, allPaths) => allPaths.indexOf(path) === index);
+  const expectedValidationCommands = validationCommandsForFeature(feature, config.commands);
+  let fileContextChars = 0;
+  for (const [index, path] of paths.entries()) {
+    const block = await rawFileBlock(root, path);
+    if (fileContextChars + block.length > REVALIDATE_FILE_CONTEXT_CHAR_LIMIT) {
+      fileBlocks.push(`[omitted ${paths.length - index} files due to revalidation context budget]`);
+      break;
+    }
+    fileBlocks.push(block);
+    fileContextChars += block.length;
+  }
   return `Revalidate this clawpatch finding against the current repository at ${root}.
 
 Check whether the original evidence paths/lines still exist. If evidence moved or changed,
 decide whether the issue is fixed, stale/false-positive, still open elsewhere, or uncertain.
-Use tests and current code as evidence; do not assume a missing line means fixed.
+Use the linked patch attempts, command results, and current files as evidence. Do not assume a
+missing line means fixed. Do not return fixed when targeted validation failed or the current code
+does not support the repair.
 
 Return strict JSON only:
 {"outcome":"fixed|open|false-positive|uncertain","reasoning":"string","commands":["string"]}
 
 Finding:
-${findingJson}`;
+${JSON.stringify(finding, null, 2)}
+
+Feature:
+${JSON.stringify(feature, null, 2)}
+
+Linked patch attempts:
+${JSON.stringify(
+  {
+    attempts: promptPatchAttempts.map((patch) =>
+      revalidationPatchEvidence(patch, expectedValidationCommands),
+    ),
+    omittedAttempts: Math.max(0, newestPatchAttempts.length - promptPatchAttempts.length),
+  },
+  null,
+  2,
+)}
+
+Relevant current files:
+${fileBlocks.join("\n\n")}`;
+}
+
+function revalidationPatchEvidence(
+  patch: PatchAttempt,
+  expectedValidationCommands: readonly string[],
+): object {
+  return {
+    patchAttemptId: patch.patchAttemptId,
+    status: patch.status,
+    filesChanged: patch.filesChanged.slice(0, 50),
+    omittedFiles: Math.max(0, patch.filesChanged.length - 50),
+    commandsRun: patch.commandsRun
+      .slice(0, 20)
+      .map((result) => revalidationCommandEvidence(result, expectedValidationCommands)),
+    omittedCommands: Math.max(0, patch.commandsRun.length - 20),
+    testResults: patch.testResults
+      .slice(0, 20)
+      .map((result) => revalidationCommandEvidence(result, expectedValidationCommands)),
+    omittedTestResults: Math.max(0, patch.testResults.length - 20),
+  };
+}
+
+function revalidationCommandEvidence(
+  result: PatchAttempt["testResults"][number],
+  expectedValidationCommands: readonly string[],
+): object {
+  const expectedValidationIndex = expectedValidationCommands.indexOf(result.command);
+  return {
+    command: safeCommandIdentifier(result.command),
+    matchedExpectedValidation: expectedValidationIndex >= 0,
+    expectedValidationIndex: expectedValidationIndex >= 0 ? expectedValidationIndex : null,
+    exitCode: result.exitCode,
+    durationMs: result.durationMs,
+  };
+}
+
+function safeCommandIdentifier(command: string): object {
+  const tokens = command.trim().split(/\s+/u);
+  const executable = tokens.find((token) => token !== "env" && !token.includes("="));
+  return {
+    executable: executable === undefined ? "unknown" : basename(executable).slice(0, 80),
+    fingerprint: createHash("sha256").update(command).digest("hex").slice(0, 12),
+  };
 }
 
 export async function buildFixPrompt(

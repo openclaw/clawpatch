@@ -2,6 +2,7 @@
 
 ## 0.5.1 - Unreleased
 
+- Fixed revalidation to include linked patch attempts, validation results, feature context, and current relevant files so repaired findings can move out of `uncertain`.
 - Added `clawpatch review --feature-list <path>` for reviewing an explicit ordered, de-duplicated set of feature IDs, thanks @camwest.
 
 ## 0.5.0 - 2026-05-31

@@ -1188,6 +1188,76 @@ describe("workflow", () => {
     }
   });
 
+  it("uses linked C# patch evidence when revalidating a fixed finding", async () => {
+    const root = await fixtureRoot("clawpatch-csharp-revalidate-");
+    await writeFixture(
+      root,
+      "Sample.csproj",
+      '<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework></PropertyGroup></Project>\n',
+    );
+    await writeFixture(
+      root,
+      "Program.cs",
+      "var completedBatches = 0;\nConsole.WriteLine(42 / completedBatches); // TODO_BUG\n",
+    );
+    process.env["CLAWPATCH_PROVIDER"] = "mock";
+    const context = await makeContext(testOptions(root));
+
+    try {
+      await initCommand(context, {});
+      await mapCommand(context);
+      await reviewCommand(context, { limit: "20" });
+      const paths = statePaths(join(root, ".clawpatch"));
+      const finding = (await readFindings(paths)).find((candidate) =>
+        candidate.evidence.some((evidence) => evidence.path === "Program.cs"),
+      );
+      expect(finding).toBeDefined();
+
+      await writeFixture(
+        root,
+        "Program.cs",
+        "var completedBatches = 0;\nConsole.WriteLine(completedBatches == 0 ? 0 : 42 / completedBatches); // REVALIDATE_PATCH_EVIDENCE\n",
+      );
+      const timestamp = new Date().toISOString();
+      const patch: PatchAttempt = {
+        schemaVersion: 1,
+        patchAttemptId: "pat_csharp_fixed",
+        findingIds: [finding!.findingId],
+        featureIds: [finding!.featureId],
+        status: "validated",
+        plan: "SECRET_OUTPUT_MUST_NOT_REACH_REVALIDATION",
+        filesChanged: ["Program.cs"],
+        commandsRun: [],
+        testResults: [
+          {
+            command: "dotnet build Sample.csproj",
+            cwd: root,
+            exitCode: 0,
+            durationMs: 10,
+            stdout: "SECRET_OUTPUT_MUST_NOT_REACH_REVALIDATION",
+            stderr: "PRIVATE_ERROR_MUST_NOT_REACH_REVALIDATION",
+          },
+        ],
+        provider: null,
+        git: { baseSha: null, commitSha: null, branchName: null, prUrl: null },
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+      await writePatchAttempt(paths, patch);
+      await writeFinding(paths, {
+        ...finding!,
+        linkedPatchAttemptIds: [patch.patchAttemptId],
+      });
+
+      const result = await revalidateCommand(context, { finding: finding!.findingId });
+
+      expect(result).toMatchObject({ finding: finding!.findingId, outcome: "fixed" });
+      expect((await readFinding(paths, finding!.findingId))?.status).toBe("fixed");
+    } finally {
+      delete process.env["CLAWPATCH_PROVIDER"];
+    }
+  });
+
   it("shows, prioritizes, and triages findings with history", async () => {
     const root = await fixtureRoot("clawpatch-finding-lifecycle-");
     await writeFixture(

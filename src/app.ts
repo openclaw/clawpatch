@@ -875,6 +875,10 @@ export async function revalidateCommand(
   const config = applyProviderFlags(loaded.config, flags);
   const provider = providerByName(config.provider.name);
   const findings = await selectRevalidationFindings(loaded, flags);
+  const [features, patchAttempts] = await Promise.all([
+    readFeatures(loaded.paths),
+    readPatchAttempts(loaded.paths),
+  ]);
   const currentRunId = runId();
   const currentGit = await discoverGit(loaded.root);
   const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
@@ -898,7 +902,20 @@ export async function revalidateCommand(
         finding: finding.findingId,
         title: finding.title,
       });
-      const prompt = await buildRevalidatePrompt(loaded.root, JSON.stringify(finding, null, 2));
+      const feature = assertDefined(
+        features.find((candidate) => candidate.featureId === finding.featureId),
+        `feature not found: ${finding.featureId}`,
+      );
+      const linkedPatchAttempts = patchAttempts.filter((patch) =>
+        finding.linkedPatchAttemptIds.includes(patch.patchAttemptId),
+      );
+      const prompt = await buildRevalidatePrompt(
+        loaded.root,
+        finding,
+        feature,
+        linkedPatchAttempts,
+        config,
+      );
       const output = await provider.revalidate(loaded.root, prompt, providerOptions(config));
       const updated = appendFindingHistory(
         {
