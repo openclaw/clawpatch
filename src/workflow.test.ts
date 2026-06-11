@@ -672,6 +672,100 @@ describe("workflow", () => {
   );
 
   it.runIf(process.platform !== "win32")(
+    "passes trusted Codex config through the spawned provider process",
+    async () => {
+      const root = await fixtureRoot("clawpatch-codex-config-e2e-");
+      await writeFixture(
+        root,
+        "package.json",
+        JSON.stringify({
+          name: "codex-config",
+          bin: { app: "src/index.ts" },
+        }),
+      );
+      await writeFixture(root, "src/index.ts", "export const value = 'ok';\n");
+      const trustedConfigPath = join(root, "trusted-config.json");
+      await writeFixture(
+        root,
+        "trusted-config.json",
+        JSON.stringify({
+          ...defaultConfig(),
+          provider: {
+            ...defaultConfig().provider,
+            codexConfig: {
+              model_provider: "local",
+              "model_providers.local.base_url": "https://example.invalid/v1",
+              "model_providers.local.env_key": "CLAWPATCH_TEST_API_KEY",
+            },
+          },
+        }),
+      );
+      const binDir = join(root, "bin");
+      const codexShim = join(binDir, "codex");
+      const capturedArgsPath = join(root, "codex-args.json");
+      await writeFixture(
+        root,
+        "bin/codex",
+        [
+          "#!/usr/bin/env node",
+          'const { writeFileSync } = require("node:fs");',
+          "const args = process.argv.slice(2);",
+          'if (args.includes("--version")) { console.log("codex fake 0.130.0"); process.exit(0); }',
+          `writeFileSync(${JSON.stringify(capturedArgsPath)}, JSON.stringify(args), "utf8");`,
+          'const outputIndex = args.indexOf("--output-last-message");',
+          "if (outputIndex === -1 || outputIndex + 1 >= args.length) {",
+          '  console.error("missing --output-last-message");',
+          "  process.exit(2);",
+          "}",
+          "const payload = {",
+          "  findings: [],",
+          '  inspected: { files: ["src/index.ts"], symbols: [], notes: ["trusted codex config"] },',
+          "};",
+          'writeFileSync(args[outputIndex + 1], JSON.stringify(payload), "utf8");',
+          "",
+        ].join("\n"),
+      );
+      await chmod(codexShim, 0o755);
+      const previousPath = process.env["PATH"];
+      process.env["PATH"] = `${binDir}${delimiter}${previousPath ?? ""}`;
+      try {
+        const context = await makeContext({ ...testOptions(root), config: trustedConfigPath });
+
+        await initCommand(context, {});
+        const persistedConfig = JSON.parse(
+          await readFile(join(root, ".clawpatch", "config.json"), "utf8"),
+        ) as { provider?: { codexConfig?: unknown } };
+        expect(persistedConfig.provider?.codexConfig).toEqual({});
+        expect((await loadConfig(root, testOptions(root))).provider.codexConfig).toEqual({});
+        await mapCommand(context);
+        await reviewCommand(context, { limit: "1" });
+        const capturedArgs = JSON.parse(await readFile(capturedArgsPath, "utf8")) as string[];
+        const codexConfigArgs: string[] = [];
+        for (let index = 0; index < capturedArgs.length; index += 1) {
+          if (capturedArgs[index] === "-c") {
+            const value = capturedArgs[index + 1];
+            if (value !== undefined) {
+              codexConfigArgs.push(value);
+            }
+          }
+        }
+
+        expect(codexConfigArgs).toEqual([
+          'model_provider="local"',
+          'model_providers.local.base_url="https://example.invalid/v1"',
+          'model_providers.local.env_key="CLAWPATCH_TEST_API_KEY"',
+        ]);
+      } finally {
+        if (previousPath === undefined) {
+          delete process.env["PATH"];
+        } else {
+          process.env["PATH"] = previousPath;
+        }
+      }
+    },
+  );
+
+  it.runIf(process.platform !== "win32")(
     "times out wedged codex exec review children",
     async () => {
       const root = await fixtureRoot("clawpatch-codex-timeout-e2e-");
@@ -2122,6 +2216,28 @@ describe("workflow", () => {
         process.env["CLAWPATCH_REASONING_EFFORT"] = previousReasoning;
       }
     }
+  });
+
+  it("rejects untrusted Codex passthrough config in doctor", async () => {
+    const root = await fixtureRoot("clawpatch-doctor-untrusted-codex-config-");
+    await writeFixture(
+      root,
+      "clawpatch.config.json",
+      JSON.stringify({
+        ...defaultConfig(),
+        provider: {
+          ...defaultConfig().provider,
+          codexConfig: {
+            model_provider: "local",
+          },
+        },
+      }),
+    );
+    const context = await makeContext(testOptions(root));
+
+    await expect(doctorCommand(context, { provider: "mock" })).rejects.toThrow(
+      /provider\.codexConfig may only be set/u,
+    );
   });
 
   it("allows fix dry-run when only the default state dir is dirty", async () => {

@@ -96,6 +96,12 @@ export const reasoningEffortSchema = z.enum(reasoningEfforts);
 
 export type ReasoningEffort = z.infer<typeof reasoningEffortSchema>;
 
+const codexConfigValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+
+export const codexConfigSchema = z.record(z.string(), codexConfigValueSchema);
+
+export type CodexConfig = z.infer<typeof codexConfigSchema>;
+
 export const projectRecordSchema = z.object({
   schemaVersion: z.literal(1),
   projectId: z.string(),
@@ -128,6 +134,7 @@ export const configSchema = z.object({
     name: z.string(),
     model: z.string().nullable(),
     reasoningEffort: reasoningEffortSchema.nullable().optional().default(null),
+    codexConfig: codexConfigSchema.optional().default({}),
   }),
   commands: projectCommandsSchema,
   review: z.object({

@@ -25,6 +25,7 @@ import {
   reviewInspectedSchema,
   reviewOutputSchema,
   revalidateOutputSchema,
+  type CodexConfig,
   type ReasoningEffort,
 } from "./types.js";
 
@@ -151,6 +152,7 @@ function parseOrThrow<T>(schema: ZodType<T>, input: unknown, label: string): T {
 export type ProviderOptions = {
   model: string | null;
   reasoningEffort: ReasoningEffort | null;
+  codexConfig?: CodexConfig;
   skipGitRepoCheck: boolean;
 };
 
@@ -2257,12 +2259,41 @@ function addCodexModelArgs(args: string[], options: ProviderOptions): void {
   if (options.skipGitRepoCheck) {
     args.push("--skip-git-repo-check");
   }
+  addCodexConfigArgs(args, options.codexConfig ?? {});
   if (options.model !== null) {
     args.push("--model", options.model);
   }
   if (options.reasoningEffort !== null) {
     args.push("-c", `model_reasoning_effort="${options.reasoningEffort}"`);
   }
+}
+
+const CODEX_CONFIG_KEY = /^[A-Za-z0-9_][A-Za-z0-9_.-]*$/u;
+
+function addCodexConfigArgs(args: string[], config: CodexConfig): void {
+  for (const [key, value] of Object.entries(config).toSorted(([left], [right]) =>
+    left.localeCompare(right),
+  )) {
+    args.push("-c", renderCodexConfigEntry(key, value));
+  }
+}
+
+function renderCodexConfigEntry(key: string, value: CodexConfig[string]): string {
+  if (!CODEX_CONFIG_KEY.test(key)) {
+    throw new ClawpatchError(`invalid Codex config key: ${key}`, 2, "invalid-usage");
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new ClawpatchError(
+      `invalid Codex config value for ${key}: finite number required`,
+      2,
+      "invalid-usage",
+    );
+  }
+  const encoded = JSON.stringify(value);
+  if (encoded === undefined) {
+    throw new ClawpatchError(`invalid Codex config value for ${key}`, 2, "invalid-usage");
+  }
+  return `${key}=${encoded}`;
 }
 
 const OPENCODE_READ_ONLY_PERMISSION = JSON.stringify({
@@ -2893,6 +2924,7 @@ function acpxPromptRetries(): number {
 export const __testing = {
   acpxFailureMessage,
   acpxPromptRetries,
+  addCodexConfigArgs,
   addCodexModelArgs,
   addCodexSandboxArgs,
   addClaudeModelArgs,

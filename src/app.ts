@@ -100,7 +100,14 @@ export async function initCommand(
   const paths = statePaths(stateDir);
   await ensureStateDirs(paths);
   const project = await detectProject(context.root);
-  const detectedConfig = { ...config, commands: project.detected.commands };
+  const detectedConfig = {
+    ...config,
+    provider: {
+      ...config.provider,
+      codexConfig: {},
+    },
+    commands: project.detected.commands,
+  };
   const previous = await readProject(paths);
   if (previous !== null && flags["force"] !== true) {
     throw new ClawpatchError("project already initialized; use --force", 2, "already-initialized");
@@ -1348,7 +1355,16 @@ export async function doctorCommand(
   context: AppContext,
   flags: Record<string, string | boolean> = {},
 ): Promise<unknown> {
-  const loaded = await loadProjectState(context).catch(() => null);
+  let loaded: Awaited<ReturnType<typeof loadProjectState>> | null;
+  try {
+    loaded = await loadProjectState(context);
+  } catch (error) {
+    if (error instanceof ClawpatchError && error.code === "not-initialized") {
+      loaded = null;
+    } else {
+      throw error;
+    }
+  }
   const root = loaded?.root ?? context.root;
   const providerName =
     stringFlag(flags, "provider") ??
@@ -1959,6 +1975,7 @@ function providerOptions(config: ReturnType<typeof applyProviderFlags>) {
   return {
     model: config.provider.model,
     reasoningEffort: config.provider.reasoningEffort,
+    codexConfig: config.provider.codexConfig,
     skipGitRepoCheck: config.provider.skipGitRepoCheck,
   };
 }

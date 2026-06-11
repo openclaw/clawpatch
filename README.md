@@ -117,6 +117,11 @@ Clawpatch. Use any Codex sandbox mode, or `bypass`/`none` to pass
 `--dangerously-bypass-approvals-and-sandbox` when the host environment already
 provides isolation.
 
+Trusted config loaded with `--config` or `CLAWPATCH_CONFIG` can pass primitive
+Codex CLI config through `provider.codexConfig`. Repository-discovered config
+files cannot set this field because Codex config can affect provider routing
+and credential lookup.
+
 Supported provider names today:
 
 - `codex`: local Codex CLI

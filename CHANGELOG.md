@@ -2,6 +2,7 @@
 
 ## 0.5.2 - Unreleased
 
+- Added trusted Codex CLI config passthrough for explicit config files while rejecting repository-controlled passthrough config, thanks @brad-ai-agent.
 - Added a MiniMax HTTP provider for `map`, `review`, and `revalidate`, with local schema validation and explicit unsupported `fix` handling, thanks @ferminquant.
 
 ## 0.5.1 - 2026-06-10

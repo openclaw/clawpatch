@@ -54,6 +54,32 @@ When `reasoningEffort` is unset, Clawpatch does not pass a reasoning override
 and Codex uses its own configured default. Explicit values are passed to Codex
 as `model_reasoning_effort`.
 
+Trusted Codex CLI config passthrough:
+
+```json
+{
+  "provider": {
+    "name": "codex",
+    "model": null,
+    "reasoningEffort": null,
+    "codexConfig": {
+      "model_provider": "local",
+      "model_providers.local.base_url": "https://example.invalid/v1",
+      "model_providers.local.env_key": "CLAWPATCH_CODEX_API_KEY"
+    }
+  }
+}
+```
+
+Load a config like this with `clawpatch --config trusted-config.json ...` or
+`CLAWPATCH_CONFIG=trusted-config.json`. Clawpatch rejects non-empty
+`provider.codexConfig` from auto-discovered repository or state config files so
+a checkout cannot silently redirect Codex provider routing or credential lookup.
+Values are limited to strings, finite numbers, booleans, and `null`, then passed
+as repeated `-c key=value` arguments before `--model` and reasoning overrides.
+Do not place raw secrets in `codexConfig`; point Codex at an explicit env var
+instead.
+
 ## OpenCode
 
 The `opencode` provider shells out to the local [OpenCode CLI](https://opencode.ai/docs/cli/).

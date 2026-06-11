@@ -22,6 +22,13 @@ export type GlobalOptions = {
   noInput: boolean;
 };
 
+type ConfigSource = "option" | "env" | "state-dir" | "project" | "state";
+
+type ConfigDiscovery = {
+  path: string;
+  source: ConfigSource;
+};
+
 export const defaultCommands: ProjectCommands = {
   typecheck: null,
   lint: null,
@@ -47,6 +54,7 @@ export function defaultConfig(): ClawpatchConfig {
       name: "codex",
       model: null,
       reasoningEffort: null,
+      codexConfig: {},
     },
     commands: defaultCommands,
     review: {
@@ -67,8 +75,9 @@ export function defaultConfig(): ClawpatchConfig {
 }
 
 export async function loadConfig(root: string, options: GlobalOptions): Promise<ClawpatchConfig> {
-  const configPath = await discoverConfigPath(root, options);
-  const base = configPath === null ? defaultConfig() : await readJson(configPath, configSchema);
+  const discovery = await discoverConfigPath(root, options);
+  const base = discovery === null ? defaultConfig() : await readJson(discovery.path, configSchema);
+  assertTrustedCodexConfig(base, discovery?.source ?? null);
   return {
     ...base,
     stateDir: options.stateDir ?? process.env["CLAWPATCH_STATE_DIR"] ?? base.stateDir,
@@ -102,23 +111,45 @@ function parseReasoningEffort(value: string | undefined) {
   );
 }
 
-async function discoverConfigPath(root: string, options: GlobalOptions): Promise<string | null> {
+function assertTrustedCodexConfig(config: ClawpatchConfig, source: ConfigSource | null): void {
+  if (Object.keys(config.provider.codexConfig).length === 0) {
+    return;
+  }
+  if (source === "option" || source === "env") {
+    return;
+  }
+  throw new ClawpatchError(
+    "provider.codexConfig may only be set from --config or CLAWPATCH_CONFIG; repository and state config cannot control Codex provider settings",
+    2,
+    "invalid-usage",
+  );
+}
+
+async function discoverConfigPath(
+  root: string,
+  options: GlobalOptions,
+): Promise<ConfigDiscovery | null> {
   if (options.config !== undefined) {
-    return resolve(options.config);
+    return { path: resolve(options.config), source: "option" };
   }
   if (process.env["CLAWPATCH_CONFIG"] !== undefined) {
-    return resolve(process.env["CLAWPATCH_CONFIG"]);
+    return { path: resolve(process.env["CLAWPATCH_CONFIG"]), source: "env" };
   }
   const configuredStateDir = options.stateDir ?? process.env["CLAWPATCH_STATE_DIR"];
-  const candidates = [
+  const candidates: ConfigDiscovery[] = [
     ...(configuredStateDir === undefined
       ? []
-      : [join(resolve(root, configuredStateDir), "config.json")]),
-    join(root, "clawpatch.config.json"),
-    join(root, ".clawpatch", "config.json"),
+      : [
+          {
+            path: join(resolve(root, configuredStateDir), "config.json"),
+            source: "state-dir" as const,
+          },
+        ]),
+    { path: join(root, "clawpatch.config.json"), source: "project" },
+    { path: join(root, ".clawpatch", "config.json"), source: "state" },
   ];
   for (const candidate of candidates) {
-    if (await pathExists(candidate)) {
+    if (await pathExists(candidate.path)) {
       return candidate;
     }
   }

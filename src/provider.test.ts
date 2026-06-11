@@ -11,6 +11,7 @@ const {
   acpxFailureMessage,
   assertCursorRuntimeVersionAllowed,
   acpxPromptRetries,
+  addCodexConfigArgs,
   addCodexModelArgs,
   addCodexSandboxArgs,
   assertClaudeVersionAllowed,
@@ -295,10 +296,63 @@ describe("Codex provider args", () => {
     addCodexModelArgs(args, {
       model: "gpt-5.5",
       reasoningEffort: "xhigh",
+      codexConfig: {
+        model_provider: "local",
+        "model_providers.local.base_url": "https://example.invalid/v1",
+      },
       skipGitRepoCheck: false,
     });
 
-    expect(args).toEqual(["exec", "--model", "gpt-5.5", "-c", 'model_reasoning_effort="xhigh"']);
+    expect(args).toEqual([
+      "exec",
+      "-c",
+      'model_provider="local"',
+      "-c",
+      'model_providers.local.base_url="https://example.invalid/v1"',
+      "--model",
+      "gpt-5.5",
+      "-c",
+      'model_reasoning_effort="xhigh"',
+    ]);
+  });
+
+  it("renders primitive Codex passthrough values in stable key order", () => {
+    const args = ["exec"];
+
+    addCodexConfigArgs(args, {
+      z_flag: true,
+      model_provider: "local",
+      "model_providers.local.max_retries": 2,
+      "model_providers.local.optional": null,
+    });
+
+    expect(args).toEqual([
+      "exec",
+      "-c",
+      'model_provider="local"',
+      "-c",
+      "model_providers.local.max_retries=2",
+      "-c",
+      "model_providers.local.optional=null",
+      "-c",
+      "z_flag=true",
+    ]);
+  });
+
+  it("rejects unsafe Codex passthrough keys", () => {
+    const args = ["exec"];
+
+    expect(() => addCodexConfigArgs(args, { "model provider": "local" })).toThrow(
+      /invalid Codex config key/u,
+    );
+  });
+
+  it("rejects non-finite Codex passthrough numbers", () => {
+    const args = ["exec"];
+
+    expect(() => addCodexConfigArgs(args, { retries: Number.NaN })).toThrow(
+      /finite number required/u,
+    );
   });
 
   it("passes the Git repo check bypass to Codex when requested", () => {

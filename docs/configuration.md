@@ -33,7 +33,8 @@ Default shape:
   "provider": {
     "name": "codex",
     "model": null,
-    "reasoningEffort": null
+    "reasoningEffort": null,
+    "codexConfig": {}
   },
   "commands": {
     "typecheck": null,
@@ -71,6 +72,13 @@ Environment overrides:
 - `CLAWPATCH_PROVIDER`
 - `CLAWPATCH_MODEL`
 - `CLAWPATCH_REASONING_EFFORT`
+
+`provider.codexConfig` passes primitive values to Codex as `-c key=value`.
+Only config loaded by `--config` or `CLAWPATCH_CONFIG` may set non-empty
+Codex passthrough config. Auto-discovered repository and state config files
+are rejected if they set it, because Codex config can change provider routing
+and credential lookup. Keep secrets out of config files; use Codex provider
+settings such as `env_key` to read an already-exported environment variable.
 
 `git.commit` and `git.openPr` are reserved config fields. The current CLI does
 not commit or open PRs.
