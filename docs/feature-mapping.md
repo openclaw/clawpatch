@@ -163,7 +163,8 @@ same C/C++ shapes, including legacy `FindCUDA` `cuda_add_executable` and
 grouped per directory into bounded, low-confidence source groups.
 
 Python mapping covers `pyproject.toml`, `setup.cfg`, `setup.py`, and
-`requirements.txt` metadata; `[project.scripts]`, `[tool.poetry.scripts]`,
+`requirements.txt` metadata; uv workspace members declared by
+`[tool.uv.workspace]`; `[project.scripts]`, `[tool.poetry.scripts]`,
 `setup.cfg` `console_scripts`, and `setup.py` console script entry points; root
 app files; source groups under common Python source roots including `web/`;
 pytest files; Flask `@*.route(...)` handlers; FastAPI `@*.get(...)` /

@@ -12570,6 +12570,216 @@ add_executable(headerapp include/headers.hpp)
     );
   });
 
+  it("maps uv workspace Python members with repo-relative paths", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      `[project]
+name = "workspace-root"
+dependencies = ["pytest"]
+
+[tool.uv.workspace]
+members = ["packages/*", "../outside/*", "tools/*"]
+exclude = ["packages/legacy"]
+`,
+    );
+    await writeFixture(root, "uv.lock", "");
+    await writeFixture(root, "src/workspace_root/__init__.py", "");
+    await writeFixture(
+      root,
+      "packages/backend/pyproject.toml",
+      '[project]\nname = "backend"\ndependencies = ["fastapi"]\n',
+    );
+    await writeFixture(
+      root,
+      "packages/backend/src/backend/app.py",
+      "from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/health')\ndef health():\n    return {'ok': True}\n",
+    );
+    await writeFixture(root, "packages/backend/tests/test_app.py", "def test_app():\n    pass\n");
+    await writeFixture(
+      root,
+      "packages/quoted; pkg/pyproject.toml",
+      '[project]\nname = "quoted-pkg"\n',
+    );
+    await writeFixture(
+      root,
+      "packages/quoted; pkg/tests/test_quoted.py",
+      "def test_quoted():\n    pass\n",
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-bridge-client/pyproject.toml",
+      '[project]\nname = "ibkr-bridge-client"\n',
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-bridge-client/src/ibkr_bridge_client/client.py",
+      "def connect():\n    pass\n",
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-bridge-client/tests/test_client.py",
+      "def test_client():\n    pass\n",
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-instruments/pyproject.toml",
+      '[project]\nname = "ibkr-instruments"\n',
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-instruments/src/ibkr_instruments/store.py",
+      "def save():\n    pass\n",
+    );
+    await writeFixture(
+      root,
+      "packages/ibkr-instruments/tests/test_store.py",
+      "def test_store():\n    pass\n",
+    );
+    await writeFixture(root, "packages/legacy/pyproject.toml", '[project]\nname = "legacy"\n');
+    await writeFixture(root, "packages/legacy/src/legacy/app.py", "def legacy():\n    pass\n");
+    await writeFixture(root, "tools/no-manifest/src/tool.py", "def tool():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const titles = result.features.map((feature) => feature.title);
+    const backendSource = result.features.find(
+      (feature) => feature.title === "Python source packages/backend/src",
+    );
+    const backendTests = result.features.find(
+      (feature) => feature.title === "Python test suite packages/backend/tests",
+    );
+    const quotedTests = result.features.find(
+      (feature) => feature.title === "Python test suite packages/quoted; pkg/tests",
+    );
+    const fastApiRoute = result.features.find(
+      (feature) => feature.title === "FastAPI route GET /health",
+    );
+
+    expect(titles).toContain("Python project backend");
+    expect(titles).toContain("Python project ibkr-bridge-client");
+    expect(titles).toContain("Python project ibkr-instruments");
+    expect(titles).not.toContain("Python project legacy");
+    expect(backendSource?.entrypoints[0]?.path).toBe("packages/backend/src");
+    expect(backendSource?.ownedFiles).toEqual([
+      { path: "packages/backend/src/backend/app.py", reason: "source group src" },
+    ]);
+    expect(backendSource?.tags).toEqual(
+      expect.arrayContaining(["python", "source-group", "workspace", "uv-workspace"]),
+    );
+    expect(backendTests?.tests).toEqual([
+      {
+        path: "packages/backend/tests/test_app.py",
+        command: "uv run --directory packages/backend pytest",
+      },
+    ]);
+    expect(quotedTests?.tests).toEqual([
+      {
+        path: "packages/quoted; pkg/tests/test_quoted.py",
+        command: 'uv run --directory "packages/quoted; pkg" pytest',
+      },
+    ]);
+    expect(fastApiRoute?.entrypoints[0]?.path).toBe("packages/backend/src/backend/app.py");
+    expect(fastApiRoute?.summary).toBe(
+      "FastAPI route GET /health handled by health in packages/backend/src/backend/app.py.",
+    );
+    expect(
+      result.features.find((feature) => feature.title === "Python project backend")?.summary,
+    ).toBe("Python project metadata in packages/backend/pyproject.toml.");
+    expect(fastApiRoute?.tests).toEqual([
+      {
+        path: "packages/backend/tests/test_app.py",
+        command: "uv run --directory packages/backend pytest",
+      },
+    ]);
+    expect(
+      result.features.some((feature) =>
+        feature.ownedFiles.some((file) => file.path.startsWith("tools/no-manifest")),
+      ),
+    ).toBe(false);
+  });
+
+  it("does not duplicate uv workspace members from root-level Python mapping", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-root-dedupe-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["packages/*"]\n',
+    );
+    await writeFixture(root, "packages/__init__.py", "");
+    await writeFixture(root, "packages/backend/pyproject.toml", '[project]\nname = "backend"\n');
+    await writeFixture(root, "packages/backend/src/backend/app.py", "def run():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const backendSources = result.features.filter((feature) =>
+      feature.ownedFiles.some((file) => file.path.endsWith("packages/backend/src/backend/app.py")),
+    );
+
+    expect(backendSources).toHaveLength(1);
+    expect(backendSources[0]?.entrypoints[0]?.path).toBe("packages/backend/src");
+    expect(
+      result.features.some(
+        (feature) =>
+          feature.title === "Python source src" ||
+          feature.ownedFiles.some((file) => file.path === "backend/src/backend/app.py"),
+      ),
+    ).toBe(false);
+  });
+
+  it("preserves non-member files from mixed uv workspace root source groups", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-root-mixed-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["packages/*"]\n',
+    );
+    await writeFixture(root, "packages/__init__.py", "");
+    await writeFixture(root, "packages/shared.py", "def shared():\n    pass\n");
+    await writeFixture(root, "packages/backend/pyproject.toml", '[project]\nname = "backend"\n');
+    await writeFixture(root, "packages/backend/src/backend/app.py", "def run():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const packageSource = result.features.find(
+      (feature) => feature.title === "Python source packages",
+    );
+    const backendSources = result.features.filter((feature) =>
+      feature.ownedFiles.some((file) => file.path.endsWith("packages/backend/src/backend/app.py")),
+    );
+
+    expect(packageSource?.ownedFiles.map((file) => file.path).toSorted()).toEqual([
+      "packages/__init__.py",
+      "packages/shared.py",
+    ]);
+    expect(packageSource?.summary).toBe("Python source group packages with 2 files.");
+    expect(backendSources).toHaveLength(1);
+    expect(backendSources[0]?.entrypoints[0]?.path).toBe("packages/backend/src");
+  });
+
+  symlinkIt("does not discover uv workspace members through symlinked package roots", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-symlink-");
+    const outside = await fixtureRoot("clawpatch-python-uv-workspace-outside-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["packages/*"]\n',
+    );
+    await writeFixture(root, "uv.lock", "");
+    await writeFixture(outside, "external/pyproject.toml", '[project]\nname = "external"\n');
+    await writeFixture(outside, "external/src/external/app.py", "def app():\n    pass\n");
+    await mkdir(join(root, "packages"), { recursive: true });
+    await symlink(join(outside, "external"), join(root, "packages", "external"), "dir");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(result.features.map((feature) => feature.title)).not.toContain(
+      "Python project external",
+    );
+  });
+
   it("detects and maps Laravel application slices", async () => {
     const root = await fixtureRoot("clawpatch-laravel-map-");
     await writeFixture(
