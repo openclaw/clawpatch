@@ -1568,8 +1568,19 @@ const deepseekProvider: Provider = {
     return parseReviewOutput(output);
   },
   async fix(_root: string, _prompt: string, _options: ProviderOptions): Promise<FixPlanOutput> {
+    // clawpatch `fix` is an agentic tool-loop: the provider has to accept a
+    // prompt, return tool calls (e.g. read_file, edit_file, run_shell), the
+    // host executes them in the worktree, and the provider sees the results
+    // until it emits a final fix plan. This provider exposes DeepSeek's
+    // chat-completions API as a single text/JSON responder, so it does not
+    // route tool calls. DeepSeek's API does support a `tools` parameter and
+    // the v4 model can call them, but wiring that up to clawpatch's tool-loop
+    // is out of scope for this PR and matches the contract the minimax
+    // provider on `main` already publishes. Use --provider codex, acpx,
+    // claude, opencode, or pi for fix; use --provider deepseek for map,
+    // review, and revalidate.
     throw new ClawpatchError(
-      "deepseek provider does not support clawpatch fix: the chat-completions API cannot edit the worktree. Use --provider codex, acpx, claude, opencode, or pi for fix; use --provider deepseek for map, review, and revalidate.",
+      "deepseek provider does not implement clawpatch fix in this PR: this provider exposes DeepSeek's chat-completions API as a single text/JSON responder and does not route agentic tool calls. Use --provider codex, acpx, claude, opencode, or pi for fix; use --provider deepseek for map, review, and revalidate.",
       2,
       "unsupported-provider",
     );

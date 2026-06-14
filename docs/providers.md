@@ -425,9 +425,15 @@ How the DeepSeek provider works:
   trimmed, normalized, and must use `https` unless it targets loopback HTTP for
   local development; the bearer token is sent to that configured endpoint.
 - Operations: `map`, `review`, and `revalidate` are supported. `fix` is not
-  supported because the chat completions API cannot edit the worktree; it fails
-  before checking credentials or making network calls with `unsupported-provider`
-  and exit code 2.
+  supported by this provider in this PR: clawpatch's `fix` is an agentic
+  tool-loop (model emits tool calls → host executes them in the worktree →
+  model sees results → …) and this provider exposes DeepSeek's
+  chat-completions API as a single text/JSON responder, not a tool-call
+  router. DeepSeek's API does support a `tools` parameter and the v4 model
+  can call tools, but wiring that up to clawpatch's tool-loop is out of
+  scope for this PR and matches the contract the `minimax` provider on
+  `main` already publishes. `fix` fails before checking credentials or
+  making network calls with `unsupported-provider` and exit code 2.
 - Structured output: DeepSeek's chat completions API supports
   `response_format: {type: "json_object"}` but **rejects
   `response_format: {type: "json_schema", ...}` with HTTP 400**. Clawpatch
