@@ -19,6 +19,7 @@ const {
   claudeArgs,
   claudeEffort,
   claudeEnv,
+  claudeSubscriptionEnabled,
   claudeExitCode,
   claudeFailureMessage,
   claudeTimeoutMs,
@@ -761,6 +762,70 @@ describe("Claude provider helpers", () => {
     expect(args).toContain("acceptEdits");
     expect(args).not.toContain("Read,Grep,Glob");
     expect(args).not.toContain("dontAsk");
+  });
+
+  it("swaps --bare for empty --setting-sources in subscription mode", () => {
+    const args = claudeArgs(
+      { type: "object" },
+      { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+      true,
+      true,
+    );
+
+    expect(args).toEqual([
+      "-p",
+      "--output-format",
+      "json",
+      "--json-schema",
+      '{"type":"object"}',
+      "--tools",
+      "Read,Grep,Glob",
+      "--permission-mode",
+      "dontAsk",
+      "--no-session-persistence",
+      "--setting-sources",
+      "",
+      "--strict-mcp-config",
+      "--mcp-config",
+      '{"mcpServers":{}}',
+      "--disable-slash-commands",
+      "--no-chrome",
+    ]);
+    expect(args).not.toContain("--bare");
+  });
+
+  it("inherits the host environment in subscription mode for OAuth auth", () => {
+    process.env = {
+      PATH: "/bin",
+      HOME: "/Users/dev",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-token",
+      OPENAI_API_KEY: "host-only",
+    };
+
+    // Subscription mode forgoes the scrubbed allowlist: HOME stays real so
+    // Keychain/~/.claude OAuth resolves, and no throwaway HOME/scrub flag is set.
+    const env = claudeEnv(true, "/tmp/claude", true);
+    expect(env["HOME"]).toBe("/Users/dev");
+    expect(env["CLAUDE_CODE_OAUTH_TOKEN"]).toBe("oauth-token");
+    expect(env).not.toHaveProperty("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB");
+
+    // The hardened default still scrubs to a throwaway HOME.
+    expect(claudeEnv(true, "/tmp/claude", false)["HOME"]).toBe("/tmp/claude/home");
+  });
+
+  it("reads the subscription toggle from CLAWPATCH_CLAUDE_SUBSCRIPTION", () => {
+    delete process.env["CLAWPATCH_CLAUDE_SUBSCRIPTION"];
+    expect(claudeSubscriptionEnabled()).toBe(false);
+
+    for (const truthy of ["1", "true", "TRUE", "yes", "on"]) {
+      process.env["CLAWPATCH_CLAUDE_SUBSCRIPTION"] = truthy;
+      expect(claudeSubscriptionEnabled()).toBe(true);
+    }
+
+    for (const falsy of ["0", "false", "no", "", "off"]) {
+      process.env["CLAWPATCH_CLAUDE_SUBSCRIPTION"] = falsy;
+      expect(claudeSubscriptionEnabled()).toBe(false);
+    }
   });
 
   it("passes model and supported effort while ignoring skipGitRepoCheck", () => {

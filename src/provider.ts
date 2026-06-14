@@ -1527,10 +1527,12 @@ async function runClaudeJson(
 ): Promise<unknown> {
   const version = await claudeVersion(root);
   assertClaudeVersionAllowed(version);
-  const args = claudeArgs(schema, options, readOnly);
+  const subscription = claudeSubscriptionEnabled();
+  const args = claudeArgs(schema, options, readOnly, subscription);
   const result = await runClaudeCommand(args, root, prompt, {
     includeAuth: true,
     timeoutMs: claudeTimeoutMs(),
+    subscription,
   });
   if (result.exitCode !== 0) {
     throw new ClawpatchError(
@@ -1553,7 +1555,12 @@ async function claudeVersion(root: string): Promise<string> {
   return result.stdout.trim() || result.stderr.trim();
 }
 
-function claudeArgs(schema: object, options: ProviderOptions, readOnly: boolean): string[] {
+function claudeArgs(
+  schema: object,
+  options: ProviderOptions,
+  readOnly: boolean,
+  subscription = false,
+): string[] {
   const args = [
     "-p",
     "--output-format",
@@ -1565,13 +1572,23 @@ function claudeArgs(schema: object, options: ProviderOptions, readOnly: boolean)
     "--permission-mode",
     readOnly ? "dontAsk" : "acceptEdits",
     "--no-session-persistence",
-    "--bare",
+  ];
+  if (subscription) {
+    // OAuth subscription auth is unavailable in `--bare` mode (it is built for
+    // apiKeyHelper / API-key auth). Use empty `--setting-sources` for equivalent
+    // isolation — it loads no user/project/local settings, hooks, or skills —
+    // while leaving auth intact, since credentials are not a setting source.
+    args.push("--setting-sources", "");
+  } else {
+    args.push("--bare");
+  }
+  args.push(
     "--strict-mcp-config",
     "--mcp-config",
     JSON.stringify({ mcpServers: {} }),
     "--disable-slash-commands",
     "--no-chrome",
-  ];
+  );
   addClaudeModelArgs(args, options);
   return args;
 }
@@ -1596,11 +1613,11 @@ async function runClaudeCommand(
   args: string[],
   root: string,
   input: string | undefined,
-  options: { includeAuth: boolean; timeoutMs: number },
+  options: { includeAuth: boolean; timeoutMs: number; subscription?: boolean },
 ): Promise<Awaited<ReturnType<typeof runCommandArgs>>> {
   const dir = await mkdtemp(join(tmpdir(), "clawpatch-claude-"));
   try {
-    const env = claudeEnv(options.includeAuth, dir);
+    const env = claudeEnv(options.includeAuth, dir, options.subscription ?? false);
     return await runCommandArgs(claudeExecutable(), args, root, input, {
       trimOutput: false,
       timeoutMs: options.timeoutMs,
@@ -1612,7 +1629,31 @@ async function runClaudeCommand(
   }
 }
 
-function claudeEnv(includeAuth: boolean, baseDir: string): NodeJS.ProcessEnv {
+/**
+ * Whether the Claude provider should authenticate with the host's Claude Code
+ * OAuth subscription instead of the default hardened API-key path. Enabled with
+ * a truthy `CLAWPATCH_CLAUDE_SUBSCRIPTION` (`1`/`true`/`yes`/`on`).
+ *
+ * Subscription mode inherits the host environment (so Claude Code can resolve
+ * OAuth credentials from the macOS Keychain / `~/.claude`), which necessarily
+ * exposes host env and config to the subprocess. Use it only on trusted repos.
+ */
+function claudeSubscriptionEnabled(): boolean {
+  const raw = process.env["CLAWPATCH_CLAUDE_SUBSCRIPTION"]?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
+function claudeEnv(
+  includeAuth: boolean,
+  baseDir: string,
+  subscription = false,
+): NodeJS.ProcessEnv {
+  if (subscription) {
+    // Inherit the host environment unchanged so Claude Code can resolve OAuth
+    // subscription credentials (macOS Keychain / ~/.claude). This deliberately
+    // forgoes the default env-scrub isolation; only use on trusted repositories.
+    return { ...process.env };
+  }
   const env: NodeJS.ProcessEnv = {};
   copyPathEnv(env);
   copyEnv(env, "SystemRoot");
@@ -2933,6 +2974,7 @@ export const __testing = {
   claudeArgs,
   claudeEffort,
   claudeEnv,
+  claudeSubscriptionEnabled,
   claudeExitCode,
   claudeFailureMessage,
   claudeTimeoutMs,

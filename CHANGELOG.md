@@ -2,6 +2,8 @@
 
 ## 0.6.1 - Unreleased
 
+- Added opt-in Claude subscription (OAuth) auth for the `claude` provider via `CLAWPATCH_CLAUDE_SUBSCRIPTION=1`, which inherits the host environment and swaps `--bare` for empty `--setting-sources` so reviews bill against a local Claude Code subscription instead of an API key.
+
 ## 0.6.0 - 2026-06-11
 
 - Added trusted Codex CLI config passthrough for explicit config files while rejecting repository-controlled passthrough config, thanks @brad-ai-agent.

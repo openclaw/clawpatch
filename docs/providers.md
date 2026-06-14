@@ -140,7 +140,9 @@ Migration note: `--provider codex --model gpt-5-codex` is not equivalent to
 
 The `claude` provider shells out to the local
 [Claude Code CLI](https://code.claude.com/docs/en/cli-usage) in non-interactive
-print mode.
+print mode. It supports two authentication modes: a hardened, isolated
+**API-key** mode (default) and an opt-in **subscription** (OAuth) mode that
+reuses your local Claude Code login.
 
 Install Claude Code and authenticate with an Anthropic API key:
 
@@ -148,6 +150,31 @@ Install Claude Code and authenticate with an Anthropic API key:
 export ANTHROPIC_API_KEY=sk-ant-...
 claude --version
 ```
+
+### Subscription (OAuth) auth
+
+To bill against your Claude Code subscription instead of an API key, set
+`CLAWPATCH_CLAUDE_SUBSCRIPTION=1`. Clawpatch then runs Claude Code with the
+host environment inherited (so it can resolve OAuth credentials from the macOS
+Keychain / `~/.claude`) and replaces `--bare` with empty `--setting-sources`
+for equivalent ambient-config isolation:
+
+```bash
+export CLAWPATCH_CLAUDE_SUBSCRIPTION=1
+clawpatch review --provider claude --model opus --limit 1
+```
+
+`--bare` is incompatible with OAuth (it is built for `apiKeyHelper` / API-key
+auth and reports `Not logged in · Please run /login`). Empty `--setting-sources`
+loads no user/project/local settings — no hooks, skills, or MCP — while leaving
+auth intact, because credentials are not a setting source. Subscription mode
+uses your Claude Code OAuth login even when `ANTHROPIC_API_KEY` is present in the
+environment.
+
+**Isolation trade-off:** subscription mode inherits the host environment and
+exposes `~/.claude` to the Claude subprocess, so it forgoes the default mode's
+env-scrub isolation. Use it only on trusted repositories — the same guidance
+that applies to the `acpx`, `grok`, and `pi` providers.
 
 Provider selection:
 
@@ -170,15 +197,21 @@ How the Claude provider works:
   binary is available, reads `claude --version`, and blocks known vulnerable
   versions. It does not validate auth or make a network call; auth failures are
   reported on the first provider-backed command.
-- Auth/isolation: provider runs use `--bare` with a default-deny environment.
-  Clawpatch forwards only minimal execution variables plus explicit Anthropic
-  API key, Vertex AI, Google ADC, cloud-gateway, and Bedrock/AWS auth variables.
-  It does not pass host `HOME`, OAuth/keychain state, or whole Claude
-  config/cache directories; OAuth subscription auth is not available in Claude
-  Code `--bare` mode. Cloud auth env is available to Claude Code itself, while
-  Claude tool subprocess env scrubbing is enabled. AWS profile names are
-  forwarded only when `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` points
-  at explicit profile files.
+- Auth/isolation (default API-key mode): provider runs use `--bare` with a
+  default-deny environment. Clawpatch forwards only minimal execution variables
+  plus explicit Anthropic API key, Vertex AI, Google ADC, cloud-gateway, and
+  Bedrock/AWS auth variables. It does not pass host `HOME`, OAuth/keychain
+  state, or whole Claude config/cache directories; OAuth subscription auth is
+  not available in this hardened `--bare` mode. Cloud auth env is available to
+  Claude Code itself, while Claude tool subprocess env scrubbing is enabled. AWS
+  profile names are forwarded only when `AWS_CONFIG_FILE` or
+  `AWS_SHARED_CREDENTIALS_FILE` points at explicit profile files.
+- Auth/isolation (subscription mode, `CLAWPATCH_CLAUDE_SUBSCRIPTION=1`):
+  provider runs inherit the host environment and drop `--bare` in favor of empty
+  `--setting-sources`, so Claude Code resolves OAuth subscription credentials.
+  See [Subscription (OAuth) auth](#subscription-oauth-auth) for the isolation
+  trade-off. All other flags (structured output, tool restrictions, MCP/slash
+  isolation) are unchanged.
 - Structured output: provider runs use `--output-format json --json-schema`
   and parse the returned `structured_output` field.
 - Read-only operations (map, review, revalidate): use
