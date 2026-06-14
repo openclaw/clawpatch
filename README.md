@@ -128,6 +128,7 @@ Supported provider names today:
 - `acpx`: any ACP-compatible coding agent (Codex / Claude / Pi / Gemini / ...) via openclaw/acpx
 - `claude`: local Claude Code CLI in print mode
 - `cursor`: local Cursor Agent CLI (experimental; `doctor` is enabled by default)
+- `deepseek`: DeepSeek OpenAI-compatible HTTP API; supports `map`, `review`, and `revalidate`, but not `fix`
 - `grok`: local Grok Build CLI
 - `minimax`: MiniMax OpenAI-compatible HTTP API; supports `map`, `review`, and `revalidate`, but not `fix`
 - `opencode`: local OpenCode CLI

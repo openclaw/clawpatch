@@ -55,6 +55,16 @@ const {
   providerExitCode,
   providerJsonSchema,
   readMinimaxResponseText,
+  extractDeepseekJson,
+  deepseekBaseUrl,
+  deepseekDefaultModel,
+  deepseekDispatcher,
+  deepseekEndpoint,
+  deepseekExitCode,
+  deepseekFailureMessage,
+  deepseekRequestBody,
+  deepseekTimeoutMs,
+  readDeepseekResponseText,
 } = __testing;
 
 function makeFinding(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -2403,6 +2413,354 @@ describe("minimax provider", () => {
   it("bounds response body reads", async () => {
     await expect(
       readMinimaxResponseText(
+        new Response("abcd"),
+        3,
+        () => new ClawpatchError("too large", 8, "malformed-output"),
+      ),
+    ).rejects.toMatchObject({ code: "malformed-output", exitCode: 8 });
+  });
+});
+
+describe("deepseek provider", () => {
+  const originalFetch = globalThis.fetch;
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    process.env = { ...originalEnv };
+  });
+
+  it("dispatches via providerByName", () => {
+    const provider = providerByName("deepseek");
+
+    expect(provider.name).toBe("deepseek");
+    expect(typeof provider.check).toBe("function");
+    expect(typeof provider.review).toBe("function");
+    expect(typeof provider.fix).toBe("function");
+  });
+
+  it("uses deepseek-specific timeout before the generic provider timeout", () => {
+    delete process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"];
+    delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+    expect(deepseekTimeoutMs()).toBe(1_800_000);
+    expect(deepseekTimeoutMs()).toBeGreaterThan(300_000);
+
+    process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"] = "45000";
+    expect(deepseekTimeoutMs()).toBe(45_000);
+
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] = "120000";
+    expect(deepseekTimeoutMs()).toBe(120_000);
+
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] = "bad";
+    expect(deepseekTimeoutMs()).toBe(1_800_000);
+  });
+
+  it("caches the undici dispatcher while the configured timeout is unchanged", () => {
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] = "180000";
+    const first = deepseekDispatcher();
+    const second = deepseekDispatcher();
+
+    expect(first).toBe(second);
+
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] = "240000";
+    const providerDispatcher = deepseekDispatcher();
+    expect(providerDispatcher).not.toBe(first);
+
+    const doctorDispatcher = deepseekDispatcher(30_000);
+    expect(doctorDispatcher).not.toBe(providerDispatcher);
+    expect(deepseekDispatcher(30_000)).toBe(doctorDispatcher);
+  });
+
+  it("normalizes and validates the base URL", () => {
+    delete process.env["DEEPSEEK_BASE_URL"];
+    expect(deepseekBaseUrl()).toBe("https://api.deepseek.com/v1");
+
+    process.env["DEEPSEEK_BASE_URL"] = " https://proxy.example.com/v1/?unused=1#frag ";
+    expect(deepseekBaseUrl()).toBe("https://proxy.example.com/v1");
+    expect(deepseekEndpoint("chat/completions")).toBe(
+      "https://proxy.example.com/v1/chat/completions",
+    );
+
+    process.env["DEEPSEEK_BASE_URL"] = "http://127.0.0.1:8787/v1";
+    expect(deepseekBaseUrl()).toBe("http://127.0.0.1:8787/v1");
+
+    process.env["DEEPSEEK_BASE_URL"] = "http://proxy.example.com/v1";
+    expect(() => deepseekBaseUrl()).toThrow(/https unless it targets loopback/u);
+
+    process.env["DEEPSEEK_BASE_URL"] = "https://user:pass@api.deepseek.com/v1";
+    expect(() => deepseekBaseUrl()).toThrow(/must not include URL credentials/u);
+
+    process.env["DEEPSEEK_BASE_URL"] = "file:///tmp/token";
+    expect(() => deepseekBaseUrl()).toThrow(/http or https/u);
+  });
+
+  it("uses deepseek-v4-flash as the default model and trims overrides", () => {
+    delete process.env["DEEPSEEK_MODEL"];
+    expect(deepseekDefaultModel()).toBe("deepseek-v4-flash");
+
+    process.env["DEEPSEEK_MODEL"] = " deepseek-v4-pro ";
+    expect(deepseekDefaultModel()).toBe("deepseek-v4-pro");
+  });
+
+  it("builds a prompt-validated chat request with json_object response_format (not json_schema)", () => {
+    const body = deepseekRequestBody(
+      "review prompt",
+      { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+      reviewJsonSchema,
+      true,
+    ) as Record<string, unknown>;
+
+    expect(body).toMatchObject({
+      model: "deepseek-v4-flash",
+      temperature: 0,
+      response_format: { type: "json_object" },
+    });
+    // Negative control: DeepSeek rejects json_schema with HTTP 400. If a future
+    // change switched to json_schema, this assertion would fail (and would also
+    // fail on main if the json_object guard were removed). The assertion is
+    // load-bearing for the load-bearing integration difference called out in
+    // issue #134.
+    const responseFormat = body["response_format"] as { type: string };
+    expect(responseFormat.type).toBe("json_object");
+    expect(responseFormat.type).not.toBe("json_schema");
+    const messages = body["messages"] as Array<Record<string, unknown>>;
+    expect(messages[0]?.["content"]).toContain("Do not modify files");
+    expect(messages[1]?.["content"]).toContain("Provider output schema");
+  });
+
+  it("sends Bearer auth and parses a schema-valid review response", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    let capturedBody: Record<string, unknown> | null = null;
+
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      expect(String(input)).toBe("https://api.deepseek.com/v1/chat/completions");
+      const headers = new Headers(init?.headers);
+      expect(headers.get("Authorization")).toBe("Bearer sk-test");
+      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  findings: [],
+                  inspected: { files: [], symbols: [], notes: ["deepseek clean"] },
+                }),
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    }) as typeof fetch;
+
+    const output = await providerByName("deepseek").review("/repo", "prompt", {
+      model: null,
+      reasoningEffort: null,
+      skipGitRepoCheck: false,
+    });
+
+    expect(capturedBody).toMatchObject({ response_format: { type: "json_object" } });
+    expect(output).toEqual({
+      findings: [],
+      inspected: { files: [], symbols: [], notes: ["deepseek clean"] },
+      droppedFindings: [],
+    });
+  });
+
+  it("classifies HTTP auth failures and redacts provider error messages", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: { type: "authentication_error", message: "SECRET_OUTPUT_MUST_NOT_LEAK" },
+        }),
+        { status: 401 },
+      )) as typeof fetch;
+
+    let authError: unknown;
+    try {
+      await providerByName("deepseek").review("/repo", "prompt", {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      });
+    } catch (err) {
+      authError = err;
+    }
+    expect(authError).toMatchObject({ code: "provider-auth", exitCode: 4 });
+    expect(String(authError)).not.toContain("SECRET_OUTPUT_MUST_NOT_LEAK");
+  });
+
+  it("classifies 402 insufficient-balance as quota exit code 5", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          error: { type: "insufficient_balance", message: "Top up to continue" },
+        }),
+        { status: 402 },
+      )) as typeof fetch;
+
+    let balanceError: unknown;
+    try {
+      await providerByName("deepseek").review("/repo", "prompt", {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      });
+    } catch (err) {
+      balanceError = err;
+    }
+    expect(balanceError).toMatchObject({ code: "provider-failure", exitCode: 5 });
+    expect(String(balanceError)).toContain("insufficient balance");
+    expect(String(balanceError)).toContain("https://platform.deepseek.com");
+    expect(String(balanceError)).not.toContain("Top up to continue");
+  });
+
+  it("does not expose raw fetch setup errors", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    globalThis.fetch = (async () => {
+      throw new TypeError(
+        "bad Authorization: Bearer sk-test in https://user:pass@example.invalid/v1",
+      );
+    }) as typeof fetch;
+
+    let fetchError: unknown;
+    try {
+      await providerByName("deepseek").review("/repo", "prompt", {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      });
+    } catch (err) {
+      fetchError = err;
+    }
+
+    expect(fetchError).toMatchObject({
+      code: "provider-failure",
+      exitCode: 1,
+      message: "deepseek provider network error (TypeError)",
+    });
+    expect(String(fetchError)).not.toContain("sk-test");
+    expect(String(fetchError)).not.toContain("user:pass");
+  });
+
+  it("keeps the timeout active while reading the response body", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] = "5";
+    globalThis.fetch = (async (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(new DOMException("aborted", "AbortError"));
+            });
+          },
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+
+    await expect(
+      providerByName("deepseek").review("/repo", "prompt", {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      }),
+    ).rejects.toMatchObject({
+      code: "provider-failure",
+      exitCode: 1,
+      message: "deepseek provider timed out after 5ms",
+    });
+  });
+
+  it("validates the /models envelope during provider checks", async () => {
+    process.env["DEEPSEEK_API_KEY"] = "sk-test";
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [{ id: "deepseek-v4-flash", object: "model" }],
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+
+    await expect(providerByName("deepseek").check("/repo")).resolves.toContain("provider=deepseek");
+
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ object: "not-list", data: [] }), {
+        status: 200,
+      })) as typeof fetch;
+
+    await expect(providerByName("deepseek").check("/repo")).rejects.toThrow(/not a model list/u);
+  });
+
+  it("fails fix before auth lookup or network side effects", async () => {
+    delete process.env["DEEPSEEK_API_KEY"];
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("{}");
+    }) as typeof fetch;
+
+    await expect(
+      providerByName("deepseek").fix("/repo", "prompt", {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      }),
+    ).rejects.toMatchObject({ code: "unsupported-provider", exitCode: 2 });
+    expect(called).toBe(false);
+  });
+
+  it("maps HTTP statuses to provider exit codes including 402 balance", () => {
+    expect(deepseekExitCode(401)).toBe(4);
+    expect(deepseekExitCode(403)).toBe(4);
+    expect(deepseekExitCode(402)).toBe(5);
+    expect(deepseekExitCode(429)).toBe(5);
+    expect(deepseekExitCode(500)).toBe(1);
+  });
+
+  it("redacts provider error bodies while keeping safe error signals", () => {
+    const message = deepseekFailureMessage(
+      401,
+      JSON.stringify({
+        error: {
+          type: "authentication_error",
+          message: "SECRET_OUTPUT_MUST_NOT_LEAK",
+        },
+      }),
+    );
+
+    expect(message).toContain("auth failed");
+    expect(message).toContain("error.type=authentication_error");
+    expect(message).not.toContain("SECRET_OUTPUT_MUST_NOT_LEAK");
+  });
+
+  it("extracts JSON from chat-completions envelopes", () => {
+    expect(
+      extractDeepseekJson(
+        JSON.stringify({
+          choices: [{ message: { content: '{"features":[],"notes":[]}' } }],
+        }),
+      ),
+    ).toEqual({ features: [], notes: [] });
+  });
+
+  it("throws malformed-output for empty choices or non-JSON content", () => {
+    expectMalformed(
+      () => extractDeepseekJson(JSON.stringify({ choices: [] })),
+      /missing choices\[0\]\.message\.content/u,
+    );
+    expectMalformed(
+      () => extractDeepseekJson(JSON.stringify({ choices: [{ message: { content: "plain" } }] })),
+      /contained no Clawpatch JSON/u,
+    );
+  });
+
+  it("bounds response body reads", async () => {
+    await expect(
+      readDeepseekResponseText(
         new Response("abcd"),
         3,
         () => new ClawpatchError("too large", 8, "malformed-output"),
