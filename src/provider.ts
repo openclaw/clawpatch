@@ -282,6 +282,9 @@ export function providerByName(name: string): Provider {
   if (name === "minimax") {
     return minimaxProvider;
   }
+  if (name === "deepseek") {
+    return deepseekProvider;
+  }
   if (name === "pi") {
     return piProvider;
   }
@@ -1057,6 +1060,527 @@ const minimaxProvider: Provider = {
   ): Promise<RevalidateOutput> {
     const output = await runMinimaxJson(root, prompt, options, revalidateJsonSchema, true);
     return parseOrThrow(revalidateOutputSchema, output, "minimax revalidate");
+  },
+};
+
+const DEEPSEEK_PROVIDER_NAME = "deepseek";
+const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
+const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
+// Node's built-in fetch (undici) caps the headers/body response timeout at
+// 300_000 ms by default. The clawpatch `setTimeout`/AbortController above the
+// fetch never sees that — undici rejects with a low-level HeadersTimeoutError
+// first, which surfaces to the user as "deepseek provider network error: fetch
+// failed" after exactly ~301s. Raising the AbortController value alone is not
+// enough; we also have to install a custom undici dispatcher whose
+// headers/body timeouts match the AbortController. Bump the default to 30 min
+// so the AbortController is the dominant timeout for typical large reviews.
+const DEEPSEEK_DEFAULT_TIMEOUT_MS = 1_800_000;
+const DEEPSEEK_CHECK_TIMEOUT_MS = 30_000;
+const DEEPSEEK_CONNECT_TIMEOUT_MS = 10_000;
+const DEEPSEEK_MAX_REQUEST_BYTES = 64 * 1024 * 1024;
+const DEEPSEEK_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+const DEEPSEEK_MAX_ERROR_BYTES = 16 * 1024;
+const DEEPSEEK_MAX_MODELS_BYTES = 1024 * 1024;
+
+let deepseekDispatcherCache: {
+  timeoutMs: number;
+  dispatcher: InstanceType<typeof Agent>;
+} | null = null;
+
+function deepseekTimeoutMs(): number {
+  const raw =
+    process.env["CLAWPATCH_DEEPSEEK_TIMEOUT_MS"] ?? process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+  if (raw === undefined) {
+    return DEEPSEEK_DEFAULT_TIMEOUT_MS;
+  }
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEEPSEEK_DEFAULT_TIMEOUT_MS;
+}
+
+function deepseekDispatcher(timeoutMs = deepseekTimeoutMs()): InstanceType<typeof Agent> {
+  if (deepseekDispatcherCache !== null && deepseekDispatcherCache.timeoutMs === timeoutMs) {
+    return deepseekDispatcherCache.dispatcher;
+  }
+  if (deepseekDispatcherCache !== null) {
+    void deepseekDispatcherCache.dispatcher.close();
+  }
+  const dispatcher = new Agent({
+    headersTimeout: timeoutMs,
+    bodyTimeout: timeoutMs,
+    connectTimeout: DEEPSEEK_CONNECT_TIMEOUT_MS,
+  });
+  deepseekDispatcherCache = { timeoutMs, dispatcher };
+  return dispatcher;
+}
+
+function deepseekBaseUrl(): string {
+  const raw = process.env["DEEPSEEK_BASE_URL"]?.trim();
+  return normalizeDeepseekBaseUrl(
+    raw !== undefined && raw.length > 0 ? raw : DEEPSEEK_DEFAULT_BASE_URL,
+  );
+}
+
+function normalizeDeepseekBaseUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ClawpatchError(
+      "deepseek provider DEEPSEEK_BASE_URL must be a valid http(s) URL",
+      4,
+      "provider-auth",
+    );
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new ClawpatchError(
+      "deepseek provider DEEPSEEK_BASE_URL must use http or https",
+      4,
+      "provider-auth",
+    );
+  }
+  if (url.protocol === "http:" && !isLoopbackHostname(url.hostname)) {
+    throw new ClawpatchError(
+      "deepseek provider DEEPSEEK_BASE_URL must use https unless it targets loopback",
+      4,
+      "provider-auth",
+    );
+  }
+  if (url.username.length > 0 || url.password.length > 0) {
+    throw new ClawpatchError(
+      "deepseek provider DEEPSEEK_BASE_URL must not include URL credentials",
+      4,
+      "provider-auth",
+    );
+  }
+  url.hash = "";
+  url.search = "";
+  return url.toString().replace(/\/+$/u, "");
+}
+
+function deepseekEndpoint(path: string): string {
+  return new URL(path.replace(/^\/+/u, ""), `${deepseekBaseUrl()}/`).toString();
+}
+
+function deepseekDefaultModel(): string {
+  const raw = process.env["DEEPSEEK_MODEL"]?.trim();
+  return raw !== undefined && raw.length > 0 ? raw : DEEPSEEK_DEFAULT_MODEL;
+}
+
+function deepseekExitCode(status: number): number {
+  if (status === 401 || status === 403) {
+    return 4;
+  }
+  // 402 = pay-per-use balance insufficient; 429 = rate-limited. Both are
+  // quota-class failures and map to the same exit code the rest of clawpatch
+  // uses for quota/rate-limit (5).
+  if (status === 429 || status === 402) {
+    return 5;
+  }
+  return 1;
+}
+
+function deepseekHttpErrorCode(status: number): "provider-auth" | "provider-failure" {
+  return status === 401 || status === 403 ? "provider-auth" : "provider-failure";
+}
+
+function deepseekFailureMessage(status: number, body: string): string {
+  const signal = deepseekSignalFromBody(body);
+  const detail =
+    signal.length === 0 ? `body chars=${body.length}` : `${signal}; body chars=${body.length}`;
+  if (status === 401 || status === 403) {
+    return `deepseek provider auth failed (HTTP ${status}). Check DEEPSEEK_API_KEY. ${detail}`;
+  }
+  if (status === 402) {
+    return `deepseek provider insufficient balance (HTTP 402). Top up at https://platform.deepseek.com. ${detail}`;
+  }
+  if (status === 429) {
+    return `deepseek provider rate-limited (HTTP 429). ${detail}`;
+  }
+  return `deepseek provider failed (HTTP ${status}). ${detail}`;
+}
+
+function deepseekSignalFromBody(body: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body) as unknown;
+  } catch {
+    return "";
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return "";
+  }
+  const record = parsed as Record<string, unknown>;
+  const parts: string[] = [];
+  const errorField = record["error"];
+  if (typeof errorField === "object" && errorField !== null && !Array.isArray(errorField)) {
+    const errRecord = errorField as Record<string, unknown>;
+    // Whitelist the safe-to-log fields. Never include `error.message` here: the
+    // upstream provider's error message frequently echoes user input or bearer
+    // tokens, and clawpatch already logs the body byte count as a separate
+    // signal. Mirrors the minimax provider's redaction discipline.
+    for (const key of ["type", "code", "param"]) {
+      const value = errRecord[key];
+      if (typeof value === "string" && value.length > 0) {
+        parts.push(`error.${key}=${safeProviderPreview(value, 80)}`);
+      }
+    }
+  }
+  return parts.length === 0 ? "" : parts.join("; ");
+}
+
+function deepseekRequestBody(
+  prompt: string,
+  options: ProviderOptions,
+  schema: object,
+  readOnly: boolean,
+): object {
+  const model =
+    options.model !== null && options.model.trim().length > 0
+      ? options.model.trim()
+      : deepseekDefaultModel();
+  // DeepSeek's chat-completions API supports `response_format: {type: "json_object"}`
+  // but **rejects `response_format: {type: "json_schema", ...}` with HTTP 400**
+  // (verified 2026-06-09; see issue #134). Embed the schema in the prompt and
+  // rely on clawpatch's `extractJson` helper + Zod validators for shape
+  // enforcement. Do not change this without re-testing against the live API.
+  return {
+    model,
+    messages: [
+      {
+        role: "system",
+        content: readOnly
+          ? "You are a read-only Clawpatch provider. Do not modify files, run commands, call tools, or include prose outside the final JSON object."
+          : "You are a Clawpatch provider. Return only the requested JSON object.",
+      },
+      { role: "user", content: deepseekPrompt(prompt, schema) },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0,
+  };
+}
+
+function deepseekPrompt(prompt: string, schema: object): string {
+  return `${prompt}
+
+Provider output schema:
+${JSON.stringify(schema, null, 2)}
+
+Return exactly one JSON object matching the schema. Do not wrap it in Markdown.`;
+}
+
+async function runDeepseekJson(
+  _root: string,
+  prompt: string,
+  options: ProviderOptions,
+  schema: object,
+  readOnly: boolean,
+): Promise<unknown> {
+  const apiKey = deepseekApiKey();
+  const requestJson = JSON.stringify(deepseekRequestBody(prompt, options, schema, readOnly));
+  const requestBytes = Buffer.byteLength(requestJson, "utf8");
+  if (requestBytes > DEEPSEEK_MAX_REQUEST_BYTES) {
+    throw new ClawpatchError(
+      `deepseek provider request body exceeds ${DEEPSEEK_MAX_REQUEST_BYTES} bytes (${requestBytes})`,
+      1,
+      "provider-failure",
+    );
+  }
+  const text = await withDeepseekResponse(
+    deepseekEndpoint("chat/completions"),
+    {
+      method: "POST",
+      headers: deepseekHeaders(apiKey),
+      body: requestJson,
+    },
+    deepseekTimeoutMs(),
+    async (response) => {
+      const responseText = response.ok
+        ? await readDeepseekResponseText(
+            response,
+            DEEPSEEK_MAX_RESPONSE_BYTES,
+            () =>
+              new ClawpatchError(
+                `deepseek provider response exceeded ${DEEPSEEK_MAX_RESPONSE_BYTES} bytes`,
+                8,
+                "malformed-output",
+              ),
+          )
+        : await readDeepseekResponseText(
+            response,
+            DEEPSEEK_MAX_ERROR_BYTES,
+            () =>
+              new ClawpatchError(
+                `deepseek provider error body exceeded ${DEEPSEEK_MAX_ERROR_BYTES} bytes`,
+                deepseekExitCode(response.status),
+                deepseekHttpErrorCode(response.status),
+              ),
+          );
+      if (!response.ok) {
+        throw new ClawpatchError(
+          deepseekFailureMessage(response.status, responseText),
+          deepseekExitCode(response.status),
+          deepseekHttpErrorCode(response.status),
+        );
+      }
+      return responseText;
+    },
+  );
+  return extractDeepseekJson(text);
+}
+
+function deepseekApiKey(): string {
+  const apiKey = process.env["DEEPSEEK_API_KEY"];
+  if (apiKey === undefined || apiKey.length === 0) {
+    throw new ClawpatchError(
+      "deepseek provider requires DEEPSEEK_API_KEY env var",
+      4,
+      "provider-auth",
+    );
+  }
+  return apiKey;
+}
+
+function deepseekHeaders(apiKey: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+async function withDeepseekResponse<T>(
+  url: string,
+  init: Omit<RequestInit, "signal">,
+  timeoutMs: number,
+  consume: (response: Response) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+      dispatcher: deepseekDispatcher(timeoutMs) as unknown as Dispatcher,
+    } as RequestInit & { dispatcher: Dispatcher });
+    return await consume(response);
+  } catch (err) {
+    if (err instanceof ClawpatchError) {
+      throw err;
+    }
+    if (isDeepseekTimeoutError(err)) {
+      throw new ClawpatchError(
+        `deepseek provider timed out after ${timeoutMs}ms`,
+        1,
+        "provider-failure",
+      );
+    }
+    const name = err instanceof Error ? safeProviderPreview(err.name, 40) : "unknown";
+    throw new ClawpatchError(`deepseek provider network error (${name})`, 1, "provider-failure");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isDeepseekTimeoutError(err: unknown): boolean {
+  if (!(err instanceof Error)) {
+    return false;
+  }
+  const cause =
+    err.cause instanceof Error ? `${err.cause.name} ${err.cause.message}` : String(err.cause ?? "");
+  return /AbortError|TimeoutError|timed out|timeout|UND_ERR_(?:HEADERS|BODY)_TIMEOUT/iu.test(
+    `${err.name} ${err.message} ${cause}`,
+  );
+}
+
+async function readDeepseekResponseText(
+  response: Response,
+  limitBytes: number,
+  overflowError: () => ClawpatchError,
+): Promise<string> {
+  if (response.body === null) {
+    return "";
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) {
+        return `${text}${decoder.decode()}`;
+      }
+      if (value === undefined) {
+        continue;
+      }
+      bytes += value.byteLength;
+      if (bytes > limitBytes) {
+        await reader.cancel().catch(() => {});
+        throw overflowError();
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+  } catch (err) {
+    if (err instanceof ClawpatchError) {
+      throw err;
+    }
+    if (isDeepseekTimeoutError(err)) {
+      throw err;
+    }
+    throw new ClawpatchError(
+      "deepseek provider failed while reading response",
+      1,
+      "provider-failure",
+    );
+  }
+}
+
+function extractDeepseekJson(text: string): unknown {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(text) as unknown;
+  } catch {
+    throw new ClawpatchError(
+      `deepseek provider produced a malformed JSON envelope (body chars=${text.length})`,
+      8,
+      "malformed-output",
+    );
+  }
+  const content = deepseekEnvelopeText(envelope);
+  if (content === null || content.trim().length === 0) {
+    throw new ClawpatchError(
+      "deepseek provider response missing choices[0].message.content",
+      8,
+      "malformed-output",
+    );
+  }
+  const parsed = extractJson(content);
+  if (parsed === null) {
+    throw new ClawpatchError(
+      `deepseek provider content contained no Clawpatch JSON (content chars=${content.length})`,
+      8,
+      "malformed-output",
+    );
+  }
+  return parsed;
+}
+
+function deepseekEnvelopeText(envelope: unknown): string | null {
+  if (typeof envelope === "string") {
+    return envelope;
+  }
+  if (typeof envelope !== "object" || envelope === null) {
+    return null;
+  }
+  const record = envelope as Record<string, unknown>;
+  const choices = record["choices"];
+  if (Array.isArray(choices)) {
+    const first = choices[0] as unknown;
+    if (typeof first === "object" && first !== null) {
+      const firstRecord = first as Record<string, unknown>;
+      const message = firstRecord["message"];
+      if (typeof message === "object" && message !== null) {
+        const content = (message as Record<string, unknown>)["content"];
+        if (typeof content === "string") {
+          return content;
+        }
+      }
+      if (typeof firstRecord["text"] === "string") {
+        return firstRecord["text"];
+      }
+    }
+  }
+  return null;
+}
+
+function validateDeepseekModelsEnvelope(text: string): void {
+  let envelope: unknown;
+  try {
+    envelope = JSON.parse(text) as unknown;
+  } catch {
+    throw new ClawpatchError(
+      `deepseek provider models response was malformed JSON (body chars=${text.length})`,
+      1,
+      "provider-failure",
+    );
+  }
+  if (typeof envelope !== "object" || envelope === null || Array.isArray(envelope)) {
+    throw new ClawpatchError(
+      "deepseek provider models response was not an object",
+      1,
+      "provider-failure",
+    );
+  }
+  const record = envelope as Record<string, unknown>;
+  if (record["object"] !== "list" || !Array.isArray(record["data"])) {
+    throw new ClawpatchError(
+      "deepseek provider models response was not a model list",
+      1,
+      "provider-failure",
+    );
+  }
+}
+
+const deepseekProvider: Provider = {
+  name: DEEPSEEK_PROVIDER_NAME,
+  async check(_root: string): Promise<string> {
+    await withDeepseekResponse(
+      deepseekEndpoint("models"),
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${deepseekApiKey()}` },
+      },
+      DEEPSEEK_CHECK_TIMEOUT_MS,
+      async (response) => {
+        const text = await readDeepseekResponseText(
+          response,
+          response.ok ? DEEPSEEK_MAX_MODELS_BYTES : DEEPSEEK_MAX_ERROR_BYTES,
+          () =>
+            new ClawpatchError(
+              `deepseek provider models response exceeded ${
+                response.ok ? DEEPSEEK_MAX_MODELS_BYTES : DEEPSEEK_MAX_ERROR_BYTES
+              } bytes`,
+              deepseekExitCode(response.status),
+              response.ok ? "provider-failure" : deepseekHttpErrorCode(response.status),
+            ),
+        );
+        if (!response.ok) {
+          throw new ClawpatchError(
+            deepseekFailureMessage(response.status, text),
+            deepseekExitCode(response.status),
+            deepseekHttpErrorCode(response.status),
+          );
+        }
+        validateDeepseekModelsEnvelope(text);
+      },
+    );
+    return `provider=deepseek default-model=${deepseekDefaultModel()} base=${deepseekBaseUrl()}`;
+  },
+  async map(root: string, prompt: string, options: ProviderOptions): Promise<AgentMapOutput> {
+    const output = await runDeepseekJson(root, prompt, options, agentMapJsonSchema, true);
+    return parseOrThrow(agentMapOutputSchema, output, "deepseek agent-map");
+  },
+  async review(
+    root: string,
+    prompt: string,
+    options: ProviderOptions,
+  ): Promise<PartitionedReviewOutput> {
+    const output = await runDeepseekJson(root, prompt, options, reviewJsonSchema, true);
+    return parseReviewOutput(output);
+  },
+  async fix(_root: string, _prompt: string, _options: ProviderOptions): Promise<FixPlanOutput> {
+    throw new ClawpatchError(
+      "deepseek provider does not support clawpatch fix: the chat-completions API cannot edit the worktree. Use --provider codex, acpx, claude, opencode, or pi for fix; use --provider deepseek for map, review, and revalidate.",
+      2,
+      "unsupported-provider",
+    );
+  },
+  async revalidate(
+    root: string,
+    prompt: string,
+    options: ProviderOptions,
+  ): Promise<RevalidateOutput> {
+    const output = await runDeepseekJson(root, prompt, options, revalidateJsonSchema, true);
+    return parseOrThrow(revalidateOutputSchema, output, "deepseek revalidate");
   },
 };
 
@@ -2967,6 +3491,16 @@ export const __testing = {
   minimaxRequestBody,
   minimaxTimeoutMs,
   readMinimaxResponseText,
+  extractDeepseekJson,
+  deepseekBaseUrl,
+  deepseekDefaultModel,
+  deepseekDispatcher,
+  deepseekEndpoint,
+  deepseekExitCode,
+  deepseekFailureMessage,
+  deepseekRequestBody,
+  deepseekTimeoutMs,
+  readDeepseekResponseText,
   piThinkingLevel,
   providerExitCode,
   providerJsonSchema,

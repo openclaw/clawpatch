@@ -2,6 +2,8 @@
 
 ## 0.6.1 - Unreleased
 
+- Added a DeepSeek HTTP provider for `map`, `review`, and `revalidate`, with local schema validation and explicit unsupported `fix` handling. Uses `response_format: {type: "json_object"}` because DeepSeek's chat completions API rejects `json_schema` with HTTP 400.
+
 ## 0.6.0 - 2026-06-11
 
 - Added trusted Codex CLI config passthrough for explicit config files while rejecting repository-controlled passthrough config, thanks @brad-ai-agent.

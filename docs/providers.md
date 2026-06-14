@@ -18,6 +18,7 @@ Provider names today:
 - `claude`: shells out to Claude Code in print mode (`claude -p`)
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `minimax`: calls the MiniMax OpenAI-compatible HTTP API directly
+- `deepseek`: calls the DeepSeek OpenAI-compatible HTTP API directly
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
 - `cursor`: shells out to `cursor-agent -p --output-format json`
@@ -401,4 +402,55 @@ checkout and avoid sending secret-bearing files.
 Direct local-model and multi-model panel providers are not implemented yet. The
 `acpx` provider is the generic route for ACP-compatible agents; the `grok`,
 `opencode`, `pi`, and `cursor` providers are direct integrations for local CLIs;
-the `minimax` provider is a direct integration for the MiniMax HTTP API.
+the `minimax` and `deepseek` providers are direct integrations for pay-per-use
+HTTP APIs.
+
+## DeepSeek
+
+The `deepseek` provider calls the DeepSeek OpenAI-compatible HTTP API directly.
+It requires a pay-per-use API key in `DEEPSEEK_API_KEY` and defaults to
+`https://api.deepseek.com/v1`.
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+clawpatch doctor --provider deepseek
+clawpatch review --provider deepseek
+clawpatch review --provider deepseek --model deepseek-v4-pro
+```
+
+How the DeepSeek provider works:
+
+- Endpoint: `POST ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}/chat/completions`
+  with `Authorization: Bearer ${DEEPSEEK_API_KEY}`. `DEEPSEEK_BASE_URL` is
+  trimmed, normalized, and must use `https` unless it targets loopback HTTP for
+  local development; the bearer token is sent to that configured endpoint.
+- Operations: `map`, `review`, and `revalidate` are supported. `fix` is not
+  supported because the chat completions API cannot edit the worktree; it fails
+  before checking credentials or making network calls with `unsupported-provider`
+  and exit code 2.
+- Structured output: DeepSeek's chat completions API supports
+  `response_format: {type: "json_object"}` but **rejects
+  `response_format: {type: "json_schema", ...}` with HTTP 400**. Clawpatch
+  therefore sends `{type: "json_object"}`, embeds the provider schema in the
+  prompt, asks the model to return one JSON object, and validates it locally
+  with the same Zod schemas used by other providers. See `provider.ts` for the
+  load-bearing comment near `deepseekRequestBody`.
+- Model selection: `--model <name>` sets the request `model`; otherwise
+  `DEEPSEEK_MODEL` is used, then `deepseek-v4-flash`.
+- HTTP failures: `401` and `403` map to exit code 4; `402` (insufficient
+  pay-per-use balance) and `429` map to exit code 5; other non-2xx statuses map
+  to exit code 1. Error bodies are reduced to safe `error.type` / `error.code` /
+  `error.param` signals and byte counts; the raw `error.message` is never
+  logged.
+- Timeout: 30 minutes by default for provider calls, override with
+  `CLAWPATCH_DEEPSEEK_TIMEOUT_MS` or `CLAWPATCH_PROVIDER_TIMEOUT_MS`. The
+  `/models` doctor probe uses a 30-second timeout. Clawpatch uses a custom
+  undici dispatcher and an operation abort signal so socket headers/body
+  timeouts and full response-body reads track the configured timeout.
+- Bounds: request bodies over 64 MiB and responses over 10 MiB fail before
+  parsing; error bodies are capped separately.
+
+Permission caveat: DeepSeek is a remote API provider. Review inputs are sent to
+the configured DeepSeek endpoint, and read-only behavior depends on the remote
+model following the prompt. For untrusted code, run clawpatch in an isolated
+checkout and avoid sending secret-bearing files.
