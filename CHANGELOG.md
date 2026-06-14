@@ -1,20 +1,6 @@
 # Changelog
 
-## 0.6.1 - Unreleased
-
-- Added a DeepSeek HTTP provider for `map`, `review`, and `revalidate`, with local schema validation and explicit unsupported `fix` handling. Uses `response_format: {type: "json_object"}` because DeepSeek's chat completions API rejects `json_schema` with HTTP 400.
-
-## 0.6.0 - 2026-06-11
-
-- Added trusted Codex CLI config passthrough for explicit config files while rejecting repository-controlled passthrough config, thanks @brad-ai-agent.
-- Added a MiniMax HTTP provider for `map`, `review`, and `revalidate`, with local schema validation and explicit unsupported `fix` handling, thanks @ferminquant.
-
-## 0.5.1 - 2026-06-10
-
-- Added npm trusted publishing through GitHub Actions OIDC, plus secops ownership, verified-secret scanning, and stale issue and pull request automation.
-- Added opt-in npm registry verification that drops only matching single-package, whole-title-and-reasoning public-npm publication claims when the exact version is confirmed published, thanks @coletebou.
-- Fixed revalidation to include linked patch attempts, validation results, feature context, and current relevant files so repaired findings can move out of `uncertain`.
-- Added `clawpatch review --feature-list <path>` for reviewing an explicit ordered, de-duplicated set of feature IDs, thanks @camwest.
+## 0.5.1 - Unreleased
 
 ## 0.5.0 - 2026-05-31
 
