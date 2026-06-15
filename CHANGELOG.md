@@ -4,6 +4,7 @@
 
 - Removed the direct MiniMax HTTP provider and its transport dependency; provider integrations are now explicitly limited to coding harnesses and agent CLIs.
 - Added uv workspace member mapping with repository-relative paths and member-local test commands while preserving mixed root source and test groups, thanks @srnm.
+- Fixed uv workspace mapping to preserve root features with member-associated tests and include workspace-root runtime metadata in member features, thanks @srnm.
 
 ## 0.6.0 - 2026-06-11
 
