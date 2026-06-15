@@ -98,7 +98,9 @@ export async function pythonSeeds(root: string): Promise<FeatureSeed[]> {
     const memberSeeds = await pythonProjectSeeds(join(root, member), {
       testCommandOverride: uvWorkspaceMemberTestCommand(member),
     });
-    seeds.push(...memberSeeds.map((seed) => workspaceMemberSeed(seed, member)));
+    for (const seed of memberSeeds) {
+      seeds.push(await workspaceMemberSeed(root, seed, member));
+    }
   }
   return seeds;
 }
@@ -256,7 +258,10 @@ function pruneRootSeedUvMemberPaths(
     (seed.source !== "python-source-group" && seed.source !== "python-test-suite") ||
     seed.ownedFiles === undefined
   ) {
-    return null;
+    if (seedOwnedOrEntryTouchesUvMember(seed, members)) {
+      return null;
+    }
+    return pruneSeedUvMemberReferences(seed, members);
   }
   const ownedFiles = seed.ownedFiles.filter((file) => !pathTouchesUvMember(file.path, members));
   if (ownedFiles.length === 0) {
@@ -301,6 +306,31 @@ function pruneRootSeedUvMemberPaths(
   return pruned;
 }
 
+function seedOwnedOrEntryTouchesUvMember(seed: FeatureSeed, members: readonly string[]): boolean {
+  return (
+    pathTouchesUvMember(seed.entryPath, members) ||
+    (seed.ownedFiles?.some((file) => pathTouchesUvMember(file.path, members)) ?? false)
+  );
+}
+
+function pruneSeedUvMemberReferences(seed: FeatureSeed, members: readonly string[]): FeatureSeed {
+  const pruned: FeatureSeed = { ...seed };
+  if (seed.contextFiles !== undefined) {
+    pruned.contextFiles = seed.contextFiles.filter(
+      (file) => !pathTouchesUvMember(file.path, members),
+    );
+  }
+  if (seed.tests !== undefined) {
+    pruned.tests = seed.tests.filter((test) => !pathTouchesUvMember(test.path, members));
+  }
+  if (seed.testPrefixes !== undefined) {
+    pruned.testPrefixes = seed.testPrefixes.filter(
+      (prefix) => !pathTouchesUvMember(prefix, members),
+    );
+  }
+  return pruned;
+}
+
 function pathTouchesUvMember(path: string, members: readonly string[]): boolean {
   return members.some((member) => pathMatchesPrefix(path, member));
 }
@@ -315,11 +345,28 @@ function seedRepoPaths(seed: FeatureSeed): string[] {
   ]);
 }
 
-function workspaceMemberSeed(seed: FeatureSeed, member: string): FeatureSeed {
+async function workspaceMemberSeed(
+  workspaceRoot: string,
+  seed: FeatureSeed,
+  member: string,
+): Promise<FeatureSeed> {
   const prefixPath = (path: string): string => `${member}/${path}`;
   const genericSource = seed.source === "python-source-group";
   const genericTestSuite = seed.source === "python-test-suite";
   const entryPath = prefixPath(seed.entryPath);
+  const contextFiles =
+    seed.contextFiles === undefined
+      ? undefined
+      : seed.contextFiles.map((file) => ({
+          ...file,
+          path: prefixPath(file.path),
+        }));
+  const workspaceRuntimeContext = await pythonRuntimeContextFiles(
+    workspaceRoot,
+    seed.ownedFiles === undefined
+      ? [entryPath]
+      : seed.ownedFiles.map((file) => prefixPath(file.path)),
+  );
   return {
     ...seed,
     title: genericSource
@@ -337,19 +384,25 @@ function workspaceMemberSeed(seed: FeatureSeed, member: string): FeatureSeed {
     ...(seed.ownedFiles === undefined
       ? {}
       : { ownedFiles: seed.ownedFiles.map((file) => ({ ...file, path: prefixPath(file.path) })) }),
-    ...(seed.contextFiles === undefined
-      ? {}
-      : {
-          contextFiles: seed.contextFiles.map((file) => ({
-            ...file,
-            path: prefixPath(file.path),
-          })),
-        }),
+    contextFiles: uniqueSeedFileRefs([...(contextFiles ?? []), ...workspaceRuntimeContext]),
     ...(seed.tests === undefined
       ? {}
       : { tests: seed.tests.map((test) => ({ ...test, path: prefixPath(test.path) })) }),
     ...(seed.testPrefixes === undefined ? {} : { testPrefixes: seed.testPrefixes.map(prefixPath) }),
   };
+}
+
+function uniqueSeedFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
+  const seen = new Set<string>();
+  const output: SeedFileRef[] = [];
+  for (const ref of refs) {
+    if (seen.has(ref.path)) {
+      continue;
+    }
+    seen.add(ref.path);
+    output.push(ref);
+  }
+  return output;
 }
 
 function workspaceMemberSummary(seed: FeatureSeed, member: string): string {

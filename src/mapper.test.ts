@@ -12700,6 +12700,32 @@ exclude = ["packages/legacy"]
     ).toBe(false);
   });
 
+  it("adds workspace root runtime metadata to uv workspace member features", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-runtime-context-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["packages/backend"]\n',
+    );
+    await writeFixture(root, ".python-version", "3.14\n");
+    await writeFixture(root, "packages/backend/pyproject.toml", '[project]\nname = "backend"\n');
+    await writeFixture(root, "packages/backend/src/backend/app.py", "def run():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const backendSource = result.features.find(
+      (feature) => feature.title === "Python source packages/backend/src",
+    );
+
+    expect(backendSource?.contextFiles).toEqual(
+      expect.arrayContaining([
+        { path: "packages/backend/pyproject.toml", reason: "python target runtime metadata" },
+        { path: "pyproject.toml", reason: "python target runtime metadata" },
+        { path: ".python-version", reason: "python target runtime metadata" },
+      ]),
+    );
+  });
+
   it("does not duplicate uv workspace members from root-level Python mapping", async () => {
     const root = await fixtureRoot("clawpatch-python-uv-workspace-root-dedupe-");
     await writeFixture(
@@ -12726,6 +12752,40 @@ exclude = ["packages/legacy"]
           feature.ownedFiles.some((file) => file.path === "backend/src/backend/app.py"),
       ),
     ).toBe(false);
+  });
+
+  it("preserves root routes that only touch uv members through associated tests", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-root-route-tests-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\ndependencies = ["fastapi"]\n\n[tool.uv.workspace]\nmembers = ["packages/backend"]\n',
+    );
+    await writeFixture(root, "packages/__init__.py", "");
+    await writeFixture(
+      root,
+      "packages/shared.py",
+      "from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/shared')\ndef shared():\n    return {'ok': True}\n",
+    );
+    await writeFixture(root, "packages/backend/pyproject.toml", '[project]\nname = "backend"\n');
+    await writeFixture(
+      root,
+      "packages/backend/tests/test_member.py",
+      "def test_member():\n    pass\n",
+    );
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const route = result.features.find((feature) => feature.title === "FastAPI route GET /shared");
+
+    expect(route?.ownedFiles).toEqual([
+      { path: "packages/shared.py", reason: "FastAPI route handler shared" },
+    ]);
+    expect(route?.tests).toEqual([]);
+    expect(route?.contextFiles).not.toContainEqual({
+      path: "packages/backend/tests/test_member.py",
+      reason: "associated test",
+    });
   });
 
   it("preserves non-member files from mixed uv workspace root source groups", async () => {
