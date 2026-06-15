@@ -234,7 +234,7 @@ function filterRootSeedsUnderUvMembers(
       filtered.push(seed);
       continue;
     }
-    const pruned = pruneSourceGroupSeedUvMemberPaths(seed, members);
+    const pruned = pruneRootSeedUvMemberPaths(seed, members);
     if (pruned !== null) {
       filtered.push(pruned);
     }
@@ -248,24 +248,42 @@ function seedTouchesUvMember(seed: FeatureSeed, members: readonly string[]): boo
   );
 }
 
-function pruneSourceGroupSeedUvMemberPaths(
+function pruneRootSeedUvMemberPaths(
   seed: FeatureSeed,
   members: readonly string[],
 ): FeatureSeed | null {
-  if (seed.source !== "python-source-group" || seed.ownedFiles === undefined) {
+  if (
+    (seed.source !== "python-source-group" && seed.source !== "python-test-suite") ||
+    seed.ownedFiles === undefined
+  ) {
     return null;
   }
   const ownedFiles = seed.ownedFiles.filter((file) => !pathTouchesUvMember(file.path, members));
   if (ownedFiles.length === 0) {
     return null;
   }
+  const prunedTestEntryPath =
+    seed.source === "python-test-suite" && pathTouchesUvMember(seed.entryPath, members)
+      ? "."
+      : seed.entryPath;
+  const prunedTestTitle =
+    prunedTestEntryPath === "."
+      ? "Python test suite root"
+      : `Python test suite ${prunedTestEntryPath}`;
   const pruned: FeatureSeed = {
     ...seed,
+    title: seed.source === "python-test-suite" ? prunedTestTitle : seed.title,
+    entryPath: prunedTestEntryPath,
+    symbol: seed.source === "python-test-suite" ? prunedTestEntryPath : seed.symbol,
     ownedFiles,
     summary:
-      ownedFiles.length === 1
-        ? `Python source file ${ownedFiles[0]?.path}.`
-        : `Python source group ${seed.entryPath} with ${ownedFiles.length} files.`,
+      seed.source === "python-source-group"
+        ? ownedFiles.length === 1
+          ? `Python source file ${ownedFiles[0]?.path}.`
+          : `Python source group ${seed.entryPath} with ${ownedFiles.length} files.`
+        : prunedTestEntryPath === "."
+          ? "Python pytest files at repository root."
+          : `Python pytest files in ${prunedTestEntryPath}.`,
   };
   if (seed.contextFiles !== undefined) {
     pruned.contextFiles = seed.contextFiles.filter(

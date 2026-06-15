@@ -12758,6 +12758,58 @@ exclude = ["packages/legacy"]
     expect(backendSources[0]?.entrypoints[0]?.path).toBe("packages/backend/src");
   });
 
+  it("preserves non-member tests from mixed uv workspace root test suites", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-root-mixed-tests-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["tests/member"]\n',
+    );
+    await writeFixture(root, "tests/test_root.py", "def test_root():\n    pass\n");
+    await writeFixture(root, "tests/member/pyproject.toml", '[project]\nname = "member"\n');
+    await writeFixture(root, "tests/member/tests/test_member.py", "def test_member():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rootTests = result.features.find(
+      (feature) => feature.title === "Python test suite tests",
+    );
+    const memberTests = result.features.find(
+      (feature) => feature.title === "Python test suite tests/member/tests",
+    );
+
+    expect(rootTests?.ownedFiles).toEqual([{ path: "tests/test_root.py", reason: "pytest file" }]);
+    expect(rootTests?.tests).toEqual([{ path: "tests/test_root.py", command: "uv run pytest" }]);
+    expect(memberTests?.tests).toEqual([
+      {
+        path: "tests/member/tests/test_member.py",
+        command: "uv run --directory tests/member pytest",
+      },
+    ]);
+  });
+
+  it("retargets pruned root test suites when a uv member owns the synthetic suite path", async () => {
+    const root = await fixtureRoot("clawpatch-python-uv-workspace-root-test-member-");
+    await writeFixture(
+      root,
+      "pyproject.toml",
+      '[project]\nname = "workspace-root"\n\n[tool.uv.workspace]\nmembers = ["tests"]\n',
+    );
+    await writeFixture(root, "test_root.py", "def test_root():\n    pass\n");
+    await writeFixture(root, "tests/pyproject.toml", '[project]\nname = "member"\n');
+    await writeFixture(root, "tests/test_member.py", "def test_member():\n    pass\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const rootTests = result.features.find((feature) =>
+      feature.ownedFiles.some((file) => file.path === "test_root.py"),
+    );
+
+    expect(rootTests?.title).toBe("Python test suite root");
+    expect(rootTests?.entrypoints[0]?.path).toBe(".");
+    expect(rootTests?.ownedFiles).toEqual([{ path: "test_root.py", reason: "pytest file" }]);
+  });
+
   symlinkIt("does not discover uv workspace members through symlinked package roots", async () => {
     const root = await fixtureRoot("clawpatch-python-uv-workspace-symlink-");
     const outside = await fixtureRoot("clawpatch-python-uv-workspace-outside-");
