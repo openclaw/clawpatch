@@ -24,4 +24,4 @@ Keep copy aligned with the implemented CLI:
 - review: sequential feature review
 - fix: `clawpatch fix --finding <id>`
 - no auto-commit, PR creation, or landing yet
-- no direct OpenAI provider yet
+- no direct model API providers; coding harnesses only

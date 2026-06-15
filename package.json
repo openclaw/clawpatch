@@ -9,6 +9,7 @@
   "files": [
     "dist",
     "README.md",
+    "VISION.md",
     "LICENSE"
   ],
   "type": "module",
@@ -30,7 +31,6 @@
     "crabbox:warmup": "crabbox warmup"
   },
   "dependencies": {
-    "undici": "^6.26.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

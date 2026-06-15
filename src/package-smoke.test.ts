@@ -28,14 +28,14 @@ async function packageSmokeTesting(): Promise<PackageSmokeTesting["packageSmokeT
 describe("package smoke harness", () => {
   it("installs the packed clawpatch artifact with packed runtime dependencies", async () => {
     const smoke = await packageSmokeTesting();
-    const dependencySource = "/repo/node_modules/.pnpm/undici@6.26.0/node_modules/undici";
+    const dependencySource = "/repo/node_modules/.pnpm/zod@4.4.3/node_modules/zod";
     const clawpatchTarball = "/tmp/clawpatch-0.5.1.tgz";
-    const dependencyTarball = "/tmp/undici-6.26.0.tgz";
+    const dependencyTarball = "/tmp/zod-4.4.3.tgz";
 
     const dependencyNames = smoke.runtimeDependencyNames({
-      dependencies: { undici: "^6.26.0", zod: "^4.4.3" },
+      dependencies: { zod: "^4.4.3" },
     });
-    expect(dependencyNames).toEqual(["undici", "zod"]);
+    expect(dependencyNames).toEqual(["zod"]);
 
     const packArgs = smoke.packDependencyArgs({
       dependencyPath: dependencySource,

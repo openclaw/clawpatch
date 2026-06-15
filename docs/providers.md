@@ -7,6 +7,9 @@ description: "AI provider configuration and model selection"
 
 The default provider is the local Codex CLI.
 
+Clawpatch integrates coding harnesses and agent CLIs only. Direct model API
+providers are out of scope; see the project [vision](../VISION.md).
+
 ```bash
 clawpatch doctor
 ```
@@ -17,7 +20,6 @@ Provider names today:
 - `acpx`: routes through any ACP-compatible coding agent via `acpx`
 - `claude`: shells out to Claude Code in print mode (`claude -p`)
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
-- `minimax`: calls the MiniMax OpenAI-compatible HTTP API directly
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
 - `cursor`: shells out to `cursor-agent -p --output-format json`
@@ -350,55 +352,3 @@ implementation uses `--trust` for the explicit trusted-workspace path and never
 uses `--force` or `--yolo`. Complete HITL verification before promoting this to
 default provider support, especially for ambient rules, MCP configuration,
 temporary prompt file handling, timeout behavior, and any claimed read-only mode.
-
-## MiniMax
-
-The `minimax` provider calls the MiniMax OpenAI-compatible HTTP API directly. It
-requires a Token Plan API key in `MINIMAX_API_KEY` and defaults to
-`https://api.minimax.io/v1`.
-
-```bash
-export MINIMAX_API_KEY=sk-cp-...
-clawpatch doctor --provider minimax
-clawpatch review --provider minimax
-clawpatch review --provider minimax --model MiniMax-M2.7-highspeed
-```
-
-How the MiniMax provider works:
-
-- Endpoint: `POST ${MINIMAX_BASE_URL:-https://api.minimax.io/v1}/chat/completions`
-  with `Authorization: Bearer ${MINIMAX_API_KEY}`. `MINIMAX_BASE_URL` is trimmed,
-  normalized, and must use `https` unless it targets loopback HTTP for local
-  development; the bearer token is sent to that configured endpoint.
-- Operations: `map`, `review`, and `revalidate` are supported. `fix` is not
-  supported because the chat completions API cannot edit the worktree; it fails
-  before checking credentials or making network calls with `unsupported-provider`
-  and exit code 2.
-- Structured output: MiniMax M-series Chat Completions do not document OpenAI
-  `response_format.json_schema` support. Clawpatch therefore sends the provider
-  schema in the prompt, disables M3 thinking with `thinking: {type: "disabled"}`,
-  asks for `reasoning_split`, extracts the returned JSON, and validates it
-  locally with the same Zod schemas used by other providers.
-- Model selection: `--model <name>` sets the request `model`; otherwise
-  `MINIMAX_MODEL` is used, then `MiniMax-M3`.
-- HTTP failures: `401` and `403` map to exit code 4, `429` maps to exit code 5,
-  and other non-2xx statuses map to exit code 1. Embedded MiniMax auth,
-  rate-limit, balance, and usage-limit status codes are mapped the same way.
-  Error bodies are reduced to safe status/type/code signals and byte counts.
-- Timeout: 30 minutes by default for provider calls, override with
-  `CLAWPATCH_MINIMAX_TIMEOUT_MS` or `CLAWPATCH_PROVIDER_TIMEOUT_MS`. The `/models`
-  doctor probe uses a 30-second timeout. Clawpatch uses a custom undici
-  dispatcher and an operation abort signal so socket headers/body timeouts and
-  full response-body reads track the configured timeout.
-- Bounds: request bodies over 64 MiB and responses over 10 MiB fail before
-  parsing; error bodies are capped separately.
-
-Permission caveat: MiniMax is a remote API provider. Review inputs are sent to
-the configured MiniMax endpoint, and read-only behavior depends on the remote
-model following the prompt. For untrusted code, run clawpatch in an isolated
-checkout and avoid sending secret-bearing files.
-
-Direct local-model and multi-model panel providers are not implemented yet. The
-`acpx` provider is the generic route for ACP-compatible agents; the `grok`,
-`opencode`, `pi`, and `cursor` providers are direct integrations for local CLIs;
-the `minimax` provider is a direct integration for the MiniMax HTTP API.

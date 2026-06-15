@@ -421,8 +421,8 @@ Initial config:
     ".clawpatch/**"
   ],
   "provider": {
-    "name": "openai",
-    "model": "gpt-5.2"
+    "name": "codex",
+    "model": null
   },
   "commands": {
     "typecheck": null,
@@ -906,7 +906,6 @@ Implemented providers:
 - `claude`: Claude Code CLI in print mode.
 - `cursor`: experimental Cursor Agent CLI integration.
 - `grok`: Grok Build CLI.
-- `minimax`: MiniMax OpenAI-compatible HTTP API for map, review, and revalidate.
 - `opencode`: OpenCode CLI.
 - `pi`: pi coding agent.
 - `mock` / `mock-fail`: deterministic test providers.

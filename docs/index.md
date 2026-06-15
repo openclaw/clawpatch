@@ -45,6 +45,7 @@ stderr so pipes stay parseable.
 - **Fixing findings.** [Patching](patching.md) documents the explicit fix workflow and validation steps.
 - **Reading reports.** [Reporting](reporting.md) shows how to generate Markdown reports and filter by severity.
 - **Configuring providers.** [Providers](providers.md) lists supported backends and future provider integration plans.
+- **Understanding project scope.** [Vision](https://github.com/openclaw/clawpatch/blob/main/VISION.md) defines the coding-harness-only provider boundary.
 
 ## All features
 
@@ -65,4 +66,4 @@ stderr so pipes stay parseable.
 
 ## Project
 
-Active development; the [changelog](https://github.com/openclaw/clawpatch/blob/main/CHANGELOG.md) tracks recent releases. Goals and implementation details in [spec.md](spec.md). Released under the [MIT license](https://github.com/openclaw/clawpatch/blob/main/LICENSE).
+Active development; the [changelog](https://github.com/openclaw/clawpatch/blob/main/CHANGELOG.md) tracks recent releases. Product scope lives in [VISION.md](https://github.com/openclaw/clawpatch/blob/main/VISION.md), with implementation details in [spec.md](spec.md). Released under the [MIT license](https://github.com/openclaw/clawpatch/blob/main/LICENSE).

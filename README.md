@@ -129,7 +129,6 @@ Supported provider names today:
 - `claude`: local Claude Code CLI in print mode
 - `cursor`: local Cursor Agent CLI (experimental; `doctor` is enabled by default)
 - `grok`: local Grok Build CLI
-- `minimax`: MiniMax OpenAI-compatible HTTP API; supports `map`, `review`, and `revalidate`, but not `fix`
 - `opencode`: local OpenCode CLI
 - `pi`: local Pi coding agent in print mode
 - `mock`: deterministic test provider
@@ -230,4 +229,6 @@ to features so runs can resume and be audited.
 - Provider output is parsed through strict schemas.
 - Symlinked directories and generated build output are skipped during mapping.
 
-See `docs/spec.md` for the longer product and implementation spec.
+See [`VISION.md`](VISION.md) for project scope and `docs/spec.md` for the
+longer product and implementation spec. Provider integrations are limited to
+coding harnesses and agent CLIs; direct model API providers are out of scope.
