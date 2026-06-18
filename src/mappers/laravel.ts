@@ -8,13 +8,9 @@ import {
 } from "../detect.js";
 import { pathExists } from "../fs.js";
 import { TrustBoundary } from "../types.js";
+import { chunkFiles } from "./grouping.js";
 import { isSafeDirectory, isSafeFile, pathMatchesPrefix, shouldSkip, walk } from "./shared.js";
 import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
-
-type SourceGroup = {
-  label: string;
-  files: string[];
-};
 
 type RouteRef = {
   file: string;
@@ -379,7 +375,7 @@ async function groupedPhpSeeds(
   tag: string,
 ): Promise<FeatureSeed[]> {
   const files = await phpFilesUnder(root, prefix);
-  const groups = partitionSourceFiles(prefix, files, groupedMaxOwnedFiles);
+  const groups = chunkFiles(prefix, files.toSorted(), groupedMaxOwnedFiles);
   return groups.map((group) => ({
     title: `${titlePrefix} ${group.label}`,
     summary: `${titlePrefix} in ${group.label}.`,
@@ -1067,7 +1063,7 @@ function testSuiteSeeds(
   projectType: "Laravel" | "PHP",
 ): FeatureSeed[] {
   return [...groupedTestFiles(testFiles).entries()].flatMap(([root, files]) =>
-    partitionSourceFiles(root, files, groupedMaxOwnedFiles).map((group) => ({
+    chunkFiles(root, files.toSorted(), groupedMaxOwnedFiles).map((group) => ({
       title: `${projectType} test suite ${group.label}`,
       summary: `${projectType} tests in ${group.label}.`,
       kind: "test-suite",
@@ -1141,24 +1137,6 @@ async function phpFilesUnder(root: string, prefix: string): Promise<string[]> {
 
 function laravelShouldSkip(path: string): boolean {
   return shouldSkip(path) || /(^|\/)(vendor|storage|bootstrap\/cache)(\/|$)/u.test(path);
-}
-
-function partitionSourceFiles(
-  sourceRoot: string,
-  files: string[],
-  maxFiles: number,
-): SourceGroup[] {
-  const sorted = files.toSorted();
-  const groups: SourceGroup[] = [];
-  for (let index = 0; index < sorted.length; index += maxFiles) {
-    const chunk = sorted.slice(index, index + maxFiles);
-    const part = Math.floor(index / maxFiles) + 1;
-    groups.push({
-      label: sorted.length <= maxFiles ? sourceRoot : `${sourceRoot}#${part}`,
-      files: chunk,
-    });
-  }
-  return groups;
 }
 
 async function existingRefs(root: string, refs: Array<[string, string]>): Promise<SeedFileRef[]> {
