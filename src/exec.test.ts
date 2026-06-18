@@ -86,6 +86,31 @@ describe("runCommandArgs", () => {
     expect(result.stderr).toContain("command timed out after 50ms");
   });
 
+  it("shares and removes process abort handlers across concurrent commands", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-timeout-"));
+    const script = join(dir, "hang.mjs");
+    await writeFile(script, "setInterval(() => {}, 1000);\n", "utf8");
+    const baseline = new Map(
+      (["SIGINT", "SIGTERM", "SIGHUP"] as const).map((signal) => [
+        signal,
+        process.listenerCount(signal),
+      ]),
+    );
+
+    const commands = Array.from({ length: 12 }, () =>
+      runCommandArgs(process.execPath, [script], dir, undefined, { timeoutMs: 1000 }),
+    );
+
+    for (const [signal, count] of baseline) {
+      expect(process.listenerCount(signal)).toBe(count + 1);
+    }
+    const results = await Promise.all(commands);
+    expect(results.every((result) => result.exitCode === 124)).toBe(true);
+    for (const [signal, count] of baseline) {
+      expect(process.listenerCount(signal)).toBe(count);
+    }
+  });
+
   it("returns after timeout even when descendants inherit stdio", async () => {
     const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-timeout-"));
     const childScript = join(dir, "child.mjs");

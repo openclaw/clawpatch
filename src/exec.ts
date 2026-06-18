@@ -3,6 +3,12 @@ import { existsSync } from "node:fs";
 import { delimiter, extname, join } from "node:path";
 import { CommandResult } from "./types.js";
 
+type SpawnedChild = ReturnType<typeof spawn>;
+
+const abortSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
+const abortableChildren = new Set<SpawnedChild>();
+const abortHandlers = new Map<NodeJS.Signals, () => void>();
+
 export async function runCommand(
   command: string,
   cwd: string,
@@ -102,7 +108,7 @@ export async function runCommandArgs(
   let timeout: NodeJS.Timeout | undefined;
   let forceKill: NodeJS.Timeout | undefined;
   let finishCommand: ((code: number | null) => void) | undefined;
-  let removeAbortHandlers = noop;
+  let unregisterAbortableChild = noop;
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
@@ -122,7 +128,7 @@ export async function runCommandArgs(
       if (timeout !== undefined) {
         clearTimeout(timeout);
       }
-      removeAbortHandlers();
+      unregisterAbortableChild();
       resolve(code);
     };
     finishCommand = finish;
@@ -141,7 +147,7 @@ export async function runCommandArgs(
     });
   });
   if (options.timeoutMs !== undefined) {
-    removeAbortHandlers = installAbortHandlers(child);
+    unregisterAbortableChild = registerAbortableChild(child);
     timeout = setTimeout(() => {
       timedOut = true;
       forceKill = terminateChild(child, () => {
@@ -170,7 +176,7 @@ export async function runCommandArgs(
   };
 }
 
-function terminateChild(child: ReturnType<typeof spawn>, onForceKill: () => void): NodeJS.Timeout {
+function terminateChild(child: SpawnedChild, onForceKill: () => void): NodeJS.Timeout {
   void killChild(child, "SIGTERM");
   const force = setTimeout(() => {
     void killChild(child, "SIGKILL").finally(onForceKill);
@@ -178,7 +184,7 @@ function terminateChild(child: ReturnType<typeof spawn>, onForceKill: () => void
   return force;
 }
 
-async function killChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): Promise<void> {
+async function killChild(child: SpawnedChild, signal: NodeJS.Signals): Promise<void> {
   if (process.platform === "win32" && child.pid !== undefined) {
     await taskkillTree(child.pid);
     return;
@@ -205,26 +211,47 @@ async function taskkillTree(pid: number): Promise<void> {
   });
 }
 
-function installAbortHandlers(child: ReturnType<typeof spawn>): () => void {
-  const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
-  const handlers = new Map<NodeJS.Signals, () => void>();
-  for (const signal of signals) {
-    const handler = (): void => {
-      for (const [registeredSignal, registeredHandler] of handlers) {
-        process.removeListener(registeredSignal, registeredHandler);
-      }
-      void killChild(child, "SIGKILL").finally(() => {
-        process.exit(signalExitCode(signal));
-      });
-    };
-    handlers.set(signal, handler);
-    process.once(signal, handler);
-  }
+function registerAbortableChild(child: SpawnedChild): () => void {
+  abortableChildren.add(child);
+  installAbortHandlers();
+  let registered = true;
   return () => {
-    for (const [signal, handler] of handlers) {
-      process.removeListener(signal, handler);
+    if (!registered) {
+      return;
+    }
+    registered = false;
+    abortableChildren.delete(child);
+    if (abortableChildren.size === 0) {
+      removeAbortHandlers();
     }
   };
+}
+
+function installAbortHandlers(): void {
+  if (abortHandlers.size > 0) {
+    return;
+  }
+  for (const signal of abortSignals) {
+    const handler = (): void => abortAllChildren(signal);
+    abortHandlers.set(signal, handler);
+    process.once(signal, handler);
+  }
+}
+
+function removeAbortHandlers(): void {
+  for (const [signal, handler] of abortHandlers) {
+    process.removeListener(signal, handler);
+  }
+  abortHandlers.clear();
+}
+
+function abortAllChildren(signal: NodeJS.Signals): void {
+  const children = [...abortableChildren];
+  abortableChildren.clear();
+  removeAbortHandlers();
+  void Promise.all(children.map((child) => killChild(child, "SIGKILL"))).finally(() => {
+    process.exit(signalExitCode(signal));
+  });
 }
 
 function signalExitCode(signal: NodeJS.Signals): number {
@@ -239,7 +266,7 @@ function signalExitCode(signal: NodeJS.Signals): number {
 
 function noop(): void {}
 
-function endChildStdin(child: ReturnType<typeof spawn>, input: string | undefined): void {
+function endChildStdin(child: SpawnedChild, input: string | undefined): void {
   const stdin = child.stdin;
   if (stdin === null) {
     return;
