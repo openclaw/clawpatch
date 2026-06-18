@@ -36,6 +36,32 @@ describe("runCommand", () => {
     expect(trimmed.stdout).toContain("...[trimmed]...");
     expect(raw.stdout).toHaveLength(9000);
   });
+
+  it("applies timeout and streaming output bounds to shell commands", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-shell-limit-"));
+    const noisy = join(dir, "noisy.mjs");
+    const hanging = join(dir, "hanging.mjs");
+    await writeFile(noisy, "process.stdout.write('x'.repeat(1000000));", "utf8");
+    await writeFile(hanging, "setInterval(() => {}, 1000);", "utf8");
+
+    const bounded = await runCommand(
+      `${JSON.stringify(process.execPath)} ${JSON.stringify(noisy)}`,
+      dir,
+      undefined,
+      { trimOutput: false, maxOutputChars: 10_000 },
+    );
+    const timedOut = await runCommand(
+      `${JSON.stringify(process.execPath)} ${JSON.stringify(hanging)}`,
+      dir,
+      undefined,
+      { timeoutMs: 50 },
+    );
+
+    expect(bounded.stdout.length).toBeLessThan(10_100);
+    expect(bounded.stdout).toContain("...[output truncated]...");
+    expect(timedOut.exitCode).toBe(124);
+    expect(timedOut.stderr).toContain("command timed out after 50ms");
+  });
 });
 
 describe("runCommandArgs", () => {

@@ -4,6 +4,13 @@ import { delimiter, extname, join } from "node:path";
 import { CommandResult } from "./types.js";
 
 type SpawnedChild = ReturnType<typeof spawn>;
+type CommandOptions = {
+  trimOutput?: boolean;
+  env?: NodeJS.ProcessEnv;
+  timeoutMs?: number;
+  replaceEnv?: boolean;
+  maxOutputChars?: number;
+};
 
 const abortSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 const abortableChildren = new Set<SpawnedChild>();
@@ -13,66 +20,21 @@ export async function runCommand(
   command: string,
   cwd: string,
   input?: string,
-  options: { trimOutput?: boolean } = {},
+  options: CommandOptions = {},
 ): Promise<CommandResult> {
-  const result = await runCommandRaw(command, cwd, input);
-  return {
-    ...result,
-    stdout: options.trimOutput === false ? result.stdout : trimOutput(result.stdout),
-    stderr: options.trimOutput === false ? result.stderr : trimOutput(result.stderr),
-  };
+  return runCommandRaw(command, cwd, input, options);
 }
 
 export async function runCommandRaw(
   command: string,
   cwd: string,
   input?: string,
+  options: CommandOptions = {},
 ): Promise<CommandResult> {
-  const started = Date.now();
-  const child = spawn(command, {
-    cwd,
-    shell: true,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8");
-  child.stderr.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    stdout += chunk;
-  });
-  child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
-  });
-  let spawnErrorMessage: string | null = null;
-  const exitCodePromise = new Promise<number | null>((resolve) => {
-    let settled = false;
-    const finish = (code: number | null): void => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve(code);
-    };
-    child.on("error", (error: Error) => {
-      spawnErrorMessage = error.message;
-      finish(127);
-    });
-    child.on("close", finish);
-  });
-  endChildStdin(child, input);
-  const exitCode = await exitCodePromise;
-  if (spawnErrorMessage !== null) {
-    stderr += stderr.length === 0 ? spawnErrorMessage : `\n${spawnErrorMessage}`;
-  }
-  return {
-    command,
-    cwd,
-    exitCode,
-    durationMs: Date.now() - started,
-    stdout,
-    stderr,
-  };
+  const shell = process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "/bin/sh";
+  const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
+  const result = await runCommandArgs(shell, args, cwd, input, options);
+  return { ...result, command };
 }
 
 export async function runCommandArgs(
@@ -80,12 +42,7 @@ export async function runCommandArgs(
   args: string[],
   cwd: string,
   input?: string,
-  options: {
-    trimOutput?: boolean;
-    env?: NodeJS.ProcessEnv;
-    timeoutMs?: number;
-    replaceEnv?: boolean;
-  } = {},
+  options: CommandOptions = {},
 ): Promise<CommandResult> {
   const started = Date.now();
   const spawnSpec = commandSpawnSpec(program, args);
@@ -102,8 +59,8 @@ export async function runCommandArgs(
     stdio: ["pipe", "pipe", "pipe"],
     windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
   });
-  let stdout = "";
-  let stderr = "";
+  const stdout = new OutputBuffer(options.maxOutputChars);
+  const stderr = new OutputBuffer(options.maxOutputChars);
   let timedOut = false;
   let timeout: NodeJS.Timeout | undefined;
   let forceKill: NodeJS.Timeout | undefined;
@@ -112,10 +69,10 @@ export async function runCommandArgs(
   child.stdout.setEncoding("utf8");
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
-    stdout += chunk;
+    stdout.append(chunk);
   });
   child.stderr.on("data", (chunk: string) => {
-    stderr += chunk;
+    stderr.append(chunk);
   });
   let spawnErrorMessage: string | null = null;
   const exitCodePromise = new Promise<number | null>((resolve) => {
@@ -160,19 +117,19 @@ export async function runCommandArgs(
   endChildStdin(child, input);
   const exitCode = await exitCodePromise;
   if (spawnErrorMessage !== null) {
-    stderr += stderr.length === 0 ? spawnErrorMessage : `\n${spawnErrorMessage}`;
+    stderr.append(`${stderr.isEmpty ? "" : "\n"}${spawnErrorMessage}`);
   }
   if (timedOut) {
     const message = `command timed out after ${options.timeoutMs}ms`;
-    stderr += stderr.length === 0 ? message : `\n${message}`;
+    stderr.append(`${stderr.isEmpty ? "" : "\n"}${message}`);
   }
   return {
     command: [program, ...args].map((arg) => JSON.stringify(arg)).join(" "),
     cwd,
     exitCode: timedOut ? 124 : exitCode,
     durationMs: Date.now() - started,
-    stdout: options.trimOutput === false ? stdout : trimOutput(stdout),
-    stderr: options.trimOutput === false ? stderr : trimOutput(stderr),
+    stdout: options.trimOutput === false ? stdout.value : trimOutput(stdout.value),
+    stderr: options.trimOutput === false ? stderr.value : trimOutput(stderr.value),
   };
 }
 
@@ -319,6 +276,42 @@ function resolveWindowsProgram(program: string): string | null {
 function escapeCmdArgument(value: string): string {
   const escaped = value.replace(/(\\*)"/gu, '$1$1\\"').replace(/(\\*)$/u, "$1$1");
   return `"${escaped}"`.replace(/([()%!^"<>&|])/gu, "^$1");
+}
+
+class OutputBuffer {
+  private head = "";
+  private tail = "";
+  private total = 0;
+
+  public constructor(private readonly limit: number | undefined) {}
+
+  public append(chunk: string): void {
+    this.total += chunk.length;
+    if (this.limit === undefined) {
+      this.head += chunk;
+      return;
+    }
+    const half = Math.max(1, Math.floor(this.limit / 2));
+    if (this.head.length < half) {
+      const remaining = half - this.head.length;
+      this.head += chunk.slice(0, remaining);
+      chunk = chunk.slice(remaining);
+    }
+    if (chunk.length > 0) {
+      this.tail = `${this.tail}${chunk}`.slice(-half);
+    }
+  }
+
+  public get isEmpty(): boolean {
+    return this.total === 0;
+  }
+
+  public get value(): string {
+    if (this.limit === undefined || this.total <= this.limit) {
+      return this.head + this.tail;
+    }
+    return `${this.head}\n...[output truncated]...\n${this.tail}`;
+  }
 }
 
 function trimOutput(value: string): string {

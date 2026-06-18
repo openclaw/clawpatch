@@ -113,7 +113,12 @@ export async function fixCommand(
   const validationCommands = validationCommandsForFeature(feature, config.commands);
   const commandsRun: CommandResult[] = [];
   for (const command of validationCommands) {
-    commandsRun.push(await runCommand(command, loaded.root));
+    commandsRun.push(
+      await runCommand(command, loaded.root, undefined, {
+        timeoutMs: validationTimeoutMs(),
+        maxOutputChars: 100_000,
+      }),
+    );
   }
   const afterChanged =
     (await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir)) ?? new Map();
@@ -165,4 +170,9 @@ export async function fixCommand(
       ? `inspect ${patchAttemptId}`
       : `clawpatch revalidate --finding ${finding.findingId}`,
   };
+}
+
+function validationTimeoutMs(): number {
+  const configured = Number(process.env["CLAWPATCH_VALIDATION_TIMEOUT_MS"] ?? "600000");
+  return Number.isFinite(configured) && configured > 0 ? configured : 600_000;
 }
