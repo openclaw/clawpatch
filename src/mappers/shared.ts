@@ -1,7 +1,6 @@
 import { lstat, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { pathExists } from "../fs.js";
-import { shellQuotePath } from "../shell.js";
 import { TrustBoundary } from "../types.js";
 import { FeatureSeed } from "./types.js";
 
@@ -337,49 +336,6 @@ function testNameToken(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/gu, "_")
     .replace(/^_+|_+$/gu, "");
-}
-
-export async function detectNodePackageManager(root: string): Promise<string> {
-  if (
-    (await pathExists(join(root, "pnpm-lock.yaml"))) ||
-    (await pathExists(join(root, "pnpm-workspace.yaml")))
-  ) {
-    return "pnpm";
-  }
-  if (await pathExists(join(root, "yarn.lock"))) {
-    return "yarn";
-  }
-  if ((await pathExists(join(root, "bun.lock"))) || (await pathExists(join(root, "bun.lockb")))) {
-    return "bun";
-  }
-  return "npm";
-}
-
-export function nodeScriptCommand(
-  packageManager: string,
-  packageRoot: string,
-  script: string,
-): string {
-  const quotedScript = shellQuotePath(script);
-  if (packageRoot === ".") {
-    if (packageManager === "bun") {
-      return `bun run ${quotedScript}`;
-    }
-    return packageManager === "npm"
-      ? `npm run ${quotedScript}`
-      : `${packageManager} ${quotedScript}`;
-  }
-  const quotedRoot = shellQuotePath(packageRoot);
-  if (packageManager === "pnpm") {
-    return `pnpm --dir ${quotedRoot} ${quotedScript}`;
-  }
-  if (packageManager === "yarn") {
-    return `yarn --cwd ${quotedRoot} ${quotedScript}`;
-  }
-  if (packageManager === "bun") {
-    return `bun --cwd ${quotedRoot} run ${quotedScript}`;
-  }
-  return `npm --prefix ${quotedRoot} run ${quotedScript}`;
 }
 
 function isTestPath(path: string): boolean {

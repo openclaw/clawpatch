@@ -3,17 +3,20 @@ import { lstat, readFile, readdir } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import {
-  detectNodePackageManager,
   isSafeDirectory,
   isSampleProjectPath,
-  nodeScriptCommand,
   normalize,
   pathMatchesPrefix,
   pathInsideRoot,
   shouldSkip,
   walk,
 } from "./shared.js";
-import { projectTargetCommand } from "./projects.js";
+import {
+  detectNodePackageManager,
+  packageHasDependency,
+  projectTargetCommand,
+  scriptCommand,
+} from "./projects.js";
 import {
   FeatureSeed,
   MapperContext,
@@ -542,16 +545,7 @@ function globSegmentRegExp(segment: string): RegExp {
 }
 
 function hasReactDependency(pkg: PackageJson): boolean {
-  return (
-    dependencyFieldHas(pkg.dependencies, "react") ||
-    dependencyFieldHas(pkg.devDependencies, "react") ||
-    dependencyFieldHas(pkg.peerDependencies, "react") ||
-    dependencyFieldHas(pkg.optionalDependencies, "react")
-  );
-}
-
-function dependencyFieldHas(field: unknown, name: string): boolean {
-  return typeof field === "object" && field !== null && Object.hasOwn(field, name);
+  return packageHasDependency(pkg, "react");
 }
 
 async function packageSourceFiles(
@@ -1309,7 +1303,7 @@ function packageJsonTestCommand(
   if (!packageScripts(packageJson).has("test")) {
     return null;
   }
-  return nodeScriptCommand(packageManager, packageRoot, "test");
+  return scriptCommand(packageManager, packageRoot, "test");
 }
 
 function packageScripts(pkg: PackageJson): Set<string> {

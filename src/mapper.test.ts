@@ -4,7 +4,6 @@ import { describe, expect, it } from "vitest";
 import { detectProject } from "./detect.js";
 import { mapFeatures } from "./mapper.js";
 import { discoverNodeProjects, scriptCommand } from "./mappers/projects.js";
-import { nodeScriptCommand } from "./mappers/shared.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { fixtureRoot, writeFixture } from "./test-helpers.js";
 
@@ -18,7 +17,7 @@ describe("mapFeatures", () => {
     expect(scriptCommand("npm", ".", "test:unit; touch INJECTED")).toBe(
       'npm run "test:unit; touch INJECTED"',
     );
-    expect(nodeScriptCommand("npm", "apps/site $(touch INJECTED)", "test")).toBe(
+    expect(scriptCommand("npm", "apps/site $(touch INJECTED)", "test")).toBe(
       'npm --prefix "apps/site \\$(touch INJECTED)" run test',
     );
   });

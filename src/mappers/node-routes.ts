@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
-  dependencyFieldHas,
+  packageHasDependency,
   packageRelativePath,
   projectContextFiles,
   projectTags,
@@ -101,17 +101,7 @@ function serverFrameworks(project: NodeProjectInfo | null): ServerFramework[] {
     return [];
   }
   return (["express", "fastify", "hono"] as const).filter((framework) =>
-    packageHasDependency(project, framework),
-  );
-}
-
-function packageHasDependency(project: NodeProjectInfo, dependency: string): boolean {
-  const pkg = project.packageJson as Record<string, unknown> | null;
-  if (pkg === null) {
-    return false;
-  }
-  return ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"].some(
-    (field) => dependencyFieldHas(pkg[field], dependency),
+    packageHasDependency(project.packageJson, framework),
   );
 }
 

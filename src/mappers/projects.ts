@@ -12,6 +12,8 @@ export type NodePackageJson = {
   scripts?: unknown;
   dependencies?: unknown;
   devDependencies?: unknown;
+  peerDependencies?: unknown;
+  optionalDependencies?: unknown;
   bin?: unknown;
   exports?: unknown;
   main?: unknown;
@@ -223,6 +225,15 @@ export function projectDisplayName(info: NodeProjectInfo): string {
 
 export function dependencyFieldHas(field: unknown, name: string): boolean {
   return typeof field === "object" && field !== null && Object.hasOwn(field, name);
+}
+
+export function packageHasDependency(pkg: NodePackageJson | null, name: string): boolean {
+  return (
+    pkg !== null &&
+    [pkg.dependencies, pkg.devDependencies, pkg.peerDependencies, pkg.optionalDependencies].some(
+      (field) => dependencyFieldHas(field, name),
+    )
+  );
 }
 
 async function existingProjectContextFiles(
@@ -983,7 +994,7 @@ function packageDisplayName(
   return packageRoot === "." ? basename(dirname(join(packageJsonPath))) : basename(packageRoot);
 }
 
-async function detectNodePackageManager(root: string): Promise<string> {
+export async function detectNodePackageManager(root: string): Promise<string> {
   if (
     (await pathExists(join(root, "pnpm-lock.yaml"))) ||
     (await pathExists(join(root, "pnpm-workspace.yaml")))

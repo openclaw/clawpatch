@@ -3,8 +3,7 @@ import { join } from "node:path";
 import { packageScripts } from "../detect.js";
 import { pathExists } from "../fs.js";
 import { shellQuotePath } from "../shell.js";
-import type { NodeProjectInfo } from "./projects.js";
-import { detectNodePackageManager } from "./shared.js";
+import { detectNodePackageManager, type NodeProjectInfo } from "./projects.js";
 import {
   emptyTaskGraph,
   validationTaskNames,
