@@ -106,10 +106,10 @@ export function findingClaimsNonexistence(title: string): boolean {
   }
   const claim = trimmed.slice(specIndex + specText.length);
   return (
-    /^\s+(?:is\s+)?(?:unpublished|not published|not a published version|non[- ]?existent|does ?n['']?t exist|does not exist)\s+(?:on|in)\s+(?:public\s+)?npm\s*[.!?]?$/iu.test(
+    /^\s+(?:is\s+)?(?:unpublished|not published|not a published version|non[- ]?existent|does ?n'?t exist|does not exist)\s+(?:on|in)\s+(?:public\s+)?npm\s*[.!?]?$/iu.test(
       claim,
     ) ||
-    /^\s+(?:is\s+)?(?:unpublished|not published|non[- ]?existent|does ?n['']?t exist|does not exist)\s+(?:at|on)\s+(?:https?:\/\/)?registry\.npmjs\.org\s*[.!?]?$/iu.test(
+    /^\s+(?:is\s+)?(?:unpublished|not published|non[- ]?existent|does ?n'?t exist|does not exist)\s+(?:at|on)\s+(?:https?:\/\/)?registry\.npmjs\.org\s*[.!?]?$/iu.test(
       claim,
     ) ||
     /^\s+(?:has\s+)?(?:ETARGET|no matching version)(?:\s+(?:error|response))?\s+(?:on|from)\s+(?:public\s+)?npm\s*[.!?]?$/iu.test(
