@@ -384,6 +384,20 @@ describe("providerJsonSchema", () => {
     }
   });
 
+  it("normalizes nullable evidence line schemas for Codex strict schemas", () => {
+    const schema = reviewJsonSchema as Record<string, unknown>;
+    const findings = propertySchema(schema, "findings");
+    const finding = itemSchema(findings);
+    const evidence = itemSchema(propertySchema(finding, "evidence"));
+    const endLine = propertySchema(evidence, "endLine");
+
+    expect(endLine["anyOf"]).toBeUndefined();
+    expect(endLine["type"]).toEqual(["integer", "null"]);
+    expect(schemaKeys(endLine)).not.toContain("minimum");
+    expect(evidence["additionalProperties"]).toBe(false);
+    expect(evidence["required"]).toEqual(Object.keys(propertiesOf(evidence)));
+  });
+
   it("keeps object schemas strict even when parser input fields are optional", () => {
     const schema = providerJsonSchema(reviewOutputSchema) as Record<string, unknown>;
     const findings = propertySchema(schema, "findings");
