@@ -14,6 +14,7 @@ export type ReviewMode = "default" | "deslopify";
 
 export const REVIEW_PROMPT_FILE_CHAR_LIMIT = 24_000;
 const REVALIDATE_FILE_CONTEXT_CHAR_LIMIT = 120_000;
+const REVALIDATE_METADATA_LIST_LIMIT = 50;
 
 export type ReviewPromptFileRole = "owned" | "context" | "test";
 
@@ -432,10 +433,10 @@ Return strict JSON only:
 {"outcome":"fixed|open|false-positive|uncertain","reasoning":"string","commands":["string"]}
 
 Finding:
-${JSON.stringify(finding, null, 2)}
+${JSON.stringify(revalidationFindingEvidence(finding), null, 2)}
 
 Feature:
-${JSON.stringify(feature, null, 2)}
+${JSON.stringify(revalidationFeatureEvidence(feature, config), null, 2)}
 
 Linked patch attempts:
 ${JSON.stringify(
@@ -451,6 +452,53 @@ ${JSON.stringify(
 
 Relevant current files:
 ${fileBlocks.join("\n\n")}`;
+}
+
+function revalidationFindingEvidence(finding: FindingRecord): object {
+  return {
+    ...finding,
+    history: finding.history.slice(-5),
+    omittedHistory: Math.max(0, finding.history.length - 5),
+  };
+}
+
+function revalidationFeatureEvidence(feature: FeatureRecord, config: ClawpatchConfig): object {
+  const ownedLimit = config.review.maxOwnedFiles;
+  const contextLimit = config.review.maxContextFiles;
+  const testLimit = config.review.maxContextFiles;
+  return {
+    schemaVersion: feature.schemaVersion,
+    featureId: feature.featureId,
+    title: feature.title,
+    summary: feature.summary,
+    kind: feature.kind,
+    source: feature.source,
+    confidence: feature.confidence,
+    entrypoints: feature.entrypoints.slice(0, REVALIDATE_METADATA_LIST_LIMIT),
+    omittedEntrypoints: Math.max(0, feature.entrypoints.length - REVALIDATE_METADATA_LIST_LIMIT),
+    ownedFiles: feature.ownedFiles.slice(0, ownedLimit),
+    omittedOwnedFiles: Math.max(0, feature.ownedFiles.length - ownedLimit),
+    contextFiles: feature.contextFiles.slice(0, contextLimit),
+    omittedContextFiles: Math.max(0, feature.contextFiles.length - contextLimit),
+    tests: feature.tests.slice(0, testLimit),
+    omittedTests: Math.max(0, feature.tests.length - testLimit),
+    tags: feature.tags.slice(0, REVALIDATE_METADATA_LIST_LIMIT),
+    omittedTags: Math.max(0, feature.tags.length - REVALIDATE_METADATA_LIST_LIMIT),
+    trustBoundaries: feature.trustBoundaries,
+    status: feature.status,
+    lock: feature.lock,
+    findingIds: feature.findingIds.slice(0, REVALIDATE_METADATA_LIST_LIMIT),
+    omittedFindingIds: Math.max(0, feature.findingIds.length - REVALIDATE_METADATA_LIST_LIMIT),
+    patchAttemptIds: feature.patchAttemptIds.slice(0, REVALIDATE_METADATA_LIST_LIMIT),
+    omittedPatchAttemptIds: Math.max(
+      0,
+      feature.patchAttemptIds.length - REVALIDATE_METADATA_LIST_LIMIT,
+    ),
+    analysisHistory: feature.analysisHistory.slice(-3),
+    omittedAnalysisHistory: Math.max(0, feature.analysisHistory.length - 3),
+    createdAt: feature.createdAt,
+    updatedAt: feature.updatedAt,
+  };
 }
 
 function revalidationPatchEvidence(

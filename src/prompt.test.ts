@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   REVIEW_PROMPT_FILE_CHAR_LIMIT,
   buildFixPrompt,
+  buildRevalidatePrompt,
   buildReviewPromptBundle,
 } from "./prompt.js";
 import { defaultConfig } from "./config.js";
@@ -104,6 +105,66 @@ describe("review prompt provenance", () => {
         expect.objectContaining({ path: "tests/index.test.ts", role: "test" }),
       ]),
     );
+  });
+
+  it("compacts revalidation feature metadata before provider submission", async () => {
+    const root = await fixtureRoot("clawpatch-revalidate-prompt-budget-");
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const largeFeature: FeatureRecord = {
+      ...feature(),
+      ownedFiles: [{ path: "src/index.ts", reason: "primary" }],
+      contextFiles: Array.from({ length: 2_500 }, (_, index) => ({
+        path: `docs/context-${index}.md`,
+        reason: `context ${"x".repeat(300)}`,
+      })),
+      tests: Array.from({ length: 200 }, (_, index) => ({
+        path: `tests/context-${index}.test.ts`,
+        command: null,
+      })),
+      findingIds: Array.from({ length: 200 }, (_, index) => `fnd_large_${index}`),
+      patchAttemptIds: Array.from({ length: 200 }, (_, index) => `patch_large_${index}`),
+      analysisHistory: Array.from({ length: 40 }, (_, index) => ({
+        runId: `run_large_${index}`,
+        kind: "review",
+        summary: `large analysis ${"x".repeat(1_000)}`,
+        provider: "codex",
+        model: null,
+        reasoningEffort: null,
+        createdAt: new Date(2026, 0, index + 1).toISOString(),
+      })),
+    };
+    const largeFinding: FindingRecord = {
+      ...finding("src/index.ts"),
+      history: Array.from({ length: 40 }, (_, index) => ({
+        runId: `run_history_${index}`,
+        kind: "revalidate",
+        status: "open",
+        note: null,
+        reasoning: `large history ${"x".repeat(1_000)}`,
+        commands: [],
+        createdAt: new Date(2026, 0, index + 1).toISOString(),
+      })),
+    };
+
+    const prompt = await buildRevalidatePrompt(
+      root,
+      largeFinding,
+      largeFeature,
+      [],
+      defaultConfig(),
+    );
+
+    expect(prompt.length).toBeLessThan(1_048_576);
+    expect(prompt).toContain('"omittedContextFiles": 2476');
+    expect(prompt).toContain('"omittedTests": 176');
+    expect(prompt).toContain('"omittedFindingIds": 150');
+    expect(prompt).toContain('"omittedPatchAttemptIds": 150');
+    expect(prompt).toContain('"omittedAnalysisHistory": 37');
+    expect(prompt).toContain('"omittedHistory": 35');
+    expect(prompt).toContain("--- src/index.ts");
+    expect(prompt).not.toContain("docs/context-2499.md");
+    expect(prompt).not.toContain("large analysis 0");
+    expect(prompt).not.toContain("large history 0");
   });
 
   it("does not list duplicate-skipped included files as omitted", async () => {
