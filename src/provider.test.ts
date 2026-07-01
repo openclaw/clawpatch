@@ -1064,16 +1064,18 @@ describe("Claude provider helpers", () => {
     throw new Error("expected Claude provider failure");
   });
 
-  it("does not preview arbitrary string Claude errors", () => {
-    try {
-      extractClaudeStructuredOutput(JSON.stringify({ error: "SOURCE CONTEXT SECRET" }));
-    } catch (err) {
-      expect(err).toBeInstanceOf(ClawpatchError);
-      expect((err as ClawpatchError).message).toBe("claude provider error: provider-error");
-      expect((err as ClawpatchError).message).not.toContain("SOURCE CONTEXT SECRET");
-      return;
+  it("does not preview arbitrary or token-shaped string Claude errors", () => {
+    for (const secret of ["SOURCE CONTEXT SECRET", "sk-ant-secret-shaped-value"]) {
+      try {
+        extractClaudeStructuredOutput(JSON.stringify({ error: secret }));
+      } catch (err) {
+        expect(err).toBeInstanceOf(ClawpatchError);
+        expect((err as ClawpatchError).message).toBe("claude provider error: provider-error");
+        expect((err as ClawpatchError).message).not.toContain(secret);
+        continue;
+      }
+      throw new Error("expected Claude provider failure");
     }
-    throw new Error("expected Claude provider failure");
   });
 
   it("does not include stdout or prompt previews in Claude failure messages", () => {

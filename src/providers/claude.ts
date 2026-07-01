@@ -28,6 +28,7 @@ const CLAUDE_DEFAULT_TIMEOUT_MS = 180_000;
 const CLAUDE_READ_ONLY_TOOLS = "Read,Grep,Glob";
 const CLAUDE_WRITE_TOOLS = "default";
 const CLAUDE_SAFE_MODE_MIN_VERSION: [number, number, number] = [2, 1, 169];
+const CLAUDE_PUBLIC_STRING_ERROR_CODES = new Set(["authentication_failed"]);
 const CLAUDE_AUTH_SMOKE_SCHEMA = {
   type: "object",
   properties: { ok: { type: "boolean", const: true } },
@@ -373,7 +374,7 @@ function claudeStructuredOutput(value: unknown): { found: boolean; value: unknow
 function claudeEnvelopeErrorCode(error: unknown): string | null {
   if (typeof error === "string") {
     const trimmed = error.trim();
-    return /^[a-z][a-z0-9_.:-]{0,79}$/iu.test(trimmed) ? safeProviderPreview(trimmed) : null;
+    return CLAUDE_PUBLIC_STRING_ERROR_CODES.has(trimmed) ? trimmed : null;
   }
   if (typeof error !== "object" || error === null) {
     return null;
