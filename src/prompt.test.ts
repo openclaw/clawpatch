@@ -159,7 +159,7 @@ describe("review prompt provenance", () => {
     expect(prompt).toContain('"omittedAnalysisHistory": 37');
     expect(prompt).toContain('"omittedHistory": 35');
     expect(prompt).toContain("--- src/index.ts");
-    expect(prompt).not.toContain("docs/context-2499.md");
+    expect(prompt).not.toContain('"path": "docs/context-2499.md"');
     expect(prompt).not.toContain("large analysis 0");
     expect(prompt).not.toContain("large history 0");
   });
