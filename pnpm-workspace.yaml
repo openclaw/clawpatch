@@ -1,0 +1,4 @@
+minimumReleaseAgeExclude:
+  - vite@8.0.16
+overrides:
+  vite: ^8.0.16
