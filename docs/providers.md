@@ -144,12 +144,25 @@ The `claude` provider shells out to the local
 [Claude Code CLI](https://code.claude.com/docs/en/cli-usage) in non-interactive
 print mode.
 
-Install Claude Code and authenticate with an Anthropic API key:
+Install Claude Code. The default isolated mode accepts an Anthropic API key or
+the supported cloud-provider auth variables:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 claude --version
 ```
+
+To use the configured Claude Code binary's `/login` or setup-token auth state,
+opt into host auth context:
+
+```bash
+CLAWPATCH_CLAUDE_AUTH_CONTEXT=host clawpatch doctor --provider claude
+CLAWPATCH_CLAUDE_AUTH_CONTEXT=host clawpatch review --provider claude
+```
+
+Host auth context requires Claude Code 2.1.169 or newer.
+Set `CLAWPATCH_CLAUDE_BIN` to an executable path when Clawpatch should invoke a
+specific Claude Code installation.
 
 Provider selection:
 
@@ -168,10 +181,11 @@ clawpatch review --provider claude --model claude-haiku-4-5-20251001 --limit 1
 
 How the Claude provider works:
 
-- Doctor: `clawpatch doctor --provider claude` only checks that the Claude Code
+- Doctor: `clawpatch doctor --provider claude` checks that the Claude Code
   binary is available, reads `claude --version`, and blocks known vulnerable
-  versions. It does not validate auth or make a network call; auth failures are
-  reported on the first provider-backed command.
+  versions. In host auth context it also runs one minimal structured provider
+  query through the same auth/runtime boundary; this makes a network request
+  and may consume provider credits.
 - Auth/isolation: provider runs use `--bare` with a default-deny environment.
   Clawpatch forwards only minimal execution variables plus explicit Anthropic
   API key, Vertex AI, Google ADC, cloud-gateway, and Bedrock/AWS auth variables.
@@ -181,6 +195,14 @@ How the Claude provider works:
   Claude tool subprocess env scrubbing is enabled. AWS profile names are
   forwarded only when `AWS_CONFIG_FILE` or `AWS_SHARED_CREDENTIALS_FILE` points
   at explicit profile files.
+- Host auth context: `CLAWPATCH_CLAUDE_AUTH_CONTEXT=host` replaces `--bare`
+  with Claude Code `--safe-mode`, exposes only the host `HOME`/`USERPROFILE`
+  and optional `CLAUDE_CONFIG_DIR` auth locators, and permits
+  `CLAUDE_CODE_OAUTH_TOKEN`. It does not inherit the whole host environment;
+  the auth allowlist, temporary XDG/cache/data directories, subprocess env
+  scrubbing, tool limits, empty strict MCP config, disabled slash commands,
+  and disabled browser integration remain in force. `--safe-mode` disables
+  user and repository customizations while retaining normal authentication.
 - Structured output: provider runs use `--output-format json --json-schema`
   and parse the returned `structured_output` field.
 - Read-only operations (map, review, revalidate): use
@@ -199,10 +221,12 @@ How the Claude provider works:
 - Timeout: 180 seconds by default, override with `CLAWPATCH_CLAUDE_TIMEOUT_MS`
   or `CLAWPATCH_PROVIDER_TIMEOUT_MS`.
 
-Permission caveat: Claude tool restrictions are enforced by Claude Code. For
-write operations during `fix`, Claude may edit the current worktree. For
-untrusted code, run `clawpatch fix --provider claude` inside an isolated
-checkout.
+Permission caveat: Claude tool restrictions are enforced by Claude Code, and
+safe mode is configuration isolation rather than an OS sandbox. Host auth
+context makes the host auth locator visible to the Claude process; use it only
+for trusted repositories. For write operations during `fix`, Claude may edit
+the current worktree. For untrusted code, keep the default isolated auth
+context and run `clawpatch fix --provider claude` inside an isolated checkout.
 
 ## Grok
 

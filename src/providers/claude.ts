@@ -1,5 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCommandArgs } from "../exec.js";
 import { ClawpatchError } from "../errors.js";
@@ -27,6 +27,14 @@ import {
 const CLAUDE_DEFAULT_TIMEOUT_MS = 180_000;
 const CLAUDE_READ_ONLY_TOOLS = "Read,Grep,Glob";
 const CLAUDE_WRITE_TOOLS = "default";
+const CLAUDE_SAFE_MODE_MIN_VERSION: [number, number, number] = [2, 1, 169];
+const CLAUDE_AUTH_SMOKE_SCHEMA = {
+  type: "object",
+  properties: { ok: { type: "boolean", const: true } },
+  required: ["ok"],
+  additionalProperties: false,
+} as const;
+type ClaudeAuthContext = "isolated" | "host";
 const CLAUDE_AUTH_ENV_KEYS = [
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_BASE_URL",
@@ -59,8 +67,10 @@ const CLAUDE_AUTH_ENV_KEYS = [
 export const claudeProvider: Provider = {
   name: "claude",
   async check(root: string): Promise<string> {
+    const authContext = claudeAuthContext();
     const result = await runClaudeCommand(["--version"], root, undefined, {
       includeAuth: false,
+      authContext,
       timeoutMs: claudeTimeoutMs(),
     });
     if (result.exitCode !== 0) {
@@ -68,6 +78,27 @@ export const claudeProvider: Provider = {
     }
     const version = result.stdout.trim() || result.stderr.trim();
     assertClaudeVersionAllowed(version);
+    assertClaudeAuthContextSupported(version, authContext);
+    if (authContext === "host") {
+      const output = await runClaudeJson(
+        root,
+        "Return ok=true to confirm this provider invocation is authenticated.",
+        { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+        CLAUDE_AUTH_SMOKE_SCHEMA,
+        true,
+      );
+      if (
+        typeof output !== "object" ||
+        output === null ||
+        (output as Record<string, unknown>)["ok"] !== true
+      ) {
+        throw new ClawpatchError(
+          "claude provider auth smoke returned an invalid result",
+          8,
+          "malformed-output",
+        );
+      }
+    }
     return version;
   },
   async map(root: string, prompt: string, options: ProviderOptions): Promise<AgentMapOutput> {
@@ -103,11 +134,14 @@ async function runClaudeJson(
   schema: object,
   readOnly: boolean,
 ): Promise<unknown> {
-  const version = await claudeVersion(root);
+  const authContext = claudeAuthContext();
+  const version = await claudeVersion(root, authContext);
   assertClaudeVersionAllowed(version);
-  const args = claudeArgs(schema, options, readOnly);
+  assertClaudeAuthContextSupported(version, authContext);
+  const args = claudeArgs(schema, options, readOnly, authContext);
   const result = await runClaudeCommand(args, root, prompt, {
     includeAuth: true,
+    authContext,
     timeoutMs: claudeTimeoutMs(),
   });
   if (result.exitCode !== 0) {
@@ -120,9 +154,10 @@ async function runClaudeJson(
   return extractClaudeStructuredOutput(result.stdout);
 }
 
-async function claudeVersion(root: string): Promise<string> {
+async function claudeVersion(root: string, authContext: ClaudeAuthContext): Promise<string> {
   const result = await runClaudeCommand(["--version"], root, undefined, {
     includeAuth: false,
+    authContext,
     timeoutMs: claudeTimeoutMs(),
   });
   if (result.exitCode !== 0) {
@@ -131,7 +166,12 @@ async function claudeVersion(root: string): Promise<string> {
   return result.stdout.trim() || result.stderr.trim();
 }
 
-function claudeArgs(schema: object, options: ProviderOptions, readOnly: boolean): string[] {
+function claudeArgs(
+  schema: object,
+  options: ProviderOptions,
+  readOnly: boolean,
+  authContext: ClaudeAuthContext,
+): string[] {
   const args = [
     "-p",
     "--output-format",
@@ -143,7 +183,7 @@ function claudeArgs(schema: object, options: ProviderOptions, readOnly: boolean)
     "--permission-mode",
     readOnly ? "dontAsk" : "acceptEdits",
     "--no-session-persistence",
-    "--bare",
+    authContext === "host" ? "--safe-mode" : "--bare",
     "--strict-mcp-config",
     "--mcp-config",
     JSON.stringify({ mcpServers: {} }),
@@ -174,11 +214,11 @@ async function runClaudeCommand(
   args: string[],
   root: string,
   input: string | undefined,
-  options: { includeAuth: boolean; timeoutMs: number },
+  options: { includeAuth: boolean; authContext: ClaudeAuthContext; timeoutMs: number },
 ): Promise<Awaited<ReturnType<typeof runCommandArgs>>> {
   const dir = await mkdtemp(join(tmpdir(), "clawpatch-claude-"));
   try {
-    const env = claudeEnv(options.includeAuth, dir);
+    const env = claudeEnv(options.includeAuth, dir, options.authContext);
     return await runCommandArgs(claudeExecutable(), args, root, input, {
       trimOutput: false,
       timeoutMs: options.timeoutMs,
@@ -190,13 +230,23 @@ async function runClaudeCommand(
   }
 }
 
-function claudeEnv(includeAuth: boolean, baseDir: string): NodeJS.ProcessEnv {
+function claudeEnv(
+  includeAuth: boolean,
+  baseDir: string,
+  authContext: ClaudeAuthContext,
+): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   copyPathEnv(env);
   copyEnv(env, "SystemRoot");
   copyEnv(env, "ComSpec");
   copyEnv(env, "PATHEXT");
-  env["HOME"] = join(baseDir, "home");
+  if (authContext === "host") {
+    env["HOME"] = process.env["HOME"]?.trim() || homedir();
+    copyEnv(env, "USERPROFILE");
+    copyEnv(env, "CLAUDE_CONFIG_DIR");
+  } else {
+    env["HOME"] = join(baseDir, "home");
+  }
   env["XDG_CONFIG_HOME"] = join(baseDir, "xdg-config");
   env["XDG_CACHE_HOME"] = join(baseDir, "xdg-cache");
   env["XDG_DATA_HOME"] = join(baseDir, "xdg-data");
@@ -214,8 +264,40 @@ function claudeEnv(includeAuth: boolean, baseDir: string): NodeJS.ProcessEnv {
     ) {
       copyEnv(env, "AWS_PROFILE");
     }
+    if (authContext === "host") {
+      copyEnv(env, "CLAUDE_CODE_OAUTH_TOKEN");
+    }
   }
   return env;
+}
+
+function claudeAuthContext(): ClaudeAuthContext {
+  const configured = process.env["CLAWPATCH_CLAUDE_AUTH_CONTEXT"]?.trim().toLowerCase();
+  if (configured === undefined || configured.length === 0 || configured === "isolated") {
+    return "isolated";
+  }
+  if (configured === "host") {
+    return "host";
+  }
+  throw new ClawpatchError(
+    "CLAWPATCH_CLAUDE_AUTH_CONTEXT must be isolated or host",
+    4,
+    "provider-auth",
+  );
+}
+
+function assertClaudeAuthContextSupported(raw: string, authContext: ClaudeAuthContext): void {
+  if (authContext !== "host") {
+    return;
+  }
+  const parsed = parseClaudeVersion(raw);
+  if (parsed === null || compareSemanticVersions(parsed, CLAUDE_SAFE_MODE_MIN_VERSION) < 0) {
+    throw new ClawpatchError(
+      "Claude host auth context requires Claude Code 2.1.169 or newer for --safe-mode",
+      4,
+      "provider-auth",
+    );
+  }
 }
 
 function copyPathEnv(target: NodeJS.ProcessEnv): void {
@@ -290,7 +372,8 @@ function claudeStructuredOutput(value: unknown): { found: boolean; value: unknow
 
 function claudeEnvelopeErrorCode(error: unknown): string | null {
   if (typeof error === "string") {
-    return null;
+    const trimmed = error.trim();
+    return /^[a-z][a-z0-9_.:-]{0,79}$/iu.test(trimmed) ? safeProviderPreview(trimmed) : null;
   }
   if (typeof error !== "object" || error === null) {
     return null;
@@ -374,25 +457,29 @@ function claudeFailureMessage(stdout: string, stderr: string, exitCode: number |
   if (exitCode === 124 || /timed out/iu.test(stderr)) {
     return "claude provider timed out";
   }
-  const combined = `${stderr}\n${claudeFailureSignal(stdout)}`;
+  const signal = claudeFailureSignal(stdout);
+  const combined = `${stderr}\n${signal}`;
   if (
-    /auth|login|api key|unauthorized|authentication|oauth|not authenticated|api_error_status=(?:401|403)\b/iu.test(
+    /auth|login|api key|unauthorized|authentication|oauth|not authenticated|not[- ]logged[- ]in|api_error_status=(?:401|403)\b/iu.test(
       combined,
     )
   ) {
-    return "claude provider auth/config failed";
+    return claudeFailureWithSignal("claude provider auth/config failed", signal);
   }
   if (/quota|rate.?limit|billing|credit|api_error_status=(?:402|429)\b/iu.test(combined)) {
-    return "claude provider quota/rate-limit failed";
+    return claudeFailureWithSignal("claude provider quota/rate-limit failed", signal);
   }
-  const signal = claudeFailureSignal(stdout);
   return signal.length === 0 ? "claude provider failed" : `claude provider failed: ${signal}`;
+}
+
+function claudeFailureWithSignal(message: string, signal: string): string {
+  return signal.length === 0 ? message : `${message}: ${signal}`;
 }
 
 function claudeExitCode(stdout: string, stderr: string, exitCode: number | null): number {
   const combined = `${stderr}\n${claudeFailureSignal(stdout)}`;
   if (
-    /auth|login|api key|unauthorized|authentication|oauth|not authenticated|api_error_status=(?:401|403)\b/iu.test(
+    /auth|login|api key|unauthorized|authentication|oauth|not authenticated|not[- ]logged[- ]in|api_error_status=(?:401|403)\b/iu.test(
       combined,
     )
   ) {
@@ -418,6 +505,13 @@ function claudeFailureSignal(stdout: string): string {
     if (errorCode !== null) {
       parts.push(`error=${errorCode}`);
     }
+    if (record["is_error"] === true) {
+      parts.push("is_error=true");
+    }
+    const result = record["result"];
+    if (typeof result === "string" && /not logged in|please run \/login/iu.test(result)) {
+      parts.push("reason=not-logged-in");
+    }
     for (const key of ["type", "subtype", "api_error_status", "terminal_reason"]) {
       const value = record[key];
       if (typeof value === "string" && value.trim().length > 0) {
@@ -427,7 +521,7 @@ function claudeFailureSignal(stdout: string): string {
       }
     }
   }
-  return parts.filter((part) => part.length > 0).join("; ");
+  return [...new Set(parts.filter((part) => part.length > 0))].slice(0, 12).join("; ");
 }
 
 function assertClaudeVersionAllowed(raw: string): void {
@@ -462,8 +556,10 @@ function claudeTimeoutMs(): number {
 
 export const claudeTesting = {
   addClaudeModelArgs,
+  assertClaudeAuthContextSupported,
   assertClaudeVersionAllowed,
   claudeArgs,
+  claudeAuthContext,
   claudeEffort,
   claudeEnv,
   claudeExitCode,

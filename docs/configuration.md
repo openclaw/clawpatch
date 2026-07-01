@@ -72,6 +72,7 @@ Environment overrides:
 - `CLAWPATCH_PROVIDER`
 - `CLAWPATCH_MODEL`
 - `CLAWPATCH_REASONING_EFFORT`
+- `CLAWPATCH_CLAUDE_AUTH_CONTEXT` (`isolated` or `host`; default `isolated`)
 
 `provider.codexConfig` passes primitive values to Codex as `-c key=value`.
 Only config loaded by `--config` or `CLAWPATCH_CONFIG` may set non-empty

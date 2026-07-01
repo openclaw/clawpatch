@@ -3,6 +3,7 @@
 ## 0.7.1 - Unreleased
 
 - Fixed revalidation prompts to compact historical and feature metadata and hard-cap metadata lists even when configured file limits are high, preventing provider input overflows, thanks @pai-scaffolde.
+- Added an opt-in Claude host auth context that preserves the default-deny environment, uses Claude Code safe mode, validates auth through doctor, and reports redacted OAuth failure signals, thanks @grantjayy.
 
 ## 0.7.0 - 2026-06-15
 

@@ -14,9 +14,11 @@ const {
   addCodexConfigArgs,
   addCodexModelArgs,
   addCodexSandboxArgs,
+  assertClaudeAuthContextSupported,
   assertClaudeVersionAllowed,
   buildAcpxJsonArgs,
   claudeArgs,
+  claudeAuthContext,
   claudeEffort,
   claudeEnv,
   claudeExitCode,
@@ -711,6 +713,7 @@ describe("Claude provider helpers", () => {
       { type: "object" },
       { model: null, reasoningEffort: null, skipGitRepoCheck: false },
       true,
+      "isolated",
     );
 
     expect(args).toEqual([
@@ -738,12 +741,27 @@ describe("Claude provider helpers", () => {
       { type: "object" },
       { model: null, reasoningEffort: null, skipGitRepoCheck: false },
       false,
+      "isolated",
     );
 
     expect(args).toContain("default");
     expect(args).toContain("acceptEdits");
     expect(args).not.toContain("Read,Grep,Glob");
     expect(args).not.toContain("dontAsk");
+  });
+
+  it("uses safe mode instead of bare mode for host auth context", () => {
+    const args = claudeArgs(
+      { type: "object" },
+      { model: null, reasoningEffort: null, skipGitRepoCheck: false },
+      true,
+      "host",
+    );
+
+    expect(args).toContain("--safe-mode");
+    expect(args).not.toContain("--bare");
+    expect(args).toContain("--strict-mcp-config");
+    expect(args).toContain("--disable-slash-commands");
   });
 
   it("passes model and supported effort while ignoring skipGitRepoCheck", () => {
@@ -776,7 +794,7 @@ describe("Claude provider helpers", () => {
       CLAUDE_CODE_OAUTH_TOKEN: "must-not-leak",
     };
 
-    expect(claudeEnv(false, "/tmp/claude")).toEqual({
+    expect(claudeEnv(false, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
       HOME: "/tmp/claude/home",
       XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
@@ -787,7 +805,7 @@ describe("Claude provider helpers", () => {
       TMP: "/tmp/claude",
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
     });
-    expect(claudeEnv(true, "/tmp/claude")).toEqual({
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
       HOME: "/tmp/claude/home",
       XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
@@ -799,6 +817,53 @@ describe("Claude provider helpers", () => {
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
       ANTHROPIC_API_KEY: "secret",
     });
+  });
+
+  it("exposes only Claude host auth locators in host auth context", () => {
+    process.env = {
+      PATH: "/bin",
+      HOME: "/host-home",
+      USERPROFILE: "C:\\Users\\operator",
+      CLAUDE_CONFIG_DIR: "/host-claude-config",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-token",
+      ANTHROPIC_API_KEY: "api-key",
+      OPENAI_API_KEY: "must-not-leak",
+      DATABASE_URL: "must-not-leak",
+    };
+
+    expect(claudeEnv(true, "/tmp/claude", "host")).toEqual({
+      PATH: "/bin",
+      HOME: "/host-home",
+      USERPROFILE: "C:\\Users\\operator",
+      CLAUDE_CONFIG_DIR: "/host-claude-config",
+      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
+      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
+      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      TMPDIR: "/tmp/claude",
+      TEMP: "/tmp/claude",
+      TMP: "/tmp/claude",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+      CLAUDE_CODE_OAUTH_TOKEN: "oauth-token",
+      ANTHROPIC_API_KEY: "api-key",
+    });
+  });
+
+  it("validates Claude auth context and safe-mode version", () => {
+    delete process.env["CLAWPATCH_CLAUDE_AUTH_CONTEXT"];
+    expect(claudeAuthContext()).toBe("isolated");
+
+    process.env["CLAWPATCH_CLAUDE_AUTH_CONTEXT"] = "host";
+    expect(claudeAuthContext()).toBe("host");
+    expect(() => assertClaudeAuthContextSupported("2.1.169 (Claude Code)", "host")).not.toThrow();
+    expect(() => assertClaudeAuthContextSupported("2.1.168 (Claude Code)", "host")).toThrow(
+      /2\.1\.169 or newer/u,
+    );
+    expect(() => assertClaudeAuthContextSupported("unknown", "host")).toThrow(
+      /2\.1\.169 or newer/u,
+    );
+
+    process.env["CLAWPATCH_CLAUDE_AUTH_CONTEXT"] = "everything";
+    expect(() => claudeAuthContext()).toThrow(/must be isolated or host/u);
   });
 
   it("passes Vertex AI auth env vars only when auth is included", () => {
@@ -819,7 +884,7 @@ describe("Claude provider helpers", () => {
       OPENAI_API_KEY: "must-not-leak",
     };
 
-    expect(claudeEnv(false, "/tmp/claude")).toEqual({
+    expect(claudeEnv(false, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
       HOME: "/tmp/claude/home",
       XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
@@ -830,7 +895,7 @@ describe("Claude provider helpers", () => {
       TMP: "/tmp/claude",
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
     });
-    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).toMatchObject({
       CLAUDE_CODE_USE_VERTEX: "1",
       ANTHROPIC_BASE_URL: "https://llm-gateway.example.com",
       ANTHROPIC_AUTH_TOKEN: "gateway-token",
@@ -844,7 +909,7 @@ describe("Claude provider helpers", () => {
       CLOUDSDK_CORE_PROJECT: "sdk-project",
       CLAUDE_CODE_SKIP_VERTEX_AUTH: "1",
     });
-    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("OPENAI_API_KEY");
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).not.toHaveProperty("OPENAI_API_KEY");
   });
 
   it("passes Bedrock auth env vars only when auth is included", () => {
@@ -867,8 +932,10 @@ describe("Claude provider helpers", () => {
       DATABASE_URL: "must-not-leak",
     };
 
-    expect(claudeEnv(false, "/tmp/claude")).not.toHaveProperty("CLAUDE_CODE_USE_BEDROCK");
-    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+    expect(claudeEnv(false, "/tmp/claude", "isolated")).not.toHaveProperty(
+      "CLAUDE_CODE_USE_BEDROCK",
+    );
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).toMatchObject({
       CLAUDE_CODE_USE_BEDROCK: "1",
       CLAUDE_CODE_SKIP_BEDROCK_AUTH: "1",
       ANTHROPIC_BEDROCK_BASE_URL: "https://bedrock-runtime.us-east-1.amazonaws.com",
@@ -884,7 +951,7 @@ describe("Claude provider helpers", () => {
       AWS_ROLE_ARN: "arn:aws:iam::123456789012:role/clawpatch",
       AWS_WEB_IDENTITY_TOKEN_FILE: "/var/aws/web-identity-token",
     });
-    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("DATABASE_URL");
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).not.toHaveProperty("DATABASE_URL");
   });
 
   it("passes AWS_PROFILE only with explicit AWS config or credentials file paths", () => {
@@ -895,17 +962,17 @@ describe("Claude provider helpers", () => {
       AWS_PROFILE: "clawpatch",
     };
 
-    expect(claudeEnv(true, "/tmp/claude")).not.toHaveProperty("AWS_PROFILE");
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).not.toHaveProperty("AWS_PROFILE");
 
     process.env["AWS_CONFIG_FILE"] = "/var/aws/config";
-    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).toMatchObject({
       AWS_CONFIG_FILE: "/var/aws/config",
       AWS_PROFILE: "clawpatch",
     });
 
     delete process.env["AWS_CONFIG_FILE"];
     process.env["AWS_SHARED_CREDENTIALS_FILE"] = "/var/aws/credentials";
-    expect(claudeEnv(true, "/tmp/claude")).toMatchObject({
+    expect(claudeEnv(true, "/tmp/claude", "isolated")).toMatchObject({
       AWS_SHARED_CREDENTIALS_FILE: "/var/aws/credentials",
       AWS_PROFILE: "clawpatch",
     });
@@ -917,11 +984,11 @@ describe("Claude provider helpers", () => {
       ANTHROPIC_API_KEY: "secret",
     };
 
-    expect(claudeEnv(true, "C:\\Temp\\claude")).toMatchObject({
+    expect(claudeEnv(true, "C:\\Temp\\claude", "isolated")).toMatchObject({
       Path: "C:\\Tools",
       ANTHROPIC_API_KEY: "secret",
     });
-    expect(claudeEnv(true, "C:\\Temp\\claude")).not.toHaveProperty("PATH");
+    expect(claudeEnv(true, "C:\\Temp\\claude", "isolated")).not.toHaveProperty("PATH");
   });
 
   it("extracts structured_output from Claude JSON envelopes", () => {
@@ -985,6 +1052,30 @@ describe("Claude provider helpers", () => {
     throw new Error("expected Claude provider failure");
   });
 
+  it("classifies string Claude error envelopes", () => {
+    try {
+      extractClaudeStructuredOutput(JSON.stringify({ error: "authentication_failed" }));
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClawpatchError);
+      expect((err as ClawpatchError).message).toContain("authentication_failed");
+      expect((err as ClawpatchError).exitCode).toBe(4);
+      return;
+    }
+    throw new Error("expected Claude provider failure");
+  });
+
+  it("does not preview arbitrary string Claude errors", () => {
+    try {
+      extractClaudeStructuredOutput(JSON.stringify({ error: "SOURCE CONTEXT SECRET" }));
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClawpatchError);
+      expect((err as ClawpatchError).message).toBe("claude provider error: provider-error");
+      expect((err as ClawpatchError).message).not.toContain("SOURCE CONTEXT SECRET");
+      return;
+    }
+    throw new Error("expected Claude provider failure");
+  });
+
   it("does not include stdout or prompt previews in Claude failure messages", () => {
     const message = claudeFailureMessage("SOURCE_CONTEXT_SECRET", "SOURCE_CONTEXT_SECRET", 1);
 
@@ -1013,7 +1104,8 @@ describe("Claude provider helpers", () => {
 
     const message = claudeFailureMessage(stdout, "", 1);
 
-    expect(message).toBe("claude provider auth/config failed");
+    expect(message).toContain("claude provider auth/config failed");
+    expect(message).toContain("error=authentication_failed");
     expect(message).not.toContain("SOURCE_CONTEXT_SECRET");
     expect(claudeExitCode(stdout, "", 1)).toBe(4);
   });
@@ -1034,12 +1126,34 @@ describe("Claude provider helpers", () => {
       result: "SOURCE_CONTEXT_SECRET",
     });
 
-    expect(claudeFailureMessage(auth, "", 1)).toBe("claude provider auth/config failed");
+    expect(claudeFailureMessage(auth, "", 1)).toContain("claude provider auth/config failed");
     expect(claudeExitCode(auth, "", 1)).toBe(4);
-    expect(claudeFailureMessage(quota, "", 1)).toBe("claude provider quota/rate-limit failed");
+    expect(claudeFailureMessage(quota, "", 1)).toContain("claude provider quota/rate-limit failed");
     expect(claudeExitCode(quota, "", 1)).toBe(5);
     expect(claudeFailureMessage(auth, "", 1)).not.toContain("SOURCE_CONTEXT_SECRET");
     expect(claudeFailureMessage(quota, "", 1)).not.toContain("SOURCE_CONTEXT_SECRET");
+  });
+
+  it("surfaces the reported OAuth failure shape without leaking result text", () => {
+    const stdout = [
+      JSON.stringify({ type: "assistant", error: "authentication_failed" }),
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: "Not logged in · Please run /login",
+        terminal_reason: "completed",
+      }),
+    ].join("\n");
+
+    const message = claudeFailureMessage(stdout, "", 1);
+
+    expect(message).toContain("claude provider auth/config failed");
+    expect(message).toContain("error=authentication_failed");
+    expect(message).toContain("is_error=true");
+    expect(message).toContain("reason=not-logged-in");
+    expect(message).not.toContain("Please run /login");
+    expect(claudeExitCode(stdout, "", 1)).toBe(4);
   });
 
   it("omits Claude error.message from stdout failure signals", () => {
