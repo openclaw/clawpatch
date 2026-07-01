@@ -463,9 +463,9 @@ function revalidationFindingEvidence(finding: FindingRecord): object {
 }
 
 function revalidationFeatureEvidence(feature: FeatureRecord, config: ClawpatchConfig): object {
-  const ownedLimit = config.review.maxOwnedFiles;
-  const contextLimit = config.review.maxContextFiles;
-  const testLimit = config.review.maxContextFiles;
+  const ownedLimit = Math.min(config.review.maxOwnedFiles, REVALIDATE_METADATA_LIST_LIMIT);
+  const contextLimit = Math.min(config.review.maxContextFiles, REVALIDATE_METADATA_LIST_LIMIT);
+  const testLimit = Math.min(config.review.maxContextFiles, REVALIDATE_METADATA_LIST_LIMIT);
   return {
     schemaVersion: feature.schemaVersion,
     featureId: feature.featureId,

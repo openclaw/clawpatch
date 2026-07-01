@@ -2,6 +2,8 @@
 
 ## 0.7.1 - Unreleased
 
+- Fixed revalidation prompts to compact historical and feature metadata and hard-cap metadata lists even when configured file limits are high, preventing provider input overflows, thanks @pai-scaffolde.
+
 ## 0.7.0 - 2026-06-15
 
 - Removed the direct MiniMax HTTP provider and its transport dependency; provider integrations are now explicitly limited to coding harnesses and agent CLIs.

@@ -145,18 +145,15 @@ describe("review prompt provenance", () => {
         createdAt: new Date(2026, 0, index + 1).toISOString(),
       })),
     };
+    const config = defaultConfig();
+    config.review.maxOwnedFiles = 10_000;
+    config.review.maxContextFiles = 10_000;
 
-    const prompt = await buildRevalidatePrompt(
-      root,
-      largeFinding,
-      largeFeature,
-      [],
-      defaultConfig(),
-    );
+    const prompt = await buildRevalidatePrompt(root, largeFinding, largeFeature, [], config);
 
     expect(prompt.length).toBeLessThan(1_048_576);
-    expect(prompt).toContain('"omittedContextFiles": 2476');
-    expect(prompt).toContain('"omittedTests": 176');
+    expect(prompt).toContain('"omittedContextFiles": 2450');
+    expect(prompt).toContain('"omittedTests": 150');
     expect(prompt).toContain('"omittedFindingIds": 150');
     expect(prompt).toContain('"omittedPatchAttemptIds": 150');
     expect(prompt).toContain('"omittedAnalysisHistory": 37');
