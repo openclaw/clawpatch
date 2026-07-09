@@ -186,12 +186,8 @@ Unknown flags fail fast.
 ```json
 {
   "total": 12,
-  "items": [
-    /* finding summaries */
-  ],
-  "results": [
-    /* alias for items */
-  ],
+  "items": [/* finding summaries */],
+  "results": [/* alias for items */],
   "findings": 12,
   "output": "/path/or/null"
 }

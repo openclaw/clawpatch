@@ -538,7 +538,7 @@ function cmakeCommandArgs(body: string, command: string): string[] {
   const needle = command.toLowerCase();
   let depth = 0;
   let blockDepth = 0;
-  for (let index = 0; index < body.length; ) {
+  for (let index = 0; index < body.length;) {
     const skipped = cmakeQuotedOrBracketEnd(body, index);
     if (skipped !== null) {
       index = skipped;
@@ -606,7 +606,7 @@ function cmakeCommandAt(body: string, index: number): CMakeCommandCall | null {
 
 function cmakeCommandClose(body: string, open: number): number | null {
   let depth = 1;
-  for (let index = open + 1; index < body.length; ) {
+  for (let index = open + 1; index < body.length;) {
     const skipped = cmakeQuotedOrBracketEnd(body, index);
     if (skipped !== null) {
       index = skipped;
@@ -711,7 +711,7 @@ function definesMain(source: string): boolean {
 
 function stripCOrCppSyntax(source: string): string {
   let stripped = "";
-  for (let index = 0; index < source.length; ) {
+  for (let index = 0; index < source.length;) {
     const char = source[index];
     const next = source[index + 1];
     if (char === "/" && next === "/") {
@@ -848,7 +848,7 @@ function readVariableWords(body: string, variable: string): string[] {
 
 function stripCMakeComments(source: string): string {
   let output = "";
-  for (let index = 0; index < source.length; ) {
+  for (let index = 0; index < source.length;) {
     if (source[index] === '"') {
       const end = cmakeQuotedEnd(source, index);
       output += source.slice(index, end);
@@ -928,7 +928,7 @@ function splitWords(value: string): string[] {
 
 function cmakeWords(value: string): CMakeWord[] {
   const words: CMakeWord[] = [];
-  for (let index = 0; index < value.length; ) {
+  for (let index = 0; index < value.length;) {
     while (/\s/u.test(value[index] ?? "")) {
       index += 1;
     }
@@ -970,7 +970,7 @@ function cmakeWords(value: string): CMakeWord[] {
 
 function splitCMakeUnquotedWord(value: string): string[] {
   const words = [""];
-  for (let index = 0; index < value.length; ) {
+  for (let index = 0; index < value.length;) {
     const char = value[index];
     if (char === "\\" && index + 1 < value.length) {
       words[words.length - 1] += value[index + 1] ?? "";

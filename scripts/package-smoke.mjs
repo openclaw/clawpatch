@@ -232,7 +232,13 @@ function runSmoke(context) {
   );
 }
 function packFilename(output) {
-  const filename = Array.isArray(output) ? output[0]?.filename : output?.filename;
+  // npm <=11 returns an array; npm 12 keys pack results by package name.
+  const result = Array.isArray(output)
+    ? output[0]
+    : output?.filename
+      ? output
+      : Object.values(output ?? {})[0];
+  const filename = result?.filename;
   if (typeof filename !== "string" || filename.length === 0) {
     throw new Error("npm pack did not report a tarball filename");
   }
