@@ -1,8 +1,9 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { detectProject } from "./detect.js";
 import { mapFeatures } from "./mapper.js";
+import * as projectsModule from "./mappers/projects.js";
 import { discoverNodeProjects, scriptCommand } from "./mappers/projects.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { fixtureRoot, writeFixture } from "./test-helpers.js";
@@ -12923,19 +12924,19 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\LandingPageController;\n" +
-        "use App\\Http\\Controllers\\TrackController;\n" +
-        "Route::get('/', LandingPageController::class);\n" +
-        "Route::post('/tracks', [TrackController::class, 'store']);\n" +
-        "Route::resource('catalog', TrackController::class);\n",
+      "use App\\Http\\Controllers\\LandingPageController;\n" +
+      "use App\\Http\\Controllers\\TrackController;\n" +
+      "Route::get('/', LandingPageController::class);\n" +
+      "Route::post('/tracks', [TrackController::class, 'store']);\n" +
+      "Route::resource('catalog', TrackController::class);\n",
     );
     await writeFixture(
       root,
       "app/Http/Controllers/TrackController.php",
       "<?php\nnamespace App\\Http\\Controllers;\n" +
-        "use App\\Http\\Requests\\StoreTrackRequest;\n" +
-        "use App\\Services\\TrackUploadService;\n" +
-        "final class TrackController {}\n",
+      "use App\\Http\\Requests\\StoreTrackRequest;\n" +
+      "use App\\Services\\TrackUploadService;\n" +
+      "final class TrackController {}\n",
     );
     await writeFixture(
       root,
@@ -13055,15 +13056,15 @@ exclude = ["packages/legacy"]
       root,
       "routes/admin.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
-        "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
+      "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
+      "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
       "routes/api.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\Api\\UserController;\n" +
-        "Route::get('/users', UserController::class);\n",
+      "use App\\Http\\Controllers\\Api\\UserController;\n" +
+      "Route::get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13126,8 +13127,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
-        "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
+      "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
+      "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
     );
     await writeFixture(
       root,
@@ -13183,10 +13184,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
-        "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
-        "Route::get('/admin/users', AdminUserController::class);\n" +
-        "Route::get('/api/users', ApiUserController::class);\n",
+      "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
+      "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
+      "Route::get('/admin/users', AdminUserController::class);\n" +
+      "Route::get('/api/users', ApiUserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13233,8 +13234,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\Api;\n" +
-        "Route::get('/api/users', Api\\UserController::class);\n",
+      "use App\\Http\\Controllers\\Api;\n" +
+      "Route::get('/api/users', Api\\UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13276,8 +13277,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\DashboardController;\n" +
-        "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
+      "use App\\Http\\Controllers\\DashboardController;\n" +
+      "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
     );
     await writeFixture(
       root,
@@ -13315,10 +13316,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\UserController;\n" +
-        'Route::group(["prefix" => "admin"], function () {\n' +
-        '    Route::get("/users", UserController::class);\n' +
-        "});\n",
+      "use App\\Http\\Controllers\\UserController;\n" +
+      'Route::group(["prefix" => "admin"], function () {\n' +
+      '    Route::get("/users", UserController::class);\n' +
+      "});\n",
     );
     await writeFixture(
       root,
@@ -13361,12 +13362,12 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\UserController;\n" +
-        "Route::group(['prefix' => 'admin'], function () {\n" +
-        "    Route::controller(UserController::class)->group(function () {\n" +
-        "        Route::get('/users', 'index');\n" +
-        "    });\n" +
-        "});\n",
+      "use App\\Http\\Controllers\\UserController;\n" +
+      "Route::group(['prefix' => 'admin'], function () {\n" +
+      "    Route::controller(UserController::class)->group(function () {\n" +
+      "        Route::get('/users', 'index');\n" +
+      "    });\n" +
+      "});\n",
     );
     await writeFixture(
       root,
@@ -13405,12 +13406,12 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\UserController;\n" +
-        "Route::group(['middleware' => 'auth'], function () {\n" +
-        "    Route::group(['prefix' => 'admin'], function () {\n" +
-        "        Route::get('/users', UserController::class);\n" +
-        "    });\n" +
-        "});\n",
+      "use App\\Http\\Controllers\\UserController;\n" +
+      "Route::group(['middleware' => 'auth'], function () {\n" +
+      "    Route::group(['prefix' => 'admin'], function () {\n" +
+      "        Route::get('/users', UserController::class);\n" +
+      "    });\n" +
+      "});\n",
     );
     await writeFixture(
       root,
@@ -13449,11 +13450,11 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\UserController;\n" +
-        "Route::prefix('admin')->controller(UserController::class)->group(function () {\n" +
-        "    Route::get('/users', 'index');\n" +
-        "    Route::post('/users', 'store');\n" +
-        "});\n",
+      "use App\\Http\\Controllers\\UserController;\n" +
+      "Route::prefix('admin')->controller(UserController::class)->group(function () {\n" +
+      "    Route::get('/users', 'index');\n" +
+      "    Route::post('/users', 'store');\n" +
+      "});\n",
     );
     await writeFixture(
       root,
@@ -13502,9 +13503,9 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\TrackController;\n" +
-        "Route::get('/tracks', TrackController::class);\n" +
-        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+      "use App\\Http\\Controllers\\TrackController;\n" +
+      "Route::get('/tracks', TrackController::class);\n" +
+      "Route::post('/tracks', [TrackController::class, 'store']);\n",
     );
 
     const project = await detectProject(root);
@@ -13516,10 +13517,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\TrackController;\n" +
-        "Route::get('/catalog/tracks', TrackController::class);\n" +
-        "Route::get('/tracks', TrackController::class);\n" +
-        "Route::post('/tracks', [TrackController::class, 'store']);\n",
+      "use App\\Http\\Controllers\\TrackController;\n" +
+      "Route::get('/catalog/tracks', TrackController::class);\n" +
+      "Route::get('/tracks', TrackController::class);\n" +
+      "Route::post('/tracks', [TrackController::class, 'store']);\n",
     );
 
     const second = await mapFeatures(root, project, []);
@@ -13553,10 +13554,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-        "use App\\Http\\Controllers\\ArchiveController;\n" +
-        "// Route::get('/old', ArchiveController::class);\n" +
-        "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
-        "Route::get('/current', ArchiveController::class);\n",
+      "use App\\Http\\Controllers\\ArchiveController;\n" +
+      "// Route::get('/old', ArchiveController::class);\n" +
+      "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
+      "Route::get('/current', ArchiveController::class);\n",
     );
     await writeFixture(
       root,
@@ -13598,9 +13599,9 @@ exclude = ["packages/legacy"]
       root,
       "app/Console/Commands/SyncCatalog.php",
       "<?php\nnamespace App\\Console\\Commands;\n" +
-        "// protected $signature = 'app:old-sync';\n" +
-        "/* #[Signature('app:blocked-sync')] */\n" +
-        "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
+      "// protected $signature = 'app:old-sync';\n" +
+      "/* #[Signature('app:blocked-sync')] */\n" +
+      "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
     );
 
     const project = await detectProject(root);
@@ -17188,5 +17189,18 @@ EndProject
     expect(titles).not.toContain(".NET project Example");
     expect(ownedFiles).not.toContain("fixtures/Sample/Sample.cs");
     expect(ownedFiles).not.toContain("testdata/Example/Example.cs");
+  });
+
+  it("skips Node.js project discovery I/O for pure Go projects", async () => {
+    const root = await fixtureRoot("clawpatch-map-node-coupling-");
+    await writeFixture(root, "go.mod", "module example.com/go-app\n");
+    await writeFixture(root, "main.go", "package main\nfunc main() {}\n");
+
+    const spy = vi.spyOn(projectsModule, "discoverNodeProjects");
+
+    const project = await detectProject(root);
+    await mapFeatures(root, project, []);
+
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 });

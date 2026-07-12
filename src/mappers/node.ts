@@ -67,11 +67,13 @@ const semanticSourceSegments = [
 export async function nodeSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   const seeds: FeatureSeed[] = [];
 
-  for (const info of context.projects) {
+  const projects = await context.projects();
+  const taskGraph = await context.taskGraph();
+  for (const info of projects) {
     if (hasNodePackage(info)) {
-      seeds.push(...(await packageSeeds(root, info, context.taskGraph)));
+      seeds.push(...(await packageSeeds(root, info, taskGraph)));
     }
-    seeds.push(...(await sourceGroupSeeds(root, info, context.taskGraph)));
+    seeds.push(...(await sourceGroupSeeds(root, info, taskGraph)));
   }
 
   return seeds;

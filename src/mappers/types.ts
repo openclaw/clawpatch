@@ -41,6 +41,6 @@ export type FeatureMapper = {
 };
 
 export type MapperContext = {
-  projects: NodeProjectInfo[];
-  taskGraph: WorkspaceTaskGraph;
+  projects(): Promise<NodeProjectInfo[]>;
+  taskGraph(): Promise<WorkspaceTaskGraph>;
 };

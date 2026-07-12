@@ -286,10 +286,21 @@ function uniqueTests(tests: Array<{ path: string; command: string | null }>): Ar
 }
 
 async function collectSeeds(root: string, options: MapOptions): Promise<FeatureSeed[]> {
-  const projects = await discoverNodeProjects(root);
+  let projectsPromise: ReturnType<typeof discoverNodeProjects> | null = null;
+  let taskGraphPromise: ReturnType<typeof turboTaskGraph> | null = null;
   const context: MapperContext = {
-    projects,
-    taskGraph: await turboTaskGraph(root, projects),
+    projects() {
+      if (projectsPromise === null) {
+        projectsPromise = discoverNodeProjects(root);
+      }
+      return projectsPromise;
+    },
+    taskGraph() {
+      if (taskGraphPromise === null) {
+        taskGraphPromise = this.projects().then((projects) => turboTaskGraph(root, projects));
+      }
+      return taskGraphPromise;
+    },
   };
   const groups = await Promise.all(
     featureMappers.map(async (mapper) => {
