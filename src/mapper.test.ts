@@ -17263,6 +17263,22 @@ EndProject
     expect(result.features.map((feature) => feature.title)).toContain("Node source apps/web/src");
   });
 
+  it("preserves package-less Nx projects outside conventional roots", async () => {
+    const root = await fixtureRoot("clawpatch-map-package-less-nx-");
+    await writeFixture(
+      root,
+      "tools/cli/project.json",
+      JSON.stringify({ name: "cli", sourceRoot: "tools/cli/src" }),
+    );
+    await writeFixture(root, "tools/cli/src/index.ts", "export function main() {}\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+
+    expect(project.detected.languages).not.toContain("typescript");
+    expect(result.features.map((feature) => feature.title)).toContain("Node source tools/cli/src");
+  });
+
   it("propagates Turbo failures and retries with a fresh mapping context", async () => {
     const root = await fixtureRoot("clawpatch-map-turbo-failure-");
     await writeFixture(root, "package.json", JSON.stringify({ name: "node-app" }));

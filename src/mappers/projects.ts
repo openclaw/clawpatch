@@ -127,7 +127,7 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
 }
 
 export async function hasFallbackNodeProjectSignal(root: string): Promise<boolean> {
-  if (await pathExists(join(root, "nx.json"))) {
+  if ((await pathExists(join(root, "nx.json"))) || (await hasNestedNxProject(root, "", 5))) {
     return true;
   }
   for (const prefix of ["apps", "packages", "frontend", "client", "web"]) {
@@ -147,6 +147,26 @@ export async function hasFallbackNodeProjectSignal(root: string): Promise<boolea
       (await pathExists(join(root, candidate, "project.json"))) ||
       (await hasGenericProjectSignal(root, null, candidate))
     ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function hasNestedNxProject(
+  root: string,
+  prefix: string,
+  remainingDepth: number,
+): Promise<boolean> {
+  if (remainingDepth < 0 || shouldSkipProjectDir(prefix)) {
+    return false;
+  }
+  if (prefix.length > 0 && (await pathExists(join(root, prefix, "project.json")))) {
+    return true;
+  }
+  for (const entry of await safeDirectoryEntries(root, prefix)) {
+    const child = prefix.length === 0 ? entry : `${prefix}/${entry}`;
+    if (await hasNestedNxProject(root, child, remainingDepth - 1)) {
       return true;
     }
   }
