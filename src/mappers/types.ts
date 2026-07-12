@@ -37,10 +37,11 @@ export const suppressedTestCommandTag = "validation:test-suppressed";
 
 export type FeatureMapper = {
   name: string;
+  usesNodeContext?: boolean;
   map(root: string, context: MapperContext): Promise<FeatureSeed[]>;
 };
 
 export type MapperContext = {
-  projects(): Promise<NodeProjectInfo[]>;
-  taskGraph(): Promise<WorkspaceTaskGraph>;
+  nodeProjects(): Promise<NodeProjectInfo[]>;
+  nodeTaskGraph(): Promise<WorkspaceTaskGraph>;
 };

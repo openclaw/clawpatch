@@ -13,14 +13,12 @@ import type { WorkspaceTaskGraph } from "./task-graph.js";
 import { FeatureSeed, MapperContext, suppressedTestCommandTag } from "./types.js";
 
 export async function nextSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
-  const projects = await context.projects();
-  const taskGraph = await context.taskGraph();
+  const projects = await context.nodeProjects();
+  const taskGraph = await context.nodeTaskGraph();
   const rootProject = projects.find((project) => project.root === ".");
   const rootHasNext = rootProject === undefined ? false : hasNextDependency(rootProject);
   const seedGroups = await Promise.all(
-    projects.map(async (project) =>
-      projectNextSeeds(root, project, taskGraph, rootHasNext),
-    ),
+    projects.map(async (project) => projectNextSeeds(root, project, taskGraph, rootHasNext)),
   );
   return seedGroups.flat();
 }

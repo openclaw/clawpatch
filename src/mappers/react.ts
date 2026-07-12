@@ -82,7 +82,11 @@ const contextImportExtensions = new Set([
 ]);
 
 export async function reactSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
-  const packages = await discoverReactPackages(root, await context.projects(), await context.taskGraph());
+  const packages = await discoverReactPackages(
+    root,
+    await context.nodeProjects(),
+    await context.nodeTaskGraph(),
+  );
   const importResolver = createReactImportResolver(root);
   const seeds: FeatureSeed[] = [];
   for (const info of packages) {

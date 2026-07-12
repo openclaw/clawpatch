@@ -2,6 +2,7 @@
 
 ## 0.7.1 - Unreleased
 
+- Improved feature mapping so pure non-Node repositories skip Node workspace and Turbo discovery while Node consumers share one lazy context, thanks @Tanmay-008.
 - Fixed revalidation prompts to compact historical and feature metadata and hard-cap metadata lists even when configured file limits are high, preventing provider input overflows, thanks @pai-scaffolde.
 - Added an opt-in Claude host auth context that preserves the default-deny environment, uses Claude Code safe mode, validates auth through doctor, and reports redacted OAuth failure signals, thanks @grantjayy.
 

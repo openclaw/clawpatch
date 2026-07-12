@@ -19,7 +19,8 @@ import { nodeRouteSeeds } from "./mappers/node-routes.js";
 import { nodeSeeds } from "./mappers/node.js";
 import { pythonSeeds } from "./mappers/python.js";
 import { reactSeeds } from "./mappers/react.js";
-import { discoverNodeProjects } from "./mappers/projects.js";
+import { createMapperContext } from "./mappers/context.js";
+import { discoverNodeProjects, hasFallbackNodeProjectSignal } from "./mappers/projects.js";
 import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
 import { createNearbyTestFinder, PathFilters, pathMatchesFilters } from "./mappers/shared.js";
@@ -48,10 +49,10 @@ export type MapOptions = {
 };
 
 const featureMappers: FeatureMapper[] = [
-  { name: "node", map: nodeSeeds },
-  { name: "next", map: nextSeeds },
-  { name: "react", map: reactSeeds },
-  { name: "node-routes", map: nodeRouteSeeds },
+  { name: "node", usesNodeContext: true, map: nodeSeeds },
+  { name: "next", usesNodeContext: true, map: nextSeeds },
+  { name: "react", usesNodeContext: true, map: reactSeeds },
+  { name: "node-routes", usesNodeContext: true, map: nodeRouteSeeds },
   { name: "go", map: goSeeds },
   { name: "python", map: pythonSeeds },
   { name: "ruby", map: rubySeeds },
@@ -73,7 +74,7 @@ export async function mapFeatures(
   existing: FeatureRecord[],
   options: MapOptions = {},
 ): Promise<MapResult> {
-  const seeds = await collectSeeds(root, options);
+  const seeds = await collectSeeds(root, project, options);
   return mapFeatureSeeds(root, project, existing, seeds, options);
 }
 
@@ -285,28 +286,24 @@ function uniqueTests(tests: Array<{ path: string; command: string | null }>): Ar
   return output;
 }
 
-async function collectSeeds(root: string, options: MapOptions): Promise<FeatureSeed[]> {
-  let projectsPromise: ReturnType<typeof discoverNodeProjects> | null = null;
-  let taskGraphPromise: ReturnType<typeof turboTaskGraph> | null = null;
-  const context: MapperContext = {
-    projects() {
-      if (projectsPromise === null) {
-        projectsPromise = discoverNodeProjects(root);
-      }
-      return projectsPromise;
-    },
-    taskGraph() {
-      if (taskGraphPromise === null) {
-        taskGraphPromise = this.projects().then((projects) => turboTaskGraph(root, projects));
-      }
-      return taskGraphPromise;
-    },
-  };
+async function collectSeeds(
+  root: string,
+  project: ProjectRecord,
+  options: MapOptions,
+): Promise<FeatureSeed[]> {
+  const context: MapperContext = createMapperContext({
+    discoverNodeProjects: () => discoverNodeProjects(root),
+    buildNodeTaskGraph: (projects) => turboTaskGraph(root, projects),
+  });
+  const runNodeMappers = shouldRunNodeMappers(root, project);
   const groups = await Promise.all(
     featureMappers.map(async (mapper) => {
       const started = Date.now();
       options.onProgress?.({ event: "mapper-start", mapper: mapper.name });
-      const seeds = await mapper.map(root, context);
+      const seeds =
+        mapper.usesNodeContext === true && !(await runNodeMappers)
+          ? []
+          : await mapper.map(root, context);
       options.onProgress?.({
         event: "mapper-done",
         mapper: mapper.name,
@@ -317,6 +314,20 @@ async function collectSeeds(root: string, options: MapOptions): Promise<FeatureS
     }),
   );
   return dedupeFeatureSeeds(groups.flat());
+}
+
+async function shouldRunNodeMappers(root: string, project: ProjectRecord): Promise<boolean> {
+  if (
+    project.detected.languages.some((language) =>
+      ["javascript", "typescript"].includes(language),
+    ) ||
+    project.detected.packageManagers.some((manager) =>
+      ["node", "npm", "pnpm", "yarn", "bun"].includes(manager),
+    )
+  ) {
+    return true;
+  }
+  return hasFallbackNodeProjectSignal(root);
 }
 
 function statusForChangedFeature(status: FeatureRecord["status"]): FeatureRecord["status"] {

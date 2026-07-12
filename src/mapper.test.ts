@@ -1,14 +1,19 @@
 import { mkdir, symlink } from "node:fs/promises";
 import { basename, join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { detectProject } from "./detect.js";
 import { mapFeatures } from "./mapper.js";
 import * as projectsModule from "./mappers/projects.js";
 import { discoverNodeProjects, scriptCommand } from "./mappers/projects.js";
+import * as turboModule from "./mappers/turbo.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { fixtureRoot, writeFixture } from "./test-helpers.js";
 
 const symlinkIt = process.platform === "win32" ? it.skip : it;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("mapFeatures", () => {
   it("quotes dynamic Node validation command parts", () => {
@@ -1121,6 +1126,8 @@ describe("mapFeatures", () => {
     );
     await writeFixture(root, "apps/web/src/pages/HomePage.test.tsx", "test('home', () => {});\n");
 
+    const projectsSpy = vi.spyOn(projectsModule, "discoverNodeProjects");
+    const taskGraphSpy = vi.spyOn(turboModule, "turboTaskGraph");
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const route = result.features.find((feature) => feature.title === "React route /home");
@@ -1128,6 +1135,8 @@ describe("mapFeatures", () => {
     expect(route?.tests).toEqual([
       { path: "apps/web/src/pages/HomePage.test.tsx", command: "pnpm turbo run test --filter web" },
     ]);
+    expect(projectsSpy).toHaveBeenCalledTimes(1);
+    expect(taskGraphSpy).toHaveBeenCalledTimes(1);
   });
 
   it("suppresses fallback validation commands for persistent Turbo tasks", async () => {
@@ -12924,19 +12933,19 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\LandingPageController;\n" +
-      "use App\\Http\\Controllers\\TrackController;\n" +
-      "Route::get('/', LandingPageController::class);\n" +
-      "Route::post('/tracks', [TrackController::class, 'store']);\n" +
-      "Route::resource('catalog', TrackController::class);\n",
+        "use App\\Http\\Controllers\\LandingPageController;\n" +
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/', LandingPageController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n" +
+        "Route::resource('catalog', TrackController::class);\n",
     );
     await writeFixture(
       root,
       "app/Http/Controllers/TrackController.php",
       "<?php\nnamespace App\\Http\\Controllers;\n" +
-      "use App\\Http\\Requests\\StoreTrackRequest;\n" +
-      "use App\\Services\\TrackUploadService;\n" +
-      "final class TrackController {}\n",
+        "use App\\Http\\Requests\\StoreTrackRequest;\n" +
+        "use App\\Services\\TrackUploadService;\n" +
+        "final class TrackController {}\n",
     );
     await writeFixture(
       root,
@@ -13056,15 +13065,15 @@ exclude = ["packages/legacy"]
       root,
       "routes/admin.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
-      "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
+        "use App\\Http\\Controllers\\Admin\\{UserController};\n" +
+        "Route::prefix('admin')->middleware('auth')->get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
       "routes/api.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\Api\\UserController;\n" +
-      "Route::get('/users', UserController::class);\n",
+        "use App\\Http\\Controllers\\Api\\UserController;\n" +
+        "Route::get('/users', UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13127,8 +13136,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
-      "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
+        "Route::get('/qualified', \\App\\Http\\Controllers\\QualifiedController::class);\n" +
+        "Route::post('/qualified-array', [App\\Http\\Controllers\\ArrayQualifiedController::class, 'store']);\n",
     );
     await writeFixture(
       root,
@@ -13184,10 +13193,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
-      "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
-      "Route::get('/admin/users', AdminUserController::class);\n" +
-      "Route::get('/api/users', ApiUserController::class);\n",
+        "use App\\Http\\Controllers\\Admin\\UserController as AdminUserController;\n" +
+        "use App\\Http\\Controllers\\Api\\UserController as ApiUserController;\n" +
+        "Route::get('/admin/users', AdminUserController::class);\n" +
+        "Route::get('/api/users', ApiUserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13234,8 +13243,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\Api;\n" +
-      "Route::get('/api/users', Api\\UserController::class);\n",
+        "use App\\Http\\Controllers\\Api;\n" +
+        "Route::get('/api/users', Api\\UserController::class);\n",
     );
     await writeFixture(
       root,
@@ -13277,8 +13286,8 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\DashboardController;\n" +
-      "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
+        "use App\\Http\\Controllers\\DashboardController;\n" +
+        "Route::prefix('{tenant}')->get('/dashboard', DashboardController::class);\n",
     );
     await writeFixture(
       root,
@@ -13316,10 +13325,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\UserController;\n" +
-      'Route::group(["prefix" => "admin"], function () {\n' +
-      '    Route::get("/users", UserController::class);\n' +
-      "});\n",
+        "use App\\Http\\Controllers\\UserController;\n" +
+        'Route::group(["prefix" => "admin"], function () {\n' +
+        '    Route::get("/users", UserController::class);\n' +
+        "});\n",
     );
     await writeFixture(
       root,
@@ -13362,12 +13371,12 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\UserController;\n" +
-      "Route::group(['prefix' => 'admin'], function () {\n" +
-      "    Route::controller(UserController::class)->group(function () {\n" +
-      "        Route::get('/users', 'index');\n" +
-      "    });\n" +
-      "});\n",
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::group(['prefix' => 'admin'], function () {\n" +
+        "    Route::controller(UserController::class)->group(function () {\n" +
+        "        Route::get('/users', 'index');\n" +
+        "    });\n" +
+        "});\n",
     );
     await writeFixture(
       root,
@@ -13406,12 +13415,12 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\UserController;\n" +
-      "Route::group(['middleware' => 'auth'], function () {\n" +
-      "    Route::group(['prefix' => 'admin'], function () {\n" +
-      "        Route::get('/users', UserController::class);\n" +
-      "    });\n" +
-      "});\n",
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::group(['middleware' => 'auth'], function () {\n" +
+        "    Route::group(['prefix' => 'admin'], function () {\n" +
+        "        Route::get('/users', UserController::class);\n" +
+        "    });\n" +
+        "});\n",
     );
     await writeFixture(
       root,
@@ -13450,11 +13459,11 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\UserController;\n" +
-      "Route::prefix('admin')->controller(UserController::class)->group(function () {\n" +
-      "    Route::get('/users', 'index');\n" +
-      "    Route::post('/users', 'store');\n" +
-      "});\n",
+        "use App\\Http\\Controllers\\UserController;\n" +
+        "Route::prefix('admin')->controller(UserController::class)->group(function () {\n" +
+        "    Route::get('/users', 'index');\n" +
+        "    Route::post('/users', 'store');\n" +
+        "});\n",
     );
     await writeFixture(
       root,
@@ -13503,9 +13512,9 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\TrackController;\n" +
-      "Route::get('/tracks', TrackController::class);\n" +
-      "Route::post('/tracks', [TrackController::class, 'store']);\n",
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
     );
 
     const project = await detectProject(root);
@@ -13517,10 +13526,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\TrackController;\n" +
-      "Route::get('/catalog/tracks', TrackController::class);\n" +
-      "Route::get('/tracks', TrackController::class);\n" +
-      "Route::post('/tracks', [TrackController::class, 'store']);\n",
+        "use App\\Http\\Controllers\\TrackController;\n" +
+        "Route::get('/catalog/tracks', TrackController::class);\n" +
+        "Route::get('/tracks', TrackController::class);\n" +
+        "Route::post('/tracks', [TrackController::class, 'store']);\n",
     );
 
     const second = await mapFeatures(root, project, []);
@@ -13554,10 +13563,10 @@ exclude = ["packages/legacy"]
       root,
       "routes/web.php",
       "<?php\n" +
-      "use App\\Http\\Controllers\\ArchiveController;\n" +
-      "// Route::get('/old', ArchiveController::class);\n" +
-      "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
-      "Route::get('/current', ArchiveController::class);\n",
+        "use App\\Http\\Controllers\\ArchiveController;\n" +
+        "// Route::get('/old', ArchiveController::class);\n" +
+        "/*\nRoute::get('/blocked', ArchiveController::class);\n*/\n" +
+        "Route::get('/current', ArchiveController::class);\n",
     );
     await writeFixture(
       root,
@@ -13599,9 +13608,9 @@ exclude = ["packages/legacy"]
       root,
       "app/Console/Commands/SyncCatalog.php",
       "<?php\nnamespace App\\Console\\Commands;\n" +
-      "// protected $signature = 'app:old-sync';\n" +
-      "/* #[Signature('app:blocked-sync')] */\n" +
-      "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
+        "// protected $signature = 'app:old-sync';\n" +
+        "/* #[Signature('app:blocked-sync')] */\n" +
+        "final class SyncCatalog { protected $signature = 'app:sync-catalog {--force}'; }\n",
     );
 
     const project = await detectProject(root);
@@ -17191,16 +17200,81 @@ EndProject
     expect(ownedFiles).not.toContain("testdata/Example/Example.cs");
   });
 
-  it("skips Node.js project discovery I/O for pure Go projects", async () => {
-    const root = await fixtureRoot("clawpatch-map-node-coupling-");
+  it.each([
+    {
+      name: "Go",
+      manifest: ["go.mod", "module example.com/go-app\n"],
+      source: ["main.go", "package main\nfunc main() {}\n"],
+    },
+    {
+      name: "Python",
+      manifest: ["pyproject.toml", "[project]\nname = 'python-app'\nversion = '1.0.0'\n"],
+      source: ["src/app.py", "def main(): pass\n"],
+    },
+  ] as const)(
+    "skips Node project and Turbo I/O for pure $name projects",
+    async ({ manifest, source }) => {
+      const root = await fixtureRoot("clawpatch-map-node-coupling-");
+      await writeFixture(root, manifest[0], manifest[1]);
+      await writeFixture(root, source[0], source[1]);
+      const projectsSpy = vi.spyOn(projectsModule, "discoverNodeProjects");
+      const taskGraphSpy = vi.spyOn(turboModule, "turboTaskGraph");
+
+      const project = await detectProject(root);
+      await mapFeatures(root, project, []);
+
+      expect(projectsSpy).not.toHaveBeenCalled();
+      expect(taskGraphSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it("does not block non-Node mappers on the fallback Node signal", async () => {
+    const root = await fixtureRoot("clawpatch-map-node-signal-");
     await writeFixture(root, "go.mod", "module example.com/go-app\n");
     await writeFixture(root, "main.go", "package main\nfunc main() {}\n");
+    const signal = Promise.withResolvers<boolean>();
+    vi.spyOn(projectsModule, "hasFallbackNodeProjectSignal").mockReturnValue(signal.promise);
+    const projectsSpy = vi.spyOn(projectsModule, "discoverNodeProjects");
+    const goDone = Promise.withResolvers<void>();
+    const project = await detectProject(root);
 
-    const spy = vi.spyOn(projectsModule, "discoverNodeProjects");
+    const mapping = mapFeatures(root, project, [], {
+      onProgress(event) {
+        if (event.event === "mapper-done" && event.mapper === "go") {
+          goDone.resolve();
+        }
+      },
+    });
+    await goDone.promise;
+
+    expect(projectsSpy).not.toHaveBeenCalled();
+    signal.resolve(false);
+    await expect(mapping).resolves.toBeDefined();
+  });
+
+  it("preserves package-less Node projects under conventional roots", async () => {
+    const root = await fixtureRoot("clawpatch-map-package-less-node-");
+    await writeFixture(root, "apps/web/src/index.ts", "export function start() {}\n");
 
     const project = await detectProject(root);
-    await mapFeatures(root, project, []);
+    const result = await mapFeatures(root, project, []);
 
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(project.detected.languages).not.toContain("typescript");
+    expect(result.features.map((feature) => feature.title)).toContain("Node source apps/web/src");
+  });
+
+  it("propagates Turbo failures and retries with a fresh mapping context", async () => {
+    const root = await fixtureRoot("clawpatch-map-turbo-failure-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "node-app" }));
+    await writeFixture(root, "src/index.ts", "export const value = true;\n");
+    await writeFixture(root, "turbo.json", "not-json\n");
+    const taskGraphSpy = vi.spyOn(turboModule, "turboTaskGraph");
+    const project = await detectProject(root);
+
+    await expect(mapFeatures(root, project, [])).rejects.toThrow();
+    await writeFixture(root, "turbo.json", JSON.stringify({ tasks: {} }));
+    await expect(mapFeatures(root, project, [])).resolves.toBeDefined();
+
+    expect(taskGraphSpy).toHaveBeenCalledTimes(2);
   });
 });

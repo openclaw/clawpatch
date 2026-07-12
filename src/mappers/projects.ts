@@ -126,6 +126,52 @@ export async function discoverNodeProjects(root: string): Promise<NodeProjectInf
   return [...byRoot.values()].toSorted((left, right) => left.root.localeCompare(right.root));
 }
 
+export async function hasFallbackNodeProjectSignal(root: string): Promise<boolean> {
+  if (await pathExists(join(root, "nx.json"))) {
+    return true;
+  }
+  for (const prefix of ["apps", "packages", "frontend", "client", "web"]) {
+    if (await hasNestedPackageJson(root, prefix, 4)) {
+      return true;
+    }
+  }
+  const candidates = ["frontend", "client", "web", "ui"];
+  for (const parent of ["apps", "packages", "extensions", "plugins"]) {
+    for (const entry of await safeDirectoryEntries(root, parent)) {
+      candidates.push(`${parent}/${entry}`);
+    }
+  }
+  for (const candidate of candidates) {
+    if (
+      (await pathExists(join(root, candidate, "package.json"))) ||
+      (await pathExists(join(root, candidate, "project.json"))) ||
+      (await hasGenericProjectSignal(root, null, candidate))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function hasNestedPackageJson(
+  root: string,
+  prefix: string,
+  remainingDepth: number,
+): Promise<boolean> {
+  if (remainingDepth < 0 || shouldSkipProjectDir(prefix)) {
+    return false;
+  }
+  if (await pathExists(join(root, prefix, "package.json"))) {
+    return true;
+  }
+  for (const entry of await safeDirectoryEntries(root, prefix)) {
+    if (await hasNestedPackageJson(root, `${prefix}/${entry}`, remainingDepth - 1)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function discoverDeclaredPackageRoots(
   root: string,
   rootPackage: NodePackageJson | null,
