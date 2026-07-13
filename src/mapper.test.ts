@@ -492,6 +492,7 @@ describe("mapFeatures", () => {
       "apps/storefront/src/app/checkout/page.test.tsx",
       "test('checkout', () => {});\n",
     );
+    await writeFixture(root, "apps/storefront/src/helper.ts", "export const helper = true;\n");
     await writeFixture(root, "apps/worker/src/index.ts", "export const worker = true;\n");
     await writeFixture(root, "apps/worker/src/index.test.ts", "test('worker', () => {});\n");
     await writeFixture(root, "apps/api/server/index.ts", "export const api = true;\n");
@@ -514,6 +515,11 @@ describe("mapFeatures", () => {
     const worker = result.features.find(
       (feature) => feature.title === "Node source apps/worker/src",
     );
+    const storefrontSource = result.features.find(
+      (feature) =>
+        feature.source === "node-source-group" &&
+        feature.ownedFiles.some((file) => file.path === "apps/storefront/src/helper.ts"),
+    );
     const api = result.features.find((feature) => feature.title === "Node source apps/api/server");
 
     expect(route?.entrypoints[0]?.path).toBe("apps/storefront/src/app/checkout/page.tsx");
@@ -524,6 +530,10 @@ describe("mapFeatures", () => {
       path: "apps/storefront/src/app/checkout/page.test.tsx",
       command: null,
     });
+    expect(storefrontSource?.entrypoints[0]?.path).toBe("apps/storefront/src/helper.ts");
+    expect(storefrontSource?.ownedFiles).not.toContainEqual(
+      expect.objectContaining({ path: "apps/storefront/src/app/checkout/page.tsx" }),
+    );
     expect(worker?.ownedFiles).toContainEqual({
       path: "apps/worker/src/index.ts",
       reason: "source group apps/worker/src",

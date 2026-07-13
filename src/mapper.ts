@@ -334,7 +334,10 @@ function resolveGenericOwnership(seeds: FeatureSeed[]): FeatureSeed[] {
     if (ownedFiles.length === 0) {
       return [];
     }
-    return [{ ...seed, ownedFiles }];
+    const entryPath = specializedOwnedFiles.has(seed.entryPath)
+      ? (ownedFiles[0]?.path ?? seed.entryPath)
+      : seed.entryPath;
+    return [{ ...seed, entryPath, ownedFiles }];
   });
 }
 

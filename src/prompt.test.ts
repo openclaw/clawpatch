@@ -25,11 +25,11 @@ describe("review prompt provenance", () => {
       tests: [],
     };
     const config = defaultConfig();
-    config.review.maxPromptBytes = 100_000;
+    config.review.maxPromptBytes = 50_000;
 
     const bundle = await buildReviewPromptBundle(root, project(root), budgetedFeature, config);
 
-    expect(bundle.manifest.maxPromptBytes).toBe(100_000);
+    expect(bundle.manifest.maxPromptBytes).toBe(50_000);
     expect(bundle.manifest.omittedFiles).toContainEqual({
       path: "src/second.ts",
       role: "owned",
@@ -40,7 +40,26 @@ describe("review prompt provenance", () => {
       role: "context",
       reason: "maxPromptBytes",
     });
-    expect(bundle.manifest.promptBytes).toBeLessThanOrEqual(100_000);
+    expect(bundle.manifest.promptBytes).toBeLessThanOrEqual(50_000);
+  });
+
+  it("omits the first file when even its truncated block exceeds the final prompt budget", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-first-file-budget-");
+    await writeFixture(root, "src/index.ts", `${"a".repeat(30_000)}\n`);
+    const config = defaultConfig();
+    const withoutFiles = { ...feature(), ownedFiles: [], contextFiles: [], tests: [] };
+    const baseline = await buildReviewPromptBundle(root, project(root), withoutFiles, config);
+    config.review.maxPromptBytes = baseline.manifest.promptBytes + 1_000;
+
+    const bundle = await buildReviewPromptBundle(root, project(root), feature(), config);
+
+    expect(bundle.manifest.includedFiles).toEqual([]);
+    expect(bundle.manifest.omittedFiles).toContainEqual({
+      path: "src/index.ts",
+      role: "owned",
+      reason: "maxPromptBytes",
+    });
+    expect(bundle.manifest.promptBytes).toBeLessThanOrEqual(config.review.maxPromptBytes);
   });
 
   it("records included, omitted, and truncated review prompt context", async () => {

@@ -8,6 +8,7 @@ import {
   PatchAttempt,
   ProjectRecord,
 } from "./types.js";
+import { ClawpatchError } from "./errors.js";
 import { validationCommandsForFeature } from "./validation.js";
 
 export type ReviewMode = "default" | "deslopify";
@@ -140,65 +141,58 @@ export async function buildReviewPromptBundle(
   ];
   const fileBlocks: string[] = [];
   const includedFiles: ReviewPromptFileManifest[] = [];
-  const fileContentBudget = Math.max(0, config.review.maxPromptBytes - 64_000);
-  let includedFileBytes = 0;
   for (const { ref, role } of [
     ...owned.map((promptRef) => ({ ref: promptRef, role: "owned" as const })),
     ...context.map((promptRef) => ({ ref: promptRef, role: "context" as const })),
     ...tests.map((promptRef) => ({ ref: promptRef, role: "test" as const })),
   ]) {
     const file = await fileBlockWithManifest(root, ref.path, role);
-    const blockBytes = Buffer.byteLength(file.block, "utf8");
-    if (includedFileBytes + blockBytes > fileContentBudget && includedFiles.length > 0) {
-      omittedFiles.push({ path: ref.path, role, reason: "maxPromptBytes" });
-      continue;
-    }
     fileBlocks.push(file.block);
     includedFiles.push(file.manifest);
-    includedFileBytes += blockBytes;
   }
-  const customBlock =
-    customPrompt !== null && customPrompt.trim() !== ""
-      ? `Additional reviewer guidance (provided via --prompt-file):
+  const renderPrompt = () => {
+    const customBlock =
+      customPrompt !== null && customPrompt.trim() !== ""
+        ? `Additional reviewer guidance (provided via --prompt-file):
 
 ${customPrompt.trim()}
 
 `
-      : "";
-  const promptContext = {
-    maxOwnedFiles: config.review.maxOwnedFiles,
-    maxContextFiles: config.review.maxContextFiles,
-    maxPromptBytes: config.review.maxPromptBytes,
-    includedFiles: includedFiles.map(
-      ({
-        path,
-        role,
-        bytes,
-        includedBytes,
-        includedStartLine,
-        includedEndLine,
-        includedLineRanges,
-        truncated,
-      }) => ({
-        path,
-        role,
-        bytes,
-        includedBytes,
-        includedStartLine,
-        includedEndLine,
-        includedLineRanges,
-        truncated,
-      }),
-    ),
-    omittedFiles,
-  };
-  const validEvidencePaths = [
-    ...new Set(includedFiles.filter((file) => file.readable).map((file) => file.path)),
-  ];
-  const languageGuidance = reviewLanguageGuidance(project);
-  const cudaBlock =
-    mode === "default" && featureIncludesCuda(feature) ? `\n${cudaGuidance()}\n` : "";
-  const prompt = `You are reviewing one semantic feature for clawpatch.
+        : "";
+    const promptContext = {
+      maxOwnedFiles: config.review.maxOwnedFiles,
+      maxContextFiles: config.review.maxContextFiles,
+      maxPromptBytes: config.review.maxPromptBytes,
+      includedFiles: includedFiles.map(
+        ({
+          path,
+          role,
+          bytes,
+          includedBytes,
+          includedStartLine,
+          includedEndLine,
+          includedLineRanges,
+          truncated,
+        }) => ({
+          path,
+          role,
+          bytes,
+          includedBytes,
+          includedStartLine,
+          includedEndLine,
+          includedLineRanges,
+          truncated,
+        }),
+      ),
+      omittedFiles,
+    };
+    const validEvidencePaths = [
+      ...new Set(includedFiles.filter((file) => file.readable).map((file) => file.path)),
+    ];
+    const languageGuidance = reviewLanguageGuidance(project);
+    const cudaBlock =
+      mode === "default" && featureIncludesCuda(feature) ? `\n${cudaGuidance()}\n` : "";
+    const prompt = `You are reviewing one semantic feature for clawpatch.
 
 Return strict JSON only. No markdown fences.
 
@@ -272,15 +266,36 @@ JSON shape:
 
 Files:
 ${fileBlocks.join("\n\n")}`;
-  const promptBytes = Buffer.byteLength(prompt, "utf8");
+    return { prompt, promptContext };
+  };
+  let rendered = renderPrompt();
+  while (
+    Buffer.byteLength(rendered.prompt, "utf8") > config.review.maxPromptBytes &&
+    includedFiles.length > 0
+  ) {
+    const omitted = includedFiles.pop();
+    fileBlocks.pop();
+    if (omitted !== undefined) {
+      omittedFiles.push({ path: omitted.path, role: omitted.role, reason: "maxPromptBytes" });
+    }
+    rendered = renderPrompt();
+  }
+  const promptBytes = Buffer.byteLength(rendered.prompt, "utf8");
+  if (promptBytes > config.review.maxPromptBytes) {
+    throw new ClawpatchError(
+      `review prompt metadata exceeds maxPromptBytes (${promptBytes} > ${config.review.maxPromptBytes})`,
+      2,
+      "invalid-input",
+    );
+  }
   return {
-    prompt,
+    prompt: rendered.prompt,
     manifest: {
-      ...promptContext,
+      ...rendered.promptContext,
       includedFiles,
       omittedFiles,
       promptBytes,
-      approximateTokens: Math.ceil(prompt.length / 4),
+      approximateTokens: Math.ceil(rendered.prompt.length / 4),
     },
   };
 }
