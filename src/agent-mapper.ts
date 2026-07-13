@@ -248,6 +248,9 @@ async function toSeed(
     return null;
   }
   const firstEntry = feature.entrypoints[0] ?? null;
+  const entrypoints = feature.entrypoints
+    .filter((candidate) => allowedFiles.has(normalize(candidate.path)))
+    .map((candidate) => ({ ...candidate, path: normalize(candidate.path) }));
   const reason = feature.reason.trim();
   return {
     title: feature.title,
@@ -261,9 +264,7 @@ async function toSeed(
     symbol: firstEntry?.symbol ?? null,
     route: firstEntry?.route ?? null,
     command: firstEntry?.command ?? null,
-    entrypoints: feature.entrypoints
-      .filter((candidate) => allowedFiles.has(normalize(candidate.path)))
-      .map((candidate) => ({ ...candidate, path: normalize(candidate.path) })),
+    ...(entrypoints.length === 0 ? {} : { entrypoints }),
     ownedFiles,
     contextFiles,
     tests,

@@ -84,13 +84,13 @@ async function sinceFixture(prefix: string): Promise<string> {
   return root;
 }
 
-function agentMapProvider(title: () => string): Provider {
+function agentMapProvider(title: () => string, entrypointPath = "agent/worker.custom"): Provider {
   const feature = () => ({
     title: title(),
     summary: "Provider grouped custom agent files.",
     kind: "library" as const,
     confidence: "medium" as const,
-    entrypoints: [{ path: "agent/worker.custom", symbol: null, route: null, command: null }],
+    entrypoints: [{ path: entrypointPath, symbol: null, route: null, command: null }],
     ownedFiles: [
       { path: "agent/worker.custom", reason: "worker" },
       { path: "agent/scheduler.custom", reason: "scheduler" },
@@ -2091,6 +2091,39 @@ describe("workflow", () => {
     expect(second.features).toHaveLength(1);
     expect(second.features[0]?.featureId).toBe(first.features[0]?.featureId);
     expect(second.stale).toBe(0);
+  });
+
+  it("falls back to an owned file when all agent entrypoints are rejected", async () => {
+    const root = await fixtureRoot("clawpatch-agent-map-entrypoint-fallback-");
+    await writeFixture(root, "agent/worker.custom", "worker source\n");
+    await writeFixture(root, "agent/scheduler.custom", "scheduler source\n");
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    const paths = statePaths(join(root, ".clawpatch"));
+    const project = await readProject(paths);
+    if (project === null) {
+      throw new Error("missing project");
+    }
+    const heuristic = await mapFeatures(root, project, []);
+    const result = await mapWithSource(root, project, [], heuristic, {
+      source: "agent",
+      provider: agentMapProvider(() => "Agent worker group", "dist/agent/generated.custom"),
+      providerOptions: {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      },
+    });
+
+    expect(result.features).toHaveLength(1);
+    expect(result.features[0]?.entrypoints).toEqual([
+      {
+        path: "agent/worker.custom",
+        symbol: null,
+        route: null,
+        command: null,
+      },
+    ]);
   });
 
   it("augments deterministic features when forced agent mapping returns partial coverage", async () => {
