@@ -14,6 +14,7 @@ import { ProjectRecord, ProjectCommands } from "./types.js";
 
 type PackageJson = {
   name?: unknown;
+  packageManager?: unknown;
   scripts?: unknown;
   dependencies?: unknown;
   devDependencies?: unknown;
@@ -162,7 +163,7 @@ async function detectCommands(
   const scripts = packageScripts(pkg);
   const composerScriptMap = composerScripts(composer);
   const defaults = await languageDefaultCommands(root, languages, composer);
-  const packageManager = packageScriptManager(packageManagers);
+  const packageManager = declaredNodePackageManager(pkg) ?? packageScriptManager(packageManagers);
   const composerTestCommand = composerValidationCommand(composerScriptMap, ["test"]);
   return {
     typecheck:
@@ -288,6 +289,10 @@ function packageRunCommand(packageManager: string, script: string): string {
 
 async function detectPackageManagers(root: string): Promise<string[]> {
   const found: string[] = [];
+  const declared = declaredNodePackageManager(await readPackageJson(root));
+  if (declared !== null) {
+    found.push(declared);
+  }
   const nodeChecks: Array<[string, string]> = [
     ["pnpm", "pnpm-lock.yaml"],
     ["npm", "package-lock.json"],
@@ -379,6 +384,14 @@ async function detectPackageManagers(root: string): Promise<string[]> {
     found.push((await hasBundlerConfig(root)) ? "bundler" : "ruby");
   }
   return found;
+}
+
+export function declaredNodePackageManager(pkg: PackageJson | null): string | null {
+  if (typeof pkg?.packageManager !== "string") {
+    return null;
+  }
+  const name = pkg.packageManager.trim().split("@")[0]?.toLowerCase() ?? "";
+  return ["npm", "pnpm", "yarn", "bun"].includes(name) ? name : null;
 }
 
 const pythonPackageManagers = new Set(["uv", "poetry", "pdm", "hatch", "pip", "python"]);
@@ -1094,10 +1107,10 @@ async function detectFrameworks(
   pkg: PackageJson | null,
   composer: ComposerJson | null,
 ): Promise<string[]> {
-  const deps = dependencyNames(pkg);
+  const deps = new Set([...dependencyNames(pkg), ...(await nestedNodeDependencyNames(root, 6))]);
   const composerDeps = composerDependencyNames(composer);
   const frameworks: string[] = [];
-  for (const name of ["next", "express", "fastify", "hono", "vitest"]) {
+  for (const name of ["react", "next", "express", "fastify", "hono", "vitest"]) {
     if (deps.has(name)) {
       frameworks.push(name);
     }
@@ -1145,6 +1158,48 @@ async function detectFrameworks(
     }
   }
   return uniqueStrings(frameworks);
+}
+
+async function nestedNodeDependencyNames(root: string, maxDepth: number): Promise<Set<string>> {
+  const dependencies = new Set<string>();
+  await collectNestedNodeDependencies(root, root, maxDepth, dependencies);
+  return dependencies;
+}
+
+async function collectNestedNodeDependencies(
+  root: string,
+  directory: string,
+  remainingDepth: number,
+  dependencies: Set<string>,
+): Promise<void> {
+  if (remainingDepth < 0) {
+    return;
+  }
+  for (const entry of await readdir(directory).catch(() => [])) {
+    const full = join(directory, entry);
+    const relativePath = posix.normalize(full.slice(root.length + 1).replace(/\\/gu, "/"));
+    if (shouldSkipSearchEntry(entry, relativePath)) {
+      continue;
+    }
+    const info = await lstat(full).catch(() => null);
+    if (info === null || info.isSymbolicLink()) {
+      continue;
+    }
+    if (info.isFile() && entry === "package.json" && directory !== root) {
+      const parsed = await readFile(full, "utf8")
+        .then((source) => JSON.parse(source) as unknown)
+        .catch(() => null);
+      if (typeof parsed === "object" && parsed !== null) {
+        for (const dependency of dependencyNames(parsed as PackageJson)) {
+          dependencies.add(dependency);
+        }
+      }
+      continue;
+    }
+    if (info.isDirectory()) {
+      await collectNestedNodeDependencies(root, full, remainingDepth - 1, dependencies);
+    }
+  }
 }
 
 async function detectMavenFrameworks(root: string): Promise<string[]> {

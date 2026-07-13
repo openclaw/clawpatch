@@ -402,6 +402,7 @@ function manifest(
   return {
     maxOwnedFiles: defaultConfig().review.maxOwnedFiles,
     maxContextFiles: defaultConfig().review.maxContextFiles,
+    maxPromptBytes: defaultConfig().review.maxPromptBytes,
     includedFiles: [
       {
         path,

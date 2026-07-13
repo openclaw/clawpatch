@@ -796,17 +796,16 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const route = result.features.find((feature) => feature.title === "web route /about");
-    const source = result.features.find(
-      (feature) => feature.title === "Node source services/web/src",
-    );
 
     expect(route?.entrypoints[0]?.path).toBe("services/web/src/app/about/page.tsx");
     expect(route?.tags).toEqual(
       expect.arrayContaining(["project:web", "project-root:services/web"]),
     );
-    expect(source?.tags).toEqual(
-      expect.arrayContaining(["project:web", "project-root:services/web"]),
-    );
+    expect(
+      result.features.filter((feature) =>
+        feature.ownedFiles.some((file) => file.path === "services/web/src/app/about/page.tsx"),
+      ),
+    ).toHaveLength(1);
     expect(
       result.features.some((feature) => feature.tags.includes("project-root:./services/web")),
     ).toBe(false);
@@ -1747,7 +1746,7 @@ describe("mapFeatures", () => {
     expect(titles).toContain("Node source app/javascript");
     expect(titles).toContain("Node source src");
     expect(titles).toContain("Node source lib");
-    expect(titles).toContain("Node source pages");
+    expect(referencedFiles).toContain("pages/home.tsx");
     expect(titles).toContain("Rails application configuration");
     expect(titles).toContain("Rails database schema and migrations");
     expect(titles).toContain("Rails database schema and migrations db/migrate#2");
@@ -2207,6 +2206,27 @@ describe("mapFeatures", () => {
     expect(project.detected.packageManagers).toContain("pnpm");
   });
 
+  it("does not classify client filenames as CLI semantic groups", async () => {
+    const root = await fixtureRoot("clawpatch-node-client-group-");
+    await writeFixture(root, "package.json", JSON.stringify({ name: "client-group" }));
+    await writeFixture(
+      root,
+      "scripts/validate-client-build-order.ts",
+      "export const valid = true;\n",
+    );
+    for (let index = 0; index < 12; index += 1) {
+      await writeFixture(root, `scripts/helper-${index}.ts`, `export const value = ${index};\n`);
+    }
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const feature = result.features.find((candidate) =>
+      candidate.ownedFiles.some((file) => file.path === "scripts/validate-client-build-order.ts"),
+    );
+
+    expect(feature).toMatchObject({ kind: "library", trustBoundaries: [] });
+  });
+
   it("maps workspace package metadata, entries, tests, and docs as package context", async () => {
     const root = await fixtureRoot("clawpatch-node-package-context-");
     await writeFixture(root, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
@@ -2520,16 +2540,15 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const route = result.features.find((feature) => feature.title === "web route /");
-    const webSource = result.features.find(
-      (feature) => feature.title === "Node source apps/web/app",
-    );
 
     expect(route?.tests).toEqual([
       { path: "apps/web/app/page.test.tsx", command: "pnpm turbo run test --filter web" },
     ]);
-    expect(webSource?.tests).toEqual([
-      { path: "apps/web/app/page.test.tsx", command: "pnpm turbo run test --filter web" },
-    ]);
+    expect(
+      result.features.filter((feature) =>
+        feature.ownedFiles.some((file) => file.path === "apps/web/app/page.tsx"),
+      ),
+    ).toHaveLength(1);
   });
 
   it("quotes Turbo task filters with shell metacharacters", async () => {
@@ -3071,81 +3090,80 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
-    const admin = result.features.find(
-      (feature) => feature.title === "Express route POST /admin/jobs",
+    const routes = result.features.flatMap((feature) =>
+      feature.entrypoints.flatMap((entrypoint) =>
+        entrypoint.route === null ? [] : [entrypoint.route],
+      ),
     );
-    const webhook = result.features.find(
-      (feature) => feature.title === "Fastify route POST /webhook/github",
-    );
-    const adminMiddleware = result.features.find(
-      (feature) => feature.title === "Express route GET /admin",
-    );
-    const anonymousHandler = result.features.find(
-      (feature) => feature.title === "Express route GET /anonymous",
-    );
-    const fastifyRouteObject = result.features.find(
-      (feature) => feature.title === "Fastify route GET /route-status",
-    );
-    const session = result.features.find(
-      (feature) => feature.title === "Hono route DELETE /sessions/:id",
-    );
+    const featureForRoute = (route: string) =>
+      result.features.find((feature) =>
+        feature.entrypoints.some((entrypoint) => entrypoint.route === route),
+      );
+    const admin = featureForRoute("POST /admin/jobs");
+    const webhook = featureForRoute("POST /webhook/github");
+    const adminMiddleware = featureForRoute("GET /admin");
+    const anonymousHandler = featureForRoute("GET /anonymous");
+    const fastifyRouteObject = featureForRoute("GET /route-status");
+    const session = featureForRoute("DELETE /sessions/:id");
 
     expect(project.detected.frameworks).toEqual(
       expect.arrayContaining(["express", "fastify", "hono"]),
     );
-    expect(titles).toEqual(
-      expect.arrayContaining([
-        "Express route GET /health",
-        "Express route GET /after-postfix-division",
-        "Express route GET /admin",
-        "Express route GET /anonymous",
-        "Express route ALL /proxy",
-        "Express route POST /admin/jobs",
-        "Express route GET /aliased-router",
-        "Express route GET /banner-router",
-        "Express route GET /multiline-banner-router",
-        "Express route GET /semicolon-banner-router",
-        "Express route GET /from-binding-router",
-        "Express route GET /cjs-aliased-router",
-        "Express route GET /assigned-router",
-        "Express route GET /typed-assigned-router",
-        "Express route GET /required-router",
-        "Express route POST /typed-jobs",
-        "Express route PATCH /typed/:id",
-        "Express route GET /users",
-        "Express route DELETE /users",
-        "Express route GET /reports",
-        "Express route GET /projects/:projectId/items",
-        "Express route GET /bom-router",
-        "Express route GET /after-jsx-close",
-        "Express route GET /custom-file-real",
-        "Fastify route GET /status",
-        "Fastify route GET /typed-users/:id",
-        "Fastify route GET /route-status",
-        "Fastify route POST /webhook/github",
-        "Fastify route GET /plugin-users",
-        "Fastify route GET /plugin-app-users",
-        "Fastify route GET /plugin-typed-return-users",
-        "Fastify route GET /plugin-typed-object-return-users",
-        "Fastify route GET /plugin-aliased-type-users",
-        "Fastify route GET /plugin-server-users",
-        "Fastify route GET /plugin-server-return-users",
-        "Fastify route GET /plugin-arrow-users",
-        "Fastify route GET /plugin-bare-arrow-users",
-        "Fastify route GET /plugin-instance-users",
-        "Fastify route GET /plugin-comment-users",
-        "Fastify route GET /plugin-commented-argument-users",
-        "Fastify route GET /plugin-aliased-users",
-        "Fastify route GET /plugin-generic-users",
-        "Fastify route GET /plugin-import-equals-users",
-        "Fastify route GET /plugin-default-require-users",
-        "Fastify route GET /plugin-typed-arrow-users",
-        "Fastify route GET /plugin-inline-users",
-        "Fastify route GET /plugin-inline-arrow-users",
-        "Fastify route GET /plugin-multiline-users",
-        "Hono route GET /api/items",
-        "Hono route DELETE /sessions/:id",
-      ]),
+    expect(routes).toEqual(
+      expect.arrayContaining(
+        [
+          "Express route GET /health",
+          "Express route GET /after-postfix-division",
+          "Express route GET /admin",
+          "Express route GET /anonymous",
+          "Express route ALL /proxy",
+          "Express route POST /admin/jobs",
+          "Express route GET /aliased-router",
+          "Express route GET /banner-router",
+          "Express route GET /multiline-banner-router",
+          "Express route GET /semicolon-banner-router",
+          "Express route GET /from-binding-router",
+          "Express route GET /cjs-aliased-router",
+          "Express route GET /assigned-router",
+          "Express route GET /typed-assigned-router",
+          "Express route GET /required-router",
+          "Express route POST /typed-jobs",
+          "Express route PATCH /typed/:id",
+          "Express route GET /users",
+          "Express route DELETE /users",
+          "Express route GET /reports",
+          "Express route GET /projects/:projectId/items",
+          "Express route GET /bom-router",
+          "Express route GET /after-jsx-close",
+          "Express route GET /custom-file-real",
+          "Fastify route GET /status",
+          "Fastify route GET /typed-users/:id",
+          "Fastify route GET /route-status",
+          "Fastify route POST /webhook/github",
+          "Fastify route GET /plugin-users",
+          "Fastify route GET /plugin-app-users",
+          "Fastify route GET /plugin-typed-return-users",
+          "Fastify route GET /plugin-typed-object-return-users",
+          "Fastify route GET /plugin-aliased-type-users",
+          "Fastify route GET /plugin-server-users",
+          "Fastify route GET /plugin-server-return-users",
+          "Fastify route GET /plugin-arrow-users",
+          "Fastify route GET /plugin-bare-arrow-users",
+          "Fastify route GET /plugin-instance-users",
+          "Fastify route GET /plugin-comment-users",
+          "Fastify route GET /plugin-commented-argument-users",
+          "Fastify route GET /plugin-aliased-users",
+          "Fastify route GET /plugin-generic-users",
+          "Fastify route GET /plugin-import-equals-users",
+          "Fastify route GET /plugin-default-require-users",
+          "Fastify route GET /plugin-typed-arrow-users",
+          "Fastify route GET /plugin-inline-users",
+          "Fastify route GET /plugin-inline-arrow-users",
+          "Fastify route GET /plugin-multiline-users",
+          "Hono route GET /api/items",
+          "Hono route DELETE /sessions/:id",
+        ].map((title) => title.replace(/^(?:Express|Fastify|Hono) route /u, "")),
+      ),
     );
     expect(titles).not.toContain("Express route GET /commented");
     expect(titles).not.toContain("Express route POST /string");
@@ -3173,7 +3191,9 @@ describe("mapFeatures", () => {
     expect(titles).not.toContain("Fastify route GET /concat-");
     expect(titles).not.toContain("Express route DELETE /reports");
     expect(admin?.source).toBe("express-route");
-    expect(admin?.entrypoints[0]).toMatchObject({
+    expect(
+      admin?.entrypoints.find((entrypoint) => entrypoint.route === "POST /admin/jobs"),
+    ).toMatchObject({
       path: "src/server.ts",
       symbol: "createJob",
       route: "POST /admin/jobs",
@@ -3181,9 +3201,17 @@ describe("mapFeatures", () => {
     expect(admin?.tests).toEqual([{ path: "src/server.test.ts", command: "npm run test" }]);
     expect(admin?.trustBoundaries).toContain("auth");
     expect(webhook?.trustBoundaries).toEqual(expect.arrayContaining(["auth", "external-api"]));
-    expect(adminMiddleware?.entrypoints[0]?.symbol).toBe("showAdmin");
-    expect(anonymousHandler?.entrypoints[0]?.symbol).toBeNull();
-    expect(fastifyRouteObject?.entrypoints[0]?.symbol).toBe("routeStatus");
+    expect(
+      adminMiddleware?.entrypoints.find((entrypoint) => entrypoint.route === "GET /admin")?.symbol,
+    ).toBe("showAdmin");
+    expect(
+      anonymousHandler?.entrypoints.find((entrypoint) => entrypoint.route === "GET /anonymous")
+        ?.symbol,
+    ).toBeNull();
+    expect(
+      fastifyRouteObject?.entrypoints.find((entrypoint) => entrypoint.route === "GET /route-status")
+        ?.symbol,
+    ).toBe("routeStatus");
     expect(session?.trustBoundaries).toContain("auth");
   });
 
@@ -3236,24 +3264,27 @@ describe("mapFeatures", () => {
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
-    const routes = result.features
-      .map((feature) => feature.entrypoints[0]?.route)
-      .filter((route): route is string => route !== undefined && route !== null);
+    const routes = result.features.flatMap((feature) =>
+      feature.entrypoints.flatMap((entrypoint) =>
+        entrypoint.route === null ? [] : [entrypoint.route],
+      ),
+    );
 
-    expect(titles).toEqual(
-      expect.arrayContaining([
-        "Fastify route GET /items",
-        "Fastify route POST /items",
-        "Fastify route DELETE /mixed",
-        "Fastify route GET /indexed-mixed",
-        "Fastify route PUT /const-items",
-        "Fastify route PATCH /const-items",
-        "Fastify route OPTIONS /satisfies-items",
-        "Fastify route PATCH /template-static",
-        "Fastify route GET /template-mixed",
-        "Fastify route HEAD /template-mixed-tail",
-      ]),
+    expect(routes).toEqual(
+      expect.arrayContaining(
+        [
+          "Fastify route GET /items",
+          "Fastify route POST /items",
+          "Fastify route DELETE /mixed",
+          "Fastify route GET /indexed-mixed",
+          "Fastify route PUT /const-items",
+          "Fastify route PATCH /const-items",
+          "Fastify route OPTIONS /satisfies-items",
+          "Fastify route PATCH /template-static",
+          "Fastify route GET /template-mixed",
+          "Fastify route HEAD /template-mixed-tail",
+        ].map((title) => title.replace(/^Fastify route /u, "")),
+      ),
     );
     expect(routes.some((route) => route.endsWith(" /dynamic-only"))).toBe(false);
     expect(routes.some((route) => route.endsWith(" /numeric-only"))).toBe(false);
@@ -3427,29 +3458,36 @@ describe("mapFeatures", () => {
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
     const titles = result.features.map((feature) => feature.title);
+    const routes = result.features.flatMap((feature) =>
+      feature.entrypoints.flatMap((entrypoint) =>
+        entrypoint.route === null ? [] : [entrypoint.route],
+      ),
+    );
 
-    expect(titles).toEqual(
-      expect.arrayContaining([
-        "Express route GET /api/users",
-        "Express route GET /api/reports",
-        "Express route POST /api/v1/teams",
-        "Express route DELETE /service/sessions/:id",
-        "Express route GET /middleware/users",
-        "Express route GET /service/generic-middleware-users",
-        "Express route GET /service/async-middleware-users",
-        "Express route GET /service/json-users",
-        "Express route GET /service/imported-users",
-        "Express route GET /service/pathless-users",
-        "Express route GET /service/direct-pathless-users",
-        "Express route GET /service/first-pathless-users",
-        "Express route GET /service/second-pathless-users",
-        "Express route GET /array/array-users",
-        "Express route GET /alt-array/array-users",
-        "Express route GET /*/wildcard-users",
-        "Express route GET /member-users",
-        "Hono route GET /api/users",
-        "Hono route DELETE /api/v1/sessions/:id",
-      ]),
+    expect(routes).toEqual(
+      expect.arrayContaining(
+        [
+          "Express route GET /api/users",
+          "Express route GET /api/reports",
+          "Express route POST /api/v1/teams",
+          "Express route DELETE /service/sessions/:id",
+          "Express route GET /middleware/users",
+          "Express route GET /service/generic-middleware-users",
+          "Express route GET /service/async-middleware-users",
+          "Express route GET /service/json-users",
+          "Express route GET /service/imported-users",
+          "Express route GET /service/pathless-users",
+          "Express route GET /service/direct-pathless-users",
+          "Express route GET /service/first-pathless-users",
+          "Express route GET /service/second-pathless-users",
+          "Express route GET /array/array-users",
+          "Express route GET /alt-array/array-users",
+          "Express route GET /*/wildcard-users",
+          "Express route GET /member-users",
+          "Hono route GET /api/users",
+          "Hono route DELETE /api/v1/sessions/:id",
+        ].map((title) => title.replace(/^(?:Express|Hono) route /u, "")),
+      ),
     );
     expect(titles).not.toContain("Express route GET /users");
     expect(titles).not.toContain("Express route GET /reports");

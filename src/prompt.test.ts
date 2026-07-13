@@ -10,6 +10,39 @@ import { fixtureRoot, writeFixture } from "./test-helpers.js";
 import type { FeatureRecord, FindingRecord, ProjectRecord } from "./types.js";
 
 describe("review prompt provenance", () => {
+  it("caps aggregate file context by the configured prompt budget", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-total-budget-");
+    await writeFixture(root, "src/index.ts", `${"a".repeat(30_000)}\n`);
+    await writeFixture(root, "src/second.ts", `${"b".repeat(30_000)}\n`);
+    await writeFixture(root, "docs/context.md", `${"c".repeat(30_000)}\n`);
+    const budgetedFeature = {
+      ...feature(),
+      ownedFiles: [
+        { path: "src/index.ts", reason: "primary" },
+        { path: "src/second.ts", reason: "secondary" },
+      ],
+      contextFiles: [{ path: "docs/context.md", reason: "context" }],
+      tests: [],
+    };
+    const config = defaultConfig();
+    config.review.maxPromptBytes = 100_000;
+
+    const bundle = await buildReviewPromptBundle(root, project(root), budgetedFeature, config);
+
+    expect(bundle.manifest.maxPromptBytes).toBe(100_000);
+    expect(bundle.manifest.omittedFiles).toContainEqual({
+      path: "src/second.ts",
+      role: "owned",
+      reason: "maxPromptBytes",
+    });
+    expect(bundle.manifest.omittedFiles).toContainEqual({
+      path: "docs/context.md",
+      role: "context",
+      reason: "maxPromptBytes",
+    });
+    expect(bundle.manifest.promptBytes).toBeLessThanOrEqual(100_000);
+  });
+
   it("records included, omitted, and truncated review prompt context", async () => {
     const root = await fixtureRoot("clawpatch-prompt-provenance-");
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");

@@ -316,27 +316,56 @@ export function isSampleProjectPath(path: string): boolean {
 }
 
 export function packageKind(name: string): FeatureSeed["kind"] {
-  if (/config|store|db|github|openai|sync/iu.test(name)) {
+  const tokens = semanticNameTokens(name);
+  if (
+    [
+      "config",
+      "configuration",
+      "store",
+      "storage",
+      "db",
+      "database",
+      "github",
+      "openai",
+      "sync",
+      "service",
+      "server",
+    ].some((token) => tokens.has(token))
+  ) {
     return "service";
   }
-  if (/cli/iu.test(name)) {
+  if (["cli", "command", "commands"].some((token) => tokens.has(token))) {
     return "cli-command";
   }
   return "library";
 }
 
 export function packageTrustBoundaries(name: string): TrustBoundary[] {
+  const tokens = semanticNameTokens(name);
   const boundaries: TrustBoundary[] = [];
-  if (/config|store|db/iu.test(name)) {
+  if (
+    ["config", "configuration", "store", "storage", "db", "database"].some((token) =>
+      tokens.has(token),
+    )
+  ) {
     boundaries.push("filesystem", "database");
   }
-  if (/github|openai|sync/iu.test(name)) {
+  if (["github", "openai", "sync"].some((token) => tokens.has(token))) {
     boundaries.push("network", "external-api", "serialization");
   }
-  if (/cli/iu.test(name)) {
+  if (["cli", "command", "commands"].some((token) => tokens.has(token))) {
     boundaries.push("user-input", "process-exec");
   }
   return boundaries;
+}
+
+function semanticNameTokens(name: string): Set<string> {
+  return new Set(
+    name
+      .toLowerCase()
+      .split(/[^a-z0-9]+/u)
+      .filter(Boolean),
+  );
 }
 
 export function normalize(path: string): string {

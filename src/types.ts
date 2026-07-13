@@ -140,6 +140,7 @@ export const configSchema = z.object({
   review: z.object({
     maxContextFiles: z.number().int().positive(),
     maxOwnedFiles: z.number().int().positive(),
+    maxPromptBytes: z.number().int().positive().optional().default(180_000),
     maxFindingsPerFeature: z.number().int().positive(),
     minConfidenceToFix: z.enum(["high", "medium", "low"]),
   }),

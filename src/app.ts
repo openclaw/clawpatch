@@ -74,6 +74,8 @@ export async function mapCommand(
 ): Promise<unknown> {
   const started = Date.now();
   const loaded = await loadProjectState(context);
+  const detectedProject = await detectProject(loaded.root);
+  const project = { ...detectedProject, createdAt: loaded.project.createdAt };
   const source = parseMapSource(flags);
   const config = applyProviderFlags(loaded.config, flags);
   const provider = source === "heuristic" ? null : providerByName(config.provider.name);
@@ -84,7 +86,7 @@ export async function mapCommand(
     existing: existing.length,
     dryRun: flags["dryRun"] === true,
   });
-  const heuristic = await mapFeatures(loaded.root, loaded.project, existing, {
+  const heuristic = await mapFeatures(loaded.root, project, existing, {
     filters,
     onProgress: (event) => {
       emitProgress(context, "map", event.event, {
@@ -102,7 +104,7 @@ export async function mapCommand(
     changed: heuristic.changed,
     stale: heuristic.stale,
   });
-  const result = await mapWithSource(loaded.root, loaded.project, existing, heuristic, {
+  const result = await mapWithSource(loaded.root, project, existing, heuristic, {
     source,
     provider,
     providerOptions: providerOptions(config),
@@ -132,6 +134,7 @@ export async function mapCommand(
   emitProgress(context, "map", "write-start", {
     features: result.features.length,
   });
+  await writeProject(loaded.paths, project);
   for (const feature of result.features) {
     await writeFeature(loaded.paths, feature);
   }
@@ -177,11 +180,13 @@ export async function statusCommand(context: AppContext): Promise<unknown> {
   for (const id of lockFileIds) {
     activeLockIds.add(id);
   }
+  const activeFeatures = features.filter((feature) => feature.status !== "skipped");
   return {
     project: loaded.project.name,
     branch: git.currentBranch,
     dirty: git.dirty,
-    features: features.length,
+    features: activeFeatures.length,
+    staleFeatures: features.length - activeFeatures.length,
     findings: findings.length,
     openFindings: findings.filter((finding) => finding.status === "open").length,
     activeLocks: activeLockIds.size,

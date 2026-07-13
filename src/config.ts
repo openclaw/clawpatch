@@ -53,6 +53,7 @@ export function defaultConfig(): ClawpatchConfig {
     review: {
       maxContextFiles: 24,
       maxOwnedFiles: 12,
+      maxPromptBytes: 180_000,
       maxFindingsPerFeature: 10,
       minConfidenceToFix: "medium",
     },

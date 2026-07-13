@@ -261,6 +261,9 @@ async function toSeed(
     symbol: firstEntry?.symbol ?? null,
     route: firstEntry?.route ?? null,
     command: firstEntry?.command ?? null,
+    entrypoints: feature.entrypoints
+      .filter((candidate) => allowedFiles.has(normalize(candidate.path)))
+      .map((candidate) => ({ ...candidate, path: normalize(candidate.path) })),
     ownedFiles,
     contextFiles,
     tests,

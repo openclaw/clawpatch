@@ -45,6 +45,7 @@ Default shape:
   "review": {
     "maxContextFiles": 24,
     "maxOwnedFiles": 12,
+    "maxPromptBytes": 180000,
     "maxFindingsPerFeature": 10,
     "minConfidenceToFix": "medium"
   },

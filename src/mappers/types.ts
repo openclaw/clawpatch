@@ -12,6 +12,13 @@ export type SeedTestRef = {
   command: string | null;
 };
 
+export type SeedEntrypoint = {
+  path: string;
+  symbol: string | null;
+  route: string | null;
+  command: string | null;
+};
+
 export type FeatureSeed = {
   title: string;
   summary: string;
@@ -23,6 +30,7 @@ export type FeatureSeed = {
   symbol: string | null;
   route: string | null;
   command: string | null;
+  entrypoints?: SeedEntrypoint[];
   tags: string[];
   trustBoundaries: TrustBoundary[];
   ownedFiles?: SeedFileRef[];

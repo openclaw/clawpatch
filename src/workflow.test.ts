@@ -2289,8 +2289,47 @@ describe("workflow", () => {
     await writeFixture(root, "package.json", JSON.stringify({ name: "stale-cli" }));
     await mapCommand(context);
     const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const status = await statusCommand(context);
 
     expect(features.some((feature) => feature.status === "skipped")).toBe(true);
+    expect(status).toMatchObject({ features: 2, staleFeatures: 1 });
+  });
+
+  it("refreshes detected project metadata on every map", async () => {
+    const root = await fixtureRoot("clawpatch-project-refresh-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "refresh-project",
+        packageManager: "yarn@4.0.0",
+        scripts: { test: "vitest run" },
+      }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "refresh-project",
+        packageManager: "npm@11.0.0",
+        scripts: { test: "vitest run" },
+      }),
+    );
+    await writeFixture(
+      root,
+      "packages/web/package.json",
+      JSON.stringify({ name: "web", dependencies: { react: "1.0.0", express: "1.0.0" } }),
+    );
+    await mapCommand(context);
+    const project = await readProject(statePaths(join(root, ".clawpatch")));
+
+    expect(project?.detected.packageManagers[0]).toBe("npm");
+    expect(project?.detected.commands.test).toBe("npm run test");
+    expect(project?.detected.frameworks).toEqual(expect.arrayContaining(["react", "express"]));
   });
 
   it("counts stale features by missing ids", async () => {
@@ -4498,7 +4537,7 @@ describe("workflow", () => {
     const context = await makeContext(testOptions(root));
     const paths = statePaths(join(root, ".clawpatch"));
     await initCommand(context, {});
-    await checkCommand(root, "git add .clawpatch/config.json");
+    await checkCommand(root, "git add -f .clawpatch/config.json");
     await writeFixture(root, "docs/foo bar.md", "fixed\n");
     const now = new Date().toISOString();
     await writePatchAttempt(paths, {

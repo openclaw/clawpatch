@@ -196,7 +196,7 @@ async function componentSeeds(
         summary: `React component implemented by ${file}.`,
         kind: "ui-flow",
         source: "react-component",
-        confidence: "medium",
+        confidence: "high",
         entryPath: file,
         symbol: componentName,
         route: null,

@@ -123,20 +123,42 @@ async function projectRouteSeeds(
 
   for (const file of files) {
     const source = await readFile(join(root, file), "utf8");
-    for (const route of parseServerRoutes(source, file, frameworks)) {
-      const routeTests = associatedTests([route.filePath], tests, testCommand ?? null);
-      const frameworkLabel = frameworkTitle(route.framework);
+    const routes = parseServerRoutes(source, file, frameworks);
+    for (const framework of frameworks) {
+      const frameworkRoutes = routes.filter((route) => route.framework === framework);
+      if (frameworkRoutes.length === 0) {
+        continue;
+      }
+      const firstRoute = frameworkRoutes[0];
+      if (firstRoute === undefined) {
+        continue;
+      }
+      const routeTests = associatedTests([file], tests, testCommand ?? null);
+      const frameworkLabel = frameworkTitle(framework);
+      const singleRoute = frameworkRoutes.length === 1;
+      const routeList = frameworkRoutes.map((route) => `${route.method} ${route.routePath}`);
       seeds.push({
-        title: `${frameworkLabel} route ${route.method} ${route.routePath}`,
-        summary: `${frameworkLabel} route ${route.method} ${route.routePath} declared in ${route.filePath}.`,
+        title: singleRoute
+          ? `${frameworkLabel} route ${firstRoute.method} ${firstRoute.routePath}`
+          : `${frameworkLabel} routes ${file}`,
+        summary: singleRoute
+          ? `${frameworkLabel} route ${firstRoute.method} ${firstRoute.routePath} declared in ${file}.`
+          : `${frameworkLabel} route module ${file} declares ${frameworkRoutes.length} routes: ${routeList.join(", ")}.`,
         kind: "route",
-        source: `${route.framework}-route`,
-        confidence: "medium",
-        entryPath: route.filePath,
-        symbol: route.symbol,
-        route: `${route.method} ${route.routePath}`,
+        source: `${framework}-route`,
+        confidence: "high",
+        entryPath: file,
+        ...(singleRoute ? {} : { identityKey: `route-module:${framework}:${file}` }),
+        symbol: singleRoute ? firstRoute.symbol : null,
+        route: singleRoute ? `${firstRoute.method} ${firstRoute.routePath}` : null,
         command: null,
-        ownedFiles: [{ path: route.filePath, reason: `${frameworkLabel} route declaration` }],
+        entrypoints: frameworkRoutes.map((route) => ({
+          path: route.filePath,
+          symbol: route.symbol,
+          route: `${route.method} ${route.routePath}`,
+          command: null,
+        })),
+        ownedFiles: [{ path: file, reason: `${frameworkLabel} route module` }],
         contextFiles: uniqueFileRefs([
           ...projectContext,
           ...routeTests.map((test) => ({ path: test.path, reason: "associated test" })),
@@ -144,13 +166,13 @@ async function projectRouteSeeds(
         tests: routeTests,
         tags: [
           "node",
-          route.framework,
+          framework,
           "route",
           "api",
           ...projectTags(project),
           ...(testCommand === null ? [suppressedTestCommandTag] : []),
         ],
-        trustBoundaries: routeTrustBoundaries(route),
+        trustBoundaries: [...new Set(frameworkRoutes.flatMap(routeTrustBoundaries))],
         ...(testCommand === undefined ? {} : { testCommand }),
         skipNearbyTests: true,
       });

@@ -39,6 +39,7 @@ export type ReviewPromptFileManifest = {
 export type ReviewPromptManifest = {
   maxOwnedFiles: number;
   maxContextFiles: number;
+  maxPromptBytes: number;
   includedFiles: ReviewPromptFileManifest[];
   omittedFiles: Array<{ path: string; role: ReviewPromptFileRole; reason: string }>;
   promptBytes: number;
@@ -139,20 +140,22 @@ export async function buildReviewPromptBundle(
   ];
   const fileBlocks: string[] = [];
   const includedFiles: ReviewPromptFileManifest[] = [];
-  for (const ref of owned) {
-    const file = await fileBlockWithManifest(root, ref.path, "owned");
+  const fileContentBudget = Math.max(0, config.review.maxPromptBytes - 64_000);
+  let includedFileBytes = 0;
+  for (const { ref, role } of [
+    ...owned.map((promptRef) => ({ ref: promptRef, role: "owned" as const })),
+    ...context.map((promptRef) => ({ ref: promptRef, role: "context" as const })),
+    ...tests.map((promptRef) => ({ ref: promptRef, role: "test" as const })),
+  ]) {
+    const file = await fileBlockWithManifest(root, ref.path, role);
+    const blockBytes = Buffer.byteLength(file.block, "utf8");
+    if (includedFileBytes + blockBytes > fileContentBudget && includedFiles.length > 0) {
+      omittedFiles.push({ path: ref.path, role, reason: "maxPromptBytes" });
+      continue;
+    }
     fileBlocks.push(file.block);
     includedFiles.push(file.manifest);
-  }
-  for (const ref of context) {
-    const file = await fileBlockWithManifest(root, ref.path, "context");
-    fileBlocks.push(file.block);
-    includedFiles.push(file.manifest);
-  }
-  for (const ref of tests) {
-    const file = await fileBlockWithManifest(root, ref.path, "test");
-    fileBlocks.push(file.block);
-    includedFiles.push(file.manifest);
+    includedFileBytes += blockBytes;
   }
   const customBlock =
     customPrompt !== null && customPrompt.trim() !== ""
@@ -165,6 +168,7 @@ ${customPrompt.trim()}
   const promptContext = {
     maxOwnedFiles: config.review.maxOwnedFiles,
     maxContextFiles: config.review.maxContextFiles,
+    maxPromptBytes: config.review.maxPromptBytes,
     includedFiles: includedFiles.map(
       ({
         path,

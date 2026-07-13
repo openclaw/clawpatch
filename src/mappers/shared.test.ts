@@ -1,5 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { createNearbyTestFinder } from "./shared.js";
+import { createNearbyTestFinder, packageKind, packageTrustBoundaries } from "./shared.js";
+
+describe("package semantics", () => {
+  it("does not mistake client packages for CLI commands", () => {
+    expect(packageKind("@apex/app-code-client packages/apps/code/code-client")).toBe("library");
+    expect(
+      packageTrustBoundaries("@apex/app-code-client packages/apps/code/code-client"),
+    ).not.toContain("process-exec");
+    expect(packageKind("@scope/tool-cli packages/tool-cli")).toBe("cli-command");
+    expect(packageTrustBoundaries("@scope/tool-cli packages/tool-cli")).toContain("process-exec");
+  });
+});
 
 describe("nearby test discovery", () => {
   it("caches shared directory walks for one mapping run", async () => {

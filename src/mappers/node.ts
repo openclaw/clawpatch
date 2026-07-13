@@ -37,7 +37,7 @@ const sourceDirectories = ["src", "lib", "app", "pages", "scripts", "server", "a
 const testDirectories = ["test", "tests", "__tests__"] as const;
 const sourceGroupMaxOwnedFiles = 12;
 const sourceGroupMaxTests = 8;
-const packageOverviewMaxContextFiles = 40;
+const packageOverviewMaxContextFiles = 16;
 const semanticSourceSegments = [
   "monitor",
   "webhook",
@@ -114,7 +114,7 @@ async function packageSeeds(
     summary: packageSummary,
     kind: packageKind(`${packageName} ${info.root}`),
     source: manifestSource,
-    confidence: "medium",
+    confidence: "high",
     entryPath: info.packageJsonPath,
     symbol: packageName,
     route: null,
@@ -168,7 +168,7 @@ async function packageSeeds(
           : `Package script '${script}' in ${info.packageJsonPath}: ${command}`,
       kind: script === "test" ? "test-suite" : "release",
       source: "package-json-script",
-      confidence: "medium",
+      confidence: "high",
       entryPath: info.packageJsonPath,
       symbol: script,
       route: null,
@@ -223,7 +223,7 @@ async function sourceGroupSeeds(
             : `Node/TypeScript source group ${group.label} with ${group.files.length} files.`,
         kind: packageKind(`${packageName} ${group.label}`),
         source: "node-source-group",
-        confidence: "medium",
+        confidence: group.files.length === 1 || group.label.includes("/:") ? "high" : "medium",
         entryPath,
         symbol: group.label,
         route: null,
@@ -284,7 +284,7 @@ async function packageOverviewContextFiles(
   const entryRefs = await packageEntryContextFiles(root, info);
   const sourceRefs = await packageSourceOverviewRefs(root, info);
   const testRefs = (await packageTestFiles(root, info))
-    .slice(0, 12)
+    .slice(0, 4)
     .map((path) => ({ path, reason: "package test" }));
   return uniqueFileRefs([...docs, ...entryRefs, ...sourceRefs, ...testRefs]).slice(
     0,
@@ -360,7 +360,7 @@ async function packageSourceOverviewRefs(root: string, info: PackageInfo): Promi
   )
     .flat()
     .filter((path, index, all) => all.indexOf(path) === index)
-    .slice(0, 24);
+    .slice(0, 8);
   return files.map((path) => ({ path, reason: "package source overview" }));
 }
 
@@ -654,7 +654,7 @@ function semanticSegmentForFile(path: string): string | null {
     basenameWithoutExtension.split(/[^a-z0-9]+/u).filter((token) => token.length > 0),
   );
   for (const segment of semanticSourceSegments) {
-    if (tokens.has(segment) || basenameWithoutExtension.includes(segment)) {
+    if (tokens.has(segment) || (segment !== "cli" && basenameWithoutExtension.includes(segment))) {
       return segment === "command" ? "commands" : segment;
     }
   }

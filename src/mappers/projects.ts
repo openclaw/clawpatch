@@ -1,6 +1,6 @@
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { packageScripts, readPackageJson } from "../detect.js";
+import { declaredNodePackageManager, packageScripts, readPackageJson } from "../detect.js";
 import { pathExists } from "../fs.js";
 import { shellQuotePath } from "../shell.js";
 import { isSafeDirectory, normalize, pathMatchesPrefix, shouldSkip } from "./shared.js";
@@ -9,6 +9,7 @@ import type { SeedFileRef } from "./types.js";
 
 export type NodePackageJson = {
   name?: unknown;
+  packageManager?: unknown;
   scripts?: unknown;
   dependencies?: unknown;
   devDependencies?: unknown;
@@ -1061,11 +1062,18 @@ function packageDisplayName(
 }
 
 export async function detectNodePackageManager(root: string): Promise<string> {
+  const declared = declaredNodePackageManager(await readPackageJson(root));
+  if (declared !== null) {
+    return declared;
+  }
   if (
     (await pathExists(join(root, "pnpm-lock.yaml"))) ||
     (await pathExists(join(root, "pnpm-workspace.yaml")))
   ) {
     return "pnpm";
+  }
+  if (await pathExists(join(root, "package-lock.json"))) {
+    return "npm";
   }
   if (await pathExists(join(root, "yarn.lock"))) {
     return "yarn";

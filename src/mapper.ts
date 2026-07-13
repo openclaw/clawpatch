@@ -127,14 +127,17 @@ export async function mapFeatureSeeds(
       kind: seed.kind,
       source: seed.source,
       confidence: seed.confidence,
-      entrypoints: [
-        {
-          path: seed.entryPath,
-          symbol: identity.symbol,
-          route: seed.route,
-          command: seed.command,
-        },
-      ],
+      entrypoints:
+        seed.entrypoints === undefined
+          ? [
+              {
+                path: seed.entryPath,
+                symbol: identity.symbol,
+                route: seed.route,
+                command: seed.command,
+              },
+            ]
+          : seed.entrypoints,
       ownedFiles: seed.ownedFiles ?? [{ path: seed.entryPath, reason: "entrypoint" }],
       contextFiles,
       tests,
@@ -313,7 +316,26 @@ async function collectSeeds(
       return seeds;
     }),
   );
-  return dedupeFeatureSeeds(groups.flat());
+  return resolveGenericOwnership(dedupeFeatureSeeds(groups.flat()));
+}
+
+function resolveGenericOwnership(seeds: FeatureSeed[]): FeatureSeed[] {
+  const specializedOwnedFiles = new Set(
+    seeds
+      .filter((seed) => seed.source !== "node-source-group")
+      .flatMap((seed) => seed.ownedFiles ?? [{ path: seed.entryPath, reason: "entrypoint" }])
+      .map((ref) => ref.path),
+  );
+  return seeds.flatMap((seed) => {
+    if (seed.source !== "node-source-group" || seed.ownedFiles === undefined) {
+      return [seed];
+    }
+    const ownedFiles = seed.ownedFiles.filter((ref) => !specializedOwnedFiles.has(ref.path));
+    if (ownedFiles.length === 0) {
+      return [];
+    }
+    return [{ ...seed, ownedFiles }];
+  });
 }
 
 async function shouldRunNodeMappers(root: string, project: ProjectRecord): Promise<boolean> {
