@@ -15,10 +15,10 @@ import {
   withCudaConcurrency,
 } from "./shared.js";
 import { cCppGroupSeeds } from "./c-cpp-groups.js";
-import { FeatureSeed, SeedFileRef } from "./types.js";
+import { FeatureSeed, MapperContext, SeedFileRef } from "./types.js";
 
-export async function cCppSeeds(root: string): Promise<FeatureSeed[]> {
-  const files = (await walk(root, [""], shouldSkipCOrCppPath)).filter(
+export async function cCppSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
+  const files = (await walk(root, [""], shouldSkipCOrCppPath, context.vfs)).filter(
     (path) =>
       !isSampleProjectPath(path) && (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
   );

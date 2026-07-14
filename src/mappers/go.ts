@@ -3,14 +3,14 @@ import { readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { pathExists } from "../fs.js";
 import { packageKind, packageTrustBoundaries, normalize, shouldSkip, walk } from "./shared.js";
-import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
+import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
-export async function goSeeds(root: string): Promise<FeatureSeed[]> {
+export async function goSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   if (!(await pathExists(join(root, "go.mod")))) {
     return [];
   }
   const modulePath = await goModulePath(root);
-  const packages = await goPackages(root, modulePath);
+  const packages = await goPackages(root, modulePath, context);
   const packageByImport = new Map(packages.map((pkg) => [pkg.importPath, pkg]));
   const seeds: FeatureSeed[] = [];
   for (const pkg of packages) {
@@ -36,12 +36,12 @@ type GoPackageFiles = {
   generated: string[];
 };
 
-async function goPackages(root: string, modulePath: string | null): Promise<GoPackage[]> {
+async function goPackages(root: string, modulePath: string | null, context: MapperContext): Promise<GoPackage[]> {
   const listed = await goListPackages(root);
   if (listed.length > 0) {
     return listed;
   }
-  return fallbackGoPackages(root, modulePath);
+  return fallbackGoPackages(root, modulePath, context);
 }
 
 async function goListPackages(root: string): Promise<GoPackage[]> {
@@ -66,9 +66,9 @@ async function goListPackages(root: string): Promise<GoPackage[]> {
   return packages;
 }
 
-async function fallbackGoPackages(root: string, modulePath: string | null): Promise<GoPackage[]> {
+async function fallbackGoPackages(root: string, modulePath: string | null, context: MapperContext): Promise<GoPackage[]> {
   const dirs = new Set<string>();
-  for (const file of await walk(root, [""])) {
+  for (const file of await walk(root, [""], shouldSkip, context.vfs)) {
     if (!file.endsWith(".go")) {
       continue;
     }

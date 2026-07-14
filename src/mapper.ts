@@ -27,6 +27,7 @@ import { createNearbyTestFinder, PathFilters, pathMatchesFilters } from "./mappe
 import { swiftSeeds } from "./mappers/swift.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
+import { createVfsCache } from "./mappers/vfs-cache.js";
 import { FeatureRecord, ProjectRecord } from "./types.js";
 
 export type MapResult = {
@@ -291,10 +292,13 @@ async function collectSeeds(
   project: ProjectRecord,
   options: MapOptions,
 ): Promise<FeatureSeed[]> {
-  const context: MapperContext = createMapperContext({
-    discoverNodeProjects: () => discoverNodeProjects(root),
-    buildNodeTaskGraph: (projects) => turboTaskGraph(root, projects),
-  });
+  const context: MapperContext = {
+    ...createMapperContext({
+      discoverNodeProjects: () => discoverNodeProjects(root),
+      buildNodeTaskGraph: (projects) => turboTaskGraph(root, projects),
+    }),
+    vfs: createVfsCache(),
+  };
   const runNodeMappers = shouldRunNodeMappers(root, project);
   const groups = await Promise.all(
     featureMappers.map(async (mapper) => {

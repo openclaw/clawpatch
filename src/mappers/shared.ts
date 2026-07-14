@@ -190,23 +190,28 @@ export async function walk(
   root: string,
   prefixes: string[],
   skipPath: (path: string) => boolean = shouldSkip,
+  vfs?: import("./vfs-cache.js").VfsCache,
 ): Promise<string[]> {
+  const fsLstat = vfs ? vfs.fileStat : lstat;
+  const fsRealpath = vfs
+    ? vfs.resolveRealpath
+    : (p: string) => realpath(p).catch(() => p);
   const files: string[] = [];
   const seen = new Set<string>();
   const seenRoots = new Set<string>();
-  const realRoot = await realpath(root).catch(() => root);
+  const realRoot = await fsRealpath(root);
   for (const prefix of prefixes) {
     const start = join(root, prefix);
     if (!(await pathExists(start))) {
       continue;
     }
-    let info = await lstat(start);
-    const canonicalStart = await realpath(start).catch(() => start);
+    let info = await fsLstat(start);
+    const canonicalStart = await fsRealpath(start);
     if (info.isSymbolicLink() && prefix !== "") {
       continue;
     }
     if (info.isSymbolicLink()) {
-      info = await lstat(canonicalStart).catch(() => info);
+      info = await fsLstat(canonicalStart).catch(() => info);
     }
     if (!pathInsideRoot(realRoot, canonicalStart)) {
       continue;
@@ -223,7 +228,7 @@ export async function walk(
       continue;
     }
     seenRoots.add(canonicalStart);
-    await walkDir(realRoot, canonicalStart, files, seen, skipPath);
+    await walkDir(realRoot, canonicalStart, files, seen, skipPath, vfs);
   }
   return files.toSorted();
 }
@@ -234,12 +239,18 @@ async function walkDir(
   files: string[],
   seen: Set<string>,
   skipPath: (path: string) => boolean,
+  vfs?: import("./vfs-cache.js").VfsCache,
 ): Promise<void> {
-  const dirInfo = await lstat(dir);
+  const fsLstat = vfs ? vfs.fileStat : lstat;
+  const fsRealpath = vfs
+    ? vfs.resolveRealpath
+    : (p: string) => realpath(p).catch(() => p);
+  const fsReaddir = vfs ? vfs.readDirectory : readdir;
+  const dirInfo = await fsLstat(dir);
   if (dirInfo.isSymbolicLink()) {
     return;
   }
-  const realDir = await realpath(dir).catch(() => dir);
+  const realDir = await fsRealpath(dir);
   if (!pathInsideRoot(root, realDir)) {
     return;
   }
@@ -247,7 +258,7 @@ async function walkDir(
   if (skipPath(relDir)) {
     return;
   }
-  const entries = await readdir(dir);
+  const entries = await fsReaddir(dir);
   for (const entry of entries) {
     const full = join(dir, entry);
     const rel = normalize(relative(root, full));
@@ -255,12 +266,12 @@ async function walkDir(
       continue;
     }
     seen.add(rel);
-    const info = await lstat(full);
+    const info = await fsLstat(full);
     if (info.isSymbolicLink()) {
       continue;
     }
     if (info.isDirectory()) {
-      await walkDir(root, full, files, seen, skipPath);
+      await walkDir(root, full, files, seen, skipPath, vfs);
     } else if (info.isFile()) {
       files.push(rel);
     }

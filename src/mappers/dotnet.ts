@@ -4,7 +4,7 @@ import { shellQuotePath } from "../shell.js";
 import { TrustBoundary } from "../types.js";
 import { partitionFileGroups } from "./grouping.js";
 import { isSampleProjectPath, normalize, pathMatchesPrefix, shouldSkip, walk } from "./shared.js";
-import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
+import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 const maxOwnedFiles = 12;
 const maxTests = 8;
@@ -31,8 +31,8 @@ type DotnetSolution = {
   projectPaths: string[];
 };
 
-export async function dotnetSeeds(root: string): Promise<FeatureSeed[]> {
-  const files = await walk(root, [""], shouldSkipDotnetPath);
+export async function dotnetSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
+  const files = await walk(root, [""], shouldSkipDotnetPath, context.vfs);
   const fileSet = new Set(files);
   const solutions = await dotnetSolutions(root, files.filter(isDotnetSolutionPath));
   const projectPaths = uniqueStrings([

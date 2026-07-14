@@ -1,6 +1,7 @@
 import { FeatureRecord, TrustBoundary } from "../types.js";
 import type { NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
+import type { VfsCache } from "./vfs-cache.js";
 
 export type SeedFileRef = {
   path: string;
@@ -44,4 +45,5 @@ export type FeatureMapper = {
 export type MapperContext = {
   nodeProjects(): Promise<NodeProjectInfo[]>;
   nodeTaskGraph(): Promise<WorkspaceTaskGraph>;
+  vfs: VfsCache;
 };
