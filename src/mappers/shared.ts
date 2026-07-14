@@ -193,9 +193,7 @@ export async function walk(
   vfs?: import("./vfs-cache.js").VfsCache,
 ): Promise<string[]> {
   const fsLstat = vfs ? vfs.fileStat : lstat;
-  const fsRealpath = vfs
-    ? vfs.resolveRealpath
-    : (p: string) => realpath(p).catch(() => p);
+  const fsRealpath = vfs ? vfs.resolveRealpath : (p: string) => realpath(p).catch(() => p);
   const files: string[] = [];
   const seen = new Set<string>();
   const seenRoots = new Set<string>();
@@ -242,9 +240,7 @@ async function walkDir(
   vfs?: import("./vfs-cache.js").VfsCache,
 ): Promise<void> {
   const fsLstat = vfs ? vfs.fileStat : lstat;
-  const fsRealpath = vfs
-    ? vfs.resolveRealpath
-    : (p: string) => realpath(p).catch(() => p);
+  const fsRealpath = vfs ? vfs.resolveRealpath : (p: string) => realpath(p).catch(() => p);
   const fsReaddir = vfs ? vfs.readDirectory : readdir;
   const dirInfo = await fsLstat(dir);
   if (dirInfo.isSymbolicLink()) {

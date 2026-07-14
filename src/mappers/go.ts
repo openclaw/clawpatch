@@ -36,7 +36,11 @@ type GoPackageFiles = {
   generated: string[];
 };
 
-async function goPackages(root: string, modulePath: string | null, context: MapperContext): Promise<GoPackage[]> {
+async function goPackages(
+  root: string,
+  modulePath: string | null,
+  context: MapperContext,
+): Promise<GoPackage[]> {
   const listed = await goListPackages(root);
   if (listed.length > 0) {
     return listed;
@@ -66,7 +70,11 @@ async function goListPackages(root: string): Promise<GoPackage[]> {
   return packages;
 }
 
-async function fallbackGoPackages(root: string, modulePath: string | null, context: MapperContext): Promise<GoPackage[]> {
+async function fallbackGoPackages(
+  root: string,
+  modulePath: string | null,
+  context: MapperContext,
+): Promise<GoPackage[]> {
   const dirs = new Set<string>();
   for (const file of await walk(root, [""], shouldSkip, context.vfs)) {
     if (!file.endsWith(".go")) {
