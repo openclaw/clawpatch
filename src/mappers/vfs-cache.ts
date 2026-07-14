@@ -16,7 +16,7 @@ export function createVfsCache(): VfsCache {
     readDirectory(path: string): Promise<string[]> {
       let cached = dirCache.get(path);
       if (cached === undefined) {
-        cached = readdir(path).catch(() => []);
+        cached = readdir(path);
         dirCache.set(path, cached);
       }
       return cached;
