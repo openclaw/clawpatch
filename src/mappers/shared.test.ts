@@ -18,7 +18,12 @@ describe("package semantics", () => {
     );
     expect(packageKind("ToolCli")).toBe("cli-command");
     expect(packageTrustBoundaries("ToolCli")).toContain("process-exec");
-    expect(packageTrustBoundaries("GitHubSync")).toEqual(
+    expect(packageKind("GitHubClient")).toBe("service");
+    expect(packageTrustBoundaries("GitHubClient")).toEqual(
+      expect.arrayContaining(["network", "external-api", "serialization"]),
+    );
+    expect(packageKind("OpenAIClient")).toBe("service");
+    expect(packageTrustBoundaries("OpenAIClient")).toEqual(
       expect.arrayContaining(["network", "external-api", "serialization"]),
     );
   });

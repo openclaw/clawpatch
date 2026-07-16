@@ -360,14 +360,21 @@ export function packageTrustBoundaries(name: string): TrustBoundary[] {
 }
 
 function semanticNameTokens(name: string): Set<string> {
-  return new Set(
-    name
-      .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
-      .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
-      .toLowerCase()
-      .split(/[^a-z0-9]+/u)
-      .filter(Boolean),
-  );
+  const parts = name
+    .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/u)
+    .filter(Boolean);
+  const tokens = new Set(parts);
+  const knownCompounds = new Set(["github", "openai"]);
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const compound = `${parts[index]}${parts[index + 1]}`;
+    if (knownCompounds.has(compound)) {
+      tokens.add(compound);
+    }
+  }
+  return tokens;
 }
 
 export function normalize(path: string): string {

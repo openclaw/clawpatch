@@ -3099,7 +3099,6 @@ describe("mapFeatures", () => {
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
     const routes = result.features.flatMap((feature) =>
       feature.entrypoints.flatMap((entrypoint) =>
         entrypoint.route === null ? [] : [entrypoint.route],
@@ -3175,31 +3174,30 @@ describe("mapFeatures", () => {
         ].map((title) => title.replace(/^(?:Express|Fastify|Hono) route /u, "")),
       ),
     );
-    expect(titles).not.toContain("Express route GET /commented");
-    expect(titles).not.toContain("Express route POST /string");
-    expect(titles).not.toContain("Express route GET /regex-health");
-    expect(titles).not.toContain("Express route GET /arrow-regex");
-    expect(titles).not.toContain("Express route GET /returned-regex");
-    expect(titles).not.toContain("Express route GET /other-router");
-    expect(titles).not.toContain("Express route GET /commented-out-router");
-    expect(titles).not.toContain("Express route GET /commented-type-router");
-    expect(titles).not.toContain("Express route GET /exported-type-router");
-    expect(titles).not.toContain("Express route GET /regex-import-router");
-    expect(titles).not.toContain("Express route GET /jsx-import-router");
-    expect(titles).not.toContain("Express route GET /custom-import-router");
-    expect(titles).not.toContain("Express route GET /custom-router");
-    expect(titles).not.toContain("Express route GET /custom-alias-router");
-    expect(titles).not.toContain("Express route GET /cjs-not-router");
-    expect(titles).not.toContain("Express route GET /assigned-not-router");
-    expect(titles).not.toContain("Express route GET /dynamic/");
-    expect(titles).not.toContain("Fastify route GET /dynamic/");
-    expect(titles).not.toContain("Fastify route GET /not-plugin-app");
-    expect(titles).not.toContain("Fastify route GET /not-plugin-app-typed");
-    expect(titles).not.toContain("Fastify route GET /not-plugin-server");
-    expect(titles).not.toContain("Fastify route GET /not-plugin-options");
-    expect(titles).not.toContain("Fastify route GET /shadow-fastify-instance");
-    expect(titles).not.toContain("Fastify route GET /concat-");
-    expect(titles).not.toContain("Express route DELETE /reports");
+    expect(routes).not.toContain("GET /commented");
+    expect(routes).not.toContain("POST /string");
+    expect(routes).not.toContain("GET /regex-health");
+    expect(routes).not.toContain("GET /arrow-regex");
+    expect(routes).not.toContain("GET /returned-regex");
+    expect(routes).not.toContain("GET /other-router");
+    expect(routes).not.toContain("GET /commented-out-router");
+    expect(routes).not.toContain("GET /commented-type-router");
+    expect(routes).not.toContain("GET /exported-type-router");
+    expect(routes).not.toContain("GET /regex-import-router");
+    expect(routes).not.toContain("GET /jsx-import-router");
+    expect(routes).not.toContain("GET /custom-import-router");
+    expect(routes).not.toContain("GET /custom-router");
+    expect(routes).not.toContain("GET /custom-alias-router");
+    expect(routes).not.toContain("GET /cjs-not-router");
+    expect(routes).not.toContain("GET /assigned-not-router");
+    expect(routes).not.toContain("GET /dynamic/");
+    expect(routes).not.toContain("GET /not-plugin-app");
+    expect(routes).not.toContain("GET /not-plugin-app-typed");
+    expect(routes).not.toContain("GET /not-plugin-server");
+    expect(routes).not.toContain("GET /not-plugin-options");
+    expect(routes).not.toContain("GET /shadow-fastify-instance");
+    expect(routes).not.toContain("GET /concat-");
+    expect(routes).not.toContain("DELETE /reports");
     expect(admin?.source).toBe("express-route");
     expect(
       admin?.entrypoints.find((entrypoint) => entrypoint.route === "POST /admin/jobs"),

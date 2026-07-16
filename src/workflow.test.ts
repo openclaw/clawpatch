@@ -2423,6 +2423,7 @@ describe("workflow", () => {
         scripts: { test: "vitest run" },
       }),
     );
+    await writeFixture(root, "package-lock.json", "{}\n");
     await writeFixture(
       root,
       "packages/web/package.json",
@@ -2431,7 +2432,7 @@ describe("workflow", () => {
     await mapCommand(context);
     const project = await readProject(statePaths(join(root, ".clawpatch")));
 
-    expect(project?.detected.packageManagers[0]).toBe("npm");
+    expect(project?.detected.packageManagers).toEqual(["npm"]);
     expect(project?.detected.commands.test).toBe("npm run test");
     expect(project?.detected.frameworks).toEqual(expect.arrayContaining(["react", "express"]));
   });
