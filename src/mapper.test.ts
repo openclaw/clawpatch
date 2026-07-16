@@ -3484,7 +3484,6 @@ describe("mapFeatures", () => {
 
     const project = await detectProject(root);
     const result = await mapFeatures(root, project, []);
-    const titles = result.features.map((feature) => feature.title);
     const routes = result.features.flatMap((feature) =>
       feature.entrypoints.flatMap((entrypoint) =>
         entrypoint.route === null ? [] : [entrypoint.route],
@@ -3516,32 +3515,29 @@ describe("mapFeatures", () => {
         ].map((title) => title.replace(/^(?:Express|Hono) route /u, "")),
       ),
     );
-    expect(titles).not.toContain("Express route GET /users");
-    expect(titles).not.toContain("Express route GET /reports");
-    expect(titles).not.toContain("Express route POST /v1/teams");
-    expect(titles).not.toContain("Express route DELETE /sessions/:id");
-    expect(titles).not.toContain("Express route GET /false/false-users");
-    expect(titles).not.toContain("Express route GET /generic-middleware-users");
-    expect(titles).not.toContain("Express route GET /async-middleware-users");
-    expect(titles).not.toContain("Express route GET /json-users");
-    expect(titles).not.toContain("Express route GET /imported-users");
-    expect(titles).not.toContain("Express route GET /pathless-users");
-    expect(titles).not.toContain("Express route GET /direct-pathless-users");
-    expect(titles).not.toContain("Express route GET /first-pathless-users");
-    expect(titles).not.toContain("Express route GET /second-pathless-users");
-    expect(titles).not.toContain("Express route GET /array-users");
-    expect(titles).not.toContain("Express route GET /wildcard-users");
-    expect(titles).not.toContain("Express route GET /dynamic-users");
-    expect(titles).not.toContain("Express route GET /dynamic-child-users");
-    expect(titles).not.toContain("Express route GET /auth-path-users");
-    expect(titles).not.toContain("Express route GET /dynamic-mw-users");
-    expect(titles).not.toContain("Express route GET /tenant-users");
-    expect(titles).not.toContain("Express route GET /member/member-users");
-    expect(titles).not.toContain("Express route GET /v1/dynamic-child-users");
-    expect(titles).not.toContain("Hono route GET /users");
-    expect(titles).not.toContain("Hono route GET /dynamic-users");
-    expect(titles).not.toContain("Hono route DELETE /v1/sessions/:id");
-    expect(titles).not.toContain("Hono route GET /false/false-users");
+    expect(routes).not.toContain("GET /users");
+    expect(routes).not.toContain("GET /reports");
+    expect(routes).not.toContain("POST /v1/teams");
+    expect(routes).not.toContain("DELETE /sessions/:id");
+    expect(routes).not.toContain("GET /false/false-users");
+    expect(routes).not.toContain("GET /generic-middleware-users");
+    expect(routes).not.toContain("GET /async-middleware-users");
+    expect(routes).not.toContain("GET /json-users");
+    expect(routes).not.toContain("GET /imported-users");
+    expect(routes).not.toContain("GET /pathless-users");
+    expect(routes).not.toContain("GET /direct-pathless-users");
+    expect(routes).not.toContain("GET /first-pathless-users");
+    expect(routes).not.toContain("GET /second-pathless-users");
+    expect(routes).not.toContain("GET /array-users");
+    expect(routes).not.toContain("GET /wildcard-users");
+    expect(routes).not.toContain("GET /dynamic-users");
+    expect(routes).not.toContain("GET /dynamic-child-users");
+    expect(routes).not.toContain("GET /auth-path-users");
+    expect(routes).not.toContain("GET /dynamic-mw-users");
+    expect(routes).not.toContain("GET /tenant-users");
+    expect(routes).not.toContain("GET /member/member-users");
+    expect(routes).not.toContain("GET /v1/dynamic-child-users");
+    expect(routes).not.toContain("DELETE /v1/sessions/:id");
   });
 
   it("keeps index route tests scoped to their route directory", async () => {
