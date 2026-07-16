@@ -9,6 +9,7 @@ import {
   packageKind,
   packageTrustBoundaries,
   pathMatchesPrefix,
+  semanticNameTokens,
   walk,
 } from "./shared.js";
 import {
@@ -647,14 +648,11 @@ function chunkSemanticGroup(
 }
 
 function semanticSegmentForFile(path: string): string | null {
-  const basenameWithoutExtension = basename(path)
-    .replace(/\.[^.]+$/u, "")
-    .toLowerCase();
-  const tokens = new Set(
-    basenameWithoutExtension.split(/[^a-z0-9]+/u).filter((token) => token.length > 0),
-  );
+  const basenameWithoutExtension = basename(path).replace(/\.[^.]+$/u, "");
+  const tokens = semanticNameTokens(basenameWithoutExtension);
+  const normalizedBasename = basenameWithoutExtension.toLowerCase();
   for (const segment of semanticSourceSegments) {
-    if (tokens.has(segment) || (segment !== "cli" && basenameWithoutExtension.includes(segment))) {
+    if (tokens.has(segment) || (segment !== "cli" && normalizedBasename.includes(segment))) {
       return segment === "command" ? "commands" : segment;
     }
   }

@@ -2235,6 +2235,7 @@ describe("mapFeatures", () => {
       "scripts/validate-client-build-order.ts",
       "export const valid = true;\n",
     );
+    await writeFixture(root, "scripts/runCli.ts", "export const run = true;\n");
     for (let index = 0; index < 12; index += 1) {
       await writeFixture(root, `scripts/helper-${index}.ts`, `export const value = ${index};\n`);
     }
@@ -2244,8 +2245,15 @@ describe("mapFeatures", () => {
     const feature = result.features.find((candidate) =>
       candidate.ownedFiles.some((file) => file.path === "scripts/validate-client-build-order.ts"),
     );
+    const cli = result.features.find((candidate) =>
+      candidate.ownedFiles.some((file) => file.path === "scripts/runCli.ts"),
+    );
 
     expect(feature).toMatchObject({ kind: "library", trustBoundaries: [] });
+    expect(cli).toMatchObject({
+      kind: "cli-command",
+      trustBoundaries: expect.arrayContaining(["user-input", "process-exec"]),
+    });
   });
 
   it("maps workspace package metadata, entries, tests, and docs as package context", async () => {
