@@ -1,3 +1,4 @@
+import { basename, dirname } from "node:path";
 import { nowIso } from "./fs.js";
 import { stableId } from "./id.js";
 import {
@@ -320,11 +321,19 @@ async function collectSeeds(
 }
 
 function resolveGenericOwnership(seeds: FeatureSeed[]): FeatureSeed[] {
+  const specializedSeeds = seeds.filter((seed) => seed.source !== "node-source-group");
   const specializedOwnedFiles = new Set(
-    seeds
-      .filter((seed) => seed.source !== "node-source-group")
+    specializedSeeds
       .flatMap((seed) => seed.ownedFiles ?? [{ path: seed.entryPath, reason: "entrypoint" }])
       .map((ref) => ref.path),
+  );
+  const specializedTestFiles = new Set(
+    specializedSeeds.flatMap((seed) => seed.tests ?? []).map((test) => test.path),
+  );
+  const specializedDiscoverableTestKeys = new Set(
+    specializedSeeds
+      .filter((seed) => seed.skipNearbyTests !== true)
+      .map((seed) => ownedFileTestKey(seed.entryPath)),
   );
   return seeds.flatMap((seed) => {
     if (seed.source !== "node-source-group" || seed.ownedFiles === undefined) {
@@ -337,8 +346,30 @@ function resolveGenericOwnership(seeds: FeatureSeed[]): FeatureSeed[] {
     const entryPath = specializedOwnedFiles.has(seed.entryPath)
       ? (ownedFiles[0]?.path ?? seed.entryPath)
       : seed.entryPath;
-    return [{ ...seed, entryPath, ownedFiles }];
+    const isSpecializedTest = (path: string) =>
+      specializedTestFiles.has(path) || specializedDiscoverableTestKeys.has(testFileKey(path));
+    const tests = seed.tests?.filter((test) => !isSpecializedTest(test.path));
+    const contextFiles = seed.contextFiles?.filter(
+      (ref) => !specializedOwnedFiles.has(ref.path) && !isSpecializedTest(ref.path),
+    );
+    return [
+      {
+        ...seed,
+        entryPath,
+        ownedFiles,
+        ...(tests === undefined ? {} : { tests }),
+        ...(contextFiles === undefined ? {} : { contextFiles }),
+      },
+    ];
   });
+}
+
+function ownedFileTestKey(path: string): string {
+  return `${dirname(path)}\0${basename(path).replace(/\.[^.]+$/u, "")}`;
+}
+
+function testFileKey(path: string): string {
+  return `${dirname(path)}\0${basename(path).replace(/\.(?:test|spec)\.[^.]+$/u, "")}`;
 }
 
 async function shouldRunNodeMappers(root: string, project: ProjectRecord): Promise<boolean> {

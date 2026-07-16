@@ -495,6 +495,7 @@ describe("mapFeatures", () => {
     await writeFixture(root, "apps/storefront/src/helper.ts", "export const helper = true;\n");
     await writeFixture(root, "apps/worker/src/index.ts", "export const worker = true;\n");
     await writeFixture(root, "apps/worker/src/index.test.ts", "test('worker', () => {});\n");
+    await writeFixture(root, "apps/worker/src/page.test.tsx", "test('worker page', () => {});\n");
     await writeFixture(root, "apps/api/server/index.ts", "export const api = true;\n");
     await writeFixture(root, "apps/api/server/index.test.ts", "test('api', () => {});\n");
     await writeFixture(
@@ -534,6 +535,12 @@ describe("mapFeatures", () => {
     expect(storefrontSource?.ownedFiles).not.toContainEqual(
       expect.objectContaining({ path: "apps/storefront/src/app/checkout/page.tsx" }),
     );
+    expect(storefrontSource?.tests).not.toContainEqual(
+      expect.objectContaining({ path: "apps/storefront/src/app/checkout/page.test.tsx" }),
+    );
+    expect(storefrontSource?.contextFiles).not.toContainEqual(
+      expect.objectContaining({ path: "apps/storefront/src/app/checkout/page.test.tsx" }),
+    );
     expect(worker?.ownedFiles).toContainEqual({
       path: "apps/worker/src/index.ts",
       reason: "source group apps/worker/src",
@@ -543,6 +550,10 @@ describe("mapFeatures", () => {
     );
     expect(worker?.tests).toContainEqual({
       path: "apps/worker/src/index.test.ts",
+      command: null,
+    });
+    expect(worker?.tests).toContainEqual({
+      path: "apps/worker/src/page.test.tsx",
       command: null,
     });
     expect(api?.ownedFiles).toContainEqual({
