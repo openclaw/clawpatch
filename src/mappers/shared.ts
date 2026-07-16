@@ -362,6 +362,8 @@ export function packageTrustBoundaries(name: string): TrustBoundary[] {
 function semanticNameTokens(name: string): Set<string> {
   return new Set(
     name
+      .replace(/([a-z0-9])([A-Z])/gu, "$1 $2")
+      .replace(/([A-Z]+)([A-Z][a-z])/gu, "$1 $2")
       .toLowerCase()
       .split(/[^a-z0-9]+/u)
       .filter(Boolean),

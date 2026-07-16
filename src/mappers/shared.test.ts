@@ -10,6 +10,18 @@ describe("package semantics", () => {
     expect(packageKind("@scope/tool-cli packages/tool-cli")).toBe("cli-command");
     expect(packageTrustBoundaries("@scope/tool-cli packages/tool-cli")).toContain("process-exec");
   });
+
+  it("preserves semantic boundaries in camel-case names", () => {
+    expect(packageKind("DbClient")).toBe("service");
+    expect(packageTrustBoundaries("DbClient")).toEqual(
+      expect.arrayContaining(["filesystem", "database"]),
+    );
+    expect(packageKind("ToolCli")).toBe("cli-command");
+    expect(packageTrustBoundaries("ToolCli")).toContain("process-exec");
+    expect(packageTrustBoundaries("GitHubSync")).toEqual(
+      expect.arrayContaining(["network", "external-api", "serialization"]),
+    );
+  });
 });
 
 describe("nearby test discovery", () => {

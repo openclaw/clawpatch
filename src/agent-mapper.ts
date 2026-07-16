@@ -7,7 +7,7 @@ import { pathExists } from "./fs.js";
 import { runCommandArgs } from "./exec.js";
 import { mapFeatureSeeds, MapResult } from "./mapper.js";
 import { dedupeFeatureSeeds, stableFeatureJson } from "./mapper-reconciliation.js";
-import { FeatureSeed, SeedFileRef, SeedTestRef } from "./mappers/types.js";
+import { FeatureSeed, SeedEntrypoint, SeedFileRef, SeedTestRef } from "./mappers/types.js";
 import {
   applyPathFilters,
   isSafeFile,
@@ -240,17 +240,19 @@ async function toSeed(
   }
   const contextFiles = await validFileRefs(root, feature.contextFiles, allowedFiles, 80);
   const tests = await validTests(root, feature.tests, allowedFiles, 20);
-  const entrypoint =
-    (await validEntrypoint(root, feature.entrypoints[0]?.path, allowedFiles)) ??
-    ownedFiles[0]?.path ??
-    null;
+  const entrypoints = (
+    await Promise.all(
+      feature.entrypoints.map(async (candidate) => {
+        const path = await validEntrypoint(root, candidate.path, allowedFiles);
+        return path === null ? null : { ...candidate, path };
+      }),
+    )
+  ).filter((candidate): candidate is SeedEntrypoint => candidate !== null);
+  const firstEntry = entrypoints[0] ?? null;
+  const entrypoint = firstEntry?.path ?? ownedFiles[0]?.path ?? null;
   if (entrypoint === null) {
     return null;
   }
-  const firstEntry = feature.entrypoints[0] ?? null;
-  const entrypoints = feature.entrypoints
-    .filter((candidate) => allowedFiles.has(normalize(candidate.path)))
-    .map((candidate) => ({ ...candidate, path: normalize(candidate.path) }));
   const reason = feature.reason.trim();
   return {
     title: feature.title,

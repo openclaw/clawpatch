@@ -84,13 +84,25 @@ async function sinceFixture(prefix: string): Promise<string> {
   return root;
 }
 
-function agentMapProvider(title: () => string, entrypointPath = "agent/worker.custom"): Provider {
+type AgentMapEntrypoint = {
+  path: string;
+  symbol: string | null;
+  route: string | null;
+  command: string | null;
+};
+
+function agentMapProvider(
+  title: () => string,
+  entrypoints: AgentMapEntrypoint[] = [
+    { path: "agent/worker.custom", symbol: null, route: null, command: null },
+  ],
+): Provider {
   const feature = () => ({
     title: title(),
     summary: "Provider grouped custom agent files.",
     kind: "library" as const,
     confidence: "medium" as const,
-    entrypoints: [{ path: entrypointPath, symbol: null, route: null, command: null }],
+    entrypoints,
     ownedFiles: [
       { path: "agent/worker.custom", reason: "worker" },
       { path: "agent/scheduler.custom", reason: "scheduler" },
@@ -2107,7 +2119,17 @@ describe("workflow", () => {
     const heuristic = await mapFeatures(root, project, []);
     const result = await mapWithSource(root, project, [], heuristic, {
       source: "agent",
-      provider: agentMapProvider(() => "Agent worker group", "dist/agent/generated.custom"),
+      provider: agentMapProvider(
+        () => "Agent worker group",
+        [
+          {
+            path: "dist/agent/generated.custom",
+            symbol: "rejectedSymbol",
+            route: "/rejected",
+            command: "rejected-command",
+          },
+        ],
+      ),
       providerOptions: {
         model: null,
         reasoningEffort: null,
@@ -2122,6 +2144,55 @@ describe("workflow", () => {
         symbol: null,
         route: null,
         command: null,
+      },
+    ]);
+  });
+
+  it("uses metadata from the first accepted agent entrypoint", async () => {
+    const root = await fixtureRoot("clawpatch-agent-map-accepted-entrypoint-");
+    await writeFixture(root, "agent/worker.custom", "worker source\n");
+    await writeFixture(root, "agent/scheduler.custom", "scheduler source\n");
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    const paths = statePaths(join(root, ".clawpatch"));
+    const project = await readProject(paths);
+    if (project === null) {
+      throw new Error("missing project");
+    }
+    const heuristic = await mapFeatures(root, project, []);
+    const result = await mapWithSource(root, project, [], heuristic, {
+      source: "agent",
+      provider: agentMapProvider(
+        () => "Agent worker group",
+        [
+          {
+            path: "dist/agent/generated.custom",
+            symbol: "rejectedSymbol",
+            route: "/rejected",
+            command: "rejected-command",
+          },
+          {
+            path: "agent/scheduler.custom",
+            symbol: "acceptedSymbol",
+            route: "/accepted",
+            command: "accepted-command",
+          },
+        ],
+      ),
+      providerOptions: {
+        model: null,
+        reasoningEffort: null,
+        skipGitRepoCheck: false,
+      },
+    });
+
+    expect(result.features).toHaveLength(1);
+    expect(result.features[0]?.entrypoints).toEqual([
+      {
+        path: "agent/scheduler.custom",
+        symbol: "acceptedSymbol",
+        route: "/accepted",
+        command: "accepted-command",
       },
     ]);
   });
