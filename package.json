@@ -1,6 +1,6 @@
 {
   "name": "clawpatch",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Automated code review that lands fixes.",
   "license": "MIT",
   "bin": {

@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.7.1 - Unreleased
+## 0.7.1 - 2026-07-20
+
+### Highlights
 
 - Reduced mapper startup I/O by sharing one root file inventory across Go fallback, C/C++, and .NET mapping, thanks @Tanmay-008.
 - Fixed revalidation prompts to compact historical and feature metadata and hard-cap metadata lists even when configured file limits are high, preventing provider input overflows, thanks @pai-scaffolde.
