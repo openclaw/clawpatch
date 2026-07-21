@@ -190,86 +190,116 @@ export async function walk(
   root: string,
   prefixes: string[],
   skipPath: (path: string) => boolean = shouldSkip,
-  vfs?: import("./vfs-cache.js").VfsCache,
 ): Promise<string[]> {
-  const fsLstat = vfs ? vfs.fileStat : lstat;
-  const fsRealpath = vfs ? vfs.resolveRealpath : (p: string) => realpath(p).catch(() => p);
-  const files: string[] = [];
-  const seen = new Set<string>();
-  const seenRoots = new Set<string>();
-  const realRoot = await fsRealpath(root);
+  const files = await walkByPolicy(root, prefixes, [{ key: "default", skipPath }]);
+  return files.get("default") ?? [];
+}
+
+export type WalkPolicy<Key extends string> = {
+  key: Key;
+  skipPath(path: string): boolean;
+};
+
+type WalkPolicyState<Key extends string> = WalkPolicy<Key> & {
+  files: string[];
+  seen: Set<string>;
+  seenRoots: Set<string>;
+};
+
+export async function walkByPolicy<Key extends string>(
+  root: string,
+  prefixes: string[],
+  policies: readonly WalkPolicy<Key>[],
+): Promise<Map<Key, string[]>> {
+  const states: WalkPolicyState<Key>[] = policies.map((policy) => ({
+    ...policy,
+    files: [],
+    seen: new Set<string>(),
+    seenRoots: new Set<string>(),
+  }));
+  const realRoot = await realpath(root).catch(() => root);
   for (const prefix of prefixes) {
     const start = join(root, prefix);
     if (!(await pathExists(start))) {
       continue;
     }
-    let info = await fsLstat(start);
-    const canonicalStart = await fsRealpath(start);
+    let info = await lstat(start);
+    const canonicalStart = await realpath(start).catch(() => start);
     if (info.isSymbolicLink() && prefix !== "") {
       continue;
     }
     if (info.isSymbolicLink()) {
-      info = await fsLstat(canonicalStart).catch(() => info);
+      info = await lstat(canonicalStart).catch(() => info);
     }
     if (!pathInsideRoot(realRoot, canonicalStart)) {
       continue;
     }
     const rel = normalize(relative(realRoot, canonicalStart));
     if (info.isFile()) {
-      if (!seen.has(rel) && !skipPath(rel)) {
-        seen.add(rel);
-        files.push(rel);
+      for (const state of states) {
+        if (!state.seen.has(rel) && !state.skipPath(rel)) {
+          state.seen.add(rel);
+          state.files.push(rel);
+        }
       }
       continue;
     }
-    if (!info.isDirectory() || seenRoots.has(canonicalStart)) {
+    if (!info.isDirectory()) {
       continue;
     }
-    seenRoots.add(canonicalStart);
-    await walkDir(realRoot, canonicalStart, files, seen, skipPath, vfs);
+    const rootStates = states.filter((state) => !state.seenRoots.has(canonicalStart));
+    if (rootStates.length === 0) {
+      continue;
+    }
+    for (const state of rootStates) {
+      state.seenRoots.add(canonicalStart);
+    }
+    await walkDirByPolicy(realRoot, canonicalStart, rootStates);
   }
-  return files.toSorted();
+  return new Map(states.map((state) => [state.key, state.files.toSorted()]));
 }
 
-async function walkDir(
+async function walkDirByPolicy<Key extends string>(
   root: string,
   dir: string,
-  files: string[],
-  seen: Set<string>,
-  skipPath: (path: string) => boolean,
-  vfs?: import("./vfs-cache.js").VfsCache,
+  states: WalkPolicyState<Key>[],
 ): Promise<void> {
-  const fsLstat = vfs ? vfs.fileStat : lstat;
-  const fsRealpath = vfs ? vfs.resolveRealpath : (p: string) => realpath(p).catch(() => p);
-  const fsReaddir = vfs ? vfs.readDirectory : readdir;
-  const dirInfo = await fsLstat(dir);
+  const dirInfo = await lstat(dir);
   if (dirInfo.isSymbolicLink()) {
     return;
   }
-  const realDir = await fsRealpath(dir);
+  const realDir = await realpath(dir).catch(() => dir);
   if (!pathInsideRoot(root, realDir)) {
     return;
   }
   const relDir = normalize(relative(root, dir));
-  if (skipPath(relDir)) {
+  const activeStates = states.filter((state) => !state.skipPath(relDir));
+  if (activeStates.length === 0) {
     return;
   }
-  const entries = await fsReaddir(dir);
+  const entries = await readdir(dir);
   for (const entry of entries) {
     const full = join(dir, entry);
     const rel = normalize(relative(root, full));
-    if (seen.has(rel) || skipPath(rel)) {
+    const entryStates = activeStates.filter(
+      (state) => !state.seen.has(rel) && !state.skipPath(rel),
+    );
+    if (entryStates.length === 0) {
       continue;
     }
-    seen.add(rel);
-    const info = await fsLstat(full);
+    for (const state of entryStates) {
+      state.seen.add(rel);
+    }
+    const info = await lstat(full);
     if (info.isSymbolicLink()) {
       continue;
     }
     if (info.isDirectory()) {
-      await walkDir(root, full, files, seen, skipPath, vfs);
+      await walkDirByPolicy(root, full, entryStates);
     } else if (info.isFile()) {
-      files.push(rel);
+      for (const state of entryStates) {
+        state.files.push(rel);
+      }
     }
   }
 }

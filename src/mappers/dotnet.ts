@@ -3,7 +3,7 @@ import { basename, dirname, extname, join } from "node:path";
 import { shellQuotePath } from "../shell.js";
 import { TrustBoundary } from "../types.js";
 import { partitionFileGroups } from "./grouping.js";
-import { isSampleProjectPath, normalize, pathMatchesPrefix, shouldSkip, walk } from "./shared.js";
+import { isSampleProjectPath, normalize, pathMatchesPrefix, shouldSkip } from "./shared.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 const maxOwnedFiles = 12;
@@ -32,7 +32,7 @@ type DotnetSolution = {
 };
 
 export async function dotnetSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
-  const files = await walk(root, [""], shouldSkipDotnetPath, context.vfs);
+  const files = await context.rootFiles("dotnet");
   const fileSet = new Set(files);
   const solutions = await dotnetSolutions(root, files.filter(isDotnetSolutionPath));
   const projectPaths = uniqueStrings([
@@ -1092,7 +1092,7 @@ function dotnetLanguageName(language: DotnetProject["language"]): string {
   return "C#";
 }
 
-function shouldSkipDotnetPath(path: string): boolean {
+export function shouldSkipDotnetPath(path: string): boolean {
   if (shouldSkip(path) || isSampleProjectPath(path)) {
     return true;
   }

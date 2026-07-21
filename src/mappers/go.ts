@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { pathExists } from "../fs.js";
-import { packageKind, packageTrustBoundaries, normalize, shouldSkip, walk } from "./shared.js";
+import { packageKind, packageTrustBoundaries, normalize, shouldSkip } from "./shared.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 export async function goSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
@@ -76,7 +76,7 @@ async function fallbackGoPackages(
   context: MapperContext,
 ): Promise<GoPackage[]> {
   const dirs = new Set<string>();
-  for (const file of await walk(root, [""], shouldSkip, context.vfs)) {
+  for (const file of await context.rootFiles("go-fallback")) {
     if (!file.endsWith(".go")) {
       continue;
     }

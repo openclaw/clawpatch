@@ -5,9 +5,9 @@ import {
   seedIdentityParts,
   stableFeatureJson,
 } from "./mapper-reconciliation.js";
-import { cCppSeeds } from "./mappers/c-cpp.js";
+import { cCppSeeds, shouldSkipCOrCppPath } from "./mappers/c-cpp.js";
 import { configSeeds } from "./mappers/config.js";
-import { dotnetSeeds } from "./mappers/dotnet.js";
+import { dotnetSeeds, shouldSkipDotnetPath } from "./mappers/dotnet.js";
 import { elixirSeeds } from "./mappers/elixir.js";
 import { goSeeds } from "./mappers/go.js";
 import { appleSeeds } from "./mappers/apple.js";
@@ -23,11 +23,16 @@ import { createMapperContext } from "./mappers/context.js";
 import { discoverNodeProjects, hasFallbackNodeProjectSignal } from "./mappers/projects.js";
 import { rubySeeds } from "./mappers/ruby.js";
 import { rustSeeds } from "./mappers/rust.js";
-import { createNearbyTestFinder, PathFilters, pathMatchesFilters } from "./mappers/shared.js";
+import {
+  createNearbyTestFinder,
+  PathFilters,
+  pathMatchesFilters,
+  shouldSkip,
+  walkByPolicy,
+} from "./mappers/shared.js";
 import { swiftSeeds } from "./mappers/swift.js";
 import { turboTaskGraph } from "./mappers/turbo.js";
 import { FeatureMapper, FeatureSeed, MapperContext } from "./mappers/types.js";
-import { createVfsCache } from "./mappers/vfs-cache.js";
 import { FeatureRecord, ProjectRecord } from "./types.js";
 
 export type MapResult = {
@@ -292,13 +297,20 @@ async function collectSeeds(
   project: ProjectRecord,
   options: MapOptions,
 ): Promise<FeatureSeed[]> {
-  const context: MapperContext = {
-    ...createMapperContext({
-      discoverNodeProjects: () => discoverNodeProjects(root),
-      buildNodeTaskGraph: (projects) => turboTaskGraph(root, projects),
-    }),
-    vfs: createVfsCache(),
-  };
+  const context: MapperContext = createMapperContext({
+    discoverNodeProjects: () => discoverNodeProjects(root),
+    buildNodeTaskGraph: (projects) => turboTaskGraph(root, projects),
+    buildRootFileInventory: () =>
+      walkByPolicy(
+        root,
+        [""],
+        [
+          { key: "go-fallback", skipPath: shouldSkip },
+          { key: "c-cpp", skipPath: shouldSkipCOrCppPath },
+          { key: "dotnet", skipPath: shouldSkipDotnetPath },
+        ],
+      ),
+  });
   const runNodeMappers = shouldRunNodeMappers(root, project);
   const groups = await Promise.all(
     featureMappers.map(async (mapper) => {

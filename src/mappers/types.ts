@@ -1,7 +1,6 @@
 import { FeatureRecord, TrustBoundary } from "../types.js";
 import type { NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
-import type { VfsCache } from "./vfs-cache.js";
 
 export type SeedFileRef = {
   path: string;
@@ -42,8 +41,11 @@ export type FeatureMapper = {
   map(root: string, context: MapperContext): Promise<FeatureSeed[]>;
 };
 
+export type RootFilePolicy = "go-fallback" | "c-cpp" | "dotnet";
+export type RootFileInventory = Map<RootFilePolicy, string[]>;
+
 export type MapperContext = {
   nodeProjects(): Promise<NodeProjectInfo[]>;
   nodeTaskGraph(): Promise<WorkspaceTaskGraph>;
-  vfs: VfsCache;
+  rootFiles(policy: RootFilePolicy): Promise<string[]>;
 };

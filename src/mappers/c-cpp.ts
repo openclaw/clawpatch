@@ -11,14 +11,13 @@ import {
   shouldSkip,
   stripLineComments,
   targetLanguageTag,
-  walk,
   withCudaConcurrency,
 } from "./shared.js";
 import { cCppGroupSeeds } from "./c-cpp-groups.js";
 import { FeatureSeed, MapperContext, SeedFileRef } from "./types.js";
 
 export async function cCppSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
-  const files = (await walk(root, [""], shouldSkipCOrCppPath, context.vfs)).filter(
+  const files = (await context.rootFiles("c-cpp")).filter(
     (path) =>
       !isSampleProjectPath(path) && (isCOrCppSource(path) || isMakefile(path) || isCMake(path)),
   );
@@ -1107,7 +1106,7 @@ function isCOrCppDependencyPath(path: string): boolean {
   return /(^|\/)(deps|vendor|CMakeFiles|cmake-build-[^/]+)(\/|$)/u.test(path);
 }
 
-function shouldSkipCOrCppPath(path: string): boolean {
+export function shouldSkipCOrCppPath(path: string): boolean {
   return shouldSkip(path) || isCOrCppDependencyPath(path);
 }
 
