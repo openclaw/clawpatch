@@ -10,6 +10,41 @@ import { fixtureRoot, writeFixture } from "./test-helpers.js";
 import type { FeatureRecord, FindingRecord, ProjectRecord } from "./types.js";
 
 describe("review prompt provenance", () => {
+  it("keeps shared review instructions ahead of feature-specific context", async () => {
+    const root = await fixtureRoot("clawpatch-prompt-cache-prefix-");
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    await writeFixture(root, "src/second.ts", "export const second = 2;\n");
+    const firstFeature = feature();
+    const secondFeature: FeatureRecord = {
+      ...feature(),
+      featureId: "feat_second",
+      title: "Second feature",
+      summary: "A different semantic review unit",
+      ownedFiles: [{ path: "src/second.ts", reason: "primary" }],
+      contextFiles: [],
+      tests: [],
+    };
+
+    const [first, second] = await Promise.all([
+      buildReviewPromptBundle(root, project(root), firstFeature, defaultConfig()),
+      buildReviewPromptBundle(root, project(root), secondFeature, defaultConfig()),
+    ]);
+    const firstFeatureIndex = first.prompt.indexOf("Feature:\n");
+    const secondFeatureIndex = second.prompt.indexOf("Feature:\n");
+    const firstPrefix = first.prompt.slice(0, firstFeatureIndex);
+    const secondPrefix = second.prompt.slice(0, secondFeatureIndex);
+
+    expect(firstFeatureIndex).toBeGreaterThan(0);
+    expect(secondFeatureIndex).toBeGreaterThan(0);
+    expect(firstPrefix).toBe(secondPrefix);
+    expect(firstPrefix).toContain("Review categories:");
+    expect(firstPrefix).toContain("JSON shape:");
+    expect(first.prompt.indexOf("JSON shape:")).toBeLessThan(firstFeatureIndex);
+    expect(first.prompt.indexOf("Valid evidence paths are exactly:")).toBeGreaterThan(
+      firstFeatureIndex,
+    );
+  });
+
   it("records included, omitted, and truncated review prompt context", async () => {
     const root = await fixtureRoot("clawpatch-prompt-provenance-");
     await writeFixture(root, "src/index.ts", "export const value = 1;\n");

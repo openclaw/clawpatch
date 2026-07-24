@@ -2,6 +2,8 @@
 
 ## 0.7.2 - Unreleased
 
+- Reordered review prompts so shared instructions and the JSON contract precede feature-specific context, improving provider prompt-cache reuse across feature reviews.
+
 ## 0.7.1 - 2026-07-20
 
 ### Highlights
