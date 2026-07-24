@@ -198,13 +198,7 @@ ${customPrompt.trim()}
 
 Return strict JSON only. No markdown fences.
 
-Project:
-${JSON.stringify({ name: project.name, detected: project.detected }, null, 2)}
-
-Feature:
-${JSON.stringify(reviewFeatureView(feature), null, 2)}
-
-${customBlock}Review categories:
+Review categories:
 - correctness bugs
 - security issues
 - race/concurrency bugs
@@ -223,7 +217,7 @@ Shell and workflow review:
 - Focus this rule on captured or parsed values, not human-facing logging fallbacks like some_command || echo "failed".
 - Recommend separating the primary command capture from fallback assignment, for example if ! status="$(cmd)"; then status="fallback"; fi.
 
-${reviewModeInstructions(mode)}${cudaBlock}
+${reviewModeInstructions(mode)}
 
 ${languageGuidance}
 
@@ -235,18 +229,13 @@ issues: when the same bug pattern appears in multiple owned files, emit one find
 with multiple evidence refs instead of separate one-off findings.
 
 Avoid speculative low-evidence findings. Evidence must point at included files.
-Valid evidence paths are exactly:
-${validEvidencePaths.map((path) => `- ${path}`).join("\n")}
-Feature metadata paths are not valid evidence unless listed above.
+Feature metadata paths are not valid evidence unless listed in the review input below.
 When providing evidence line ranges, use the line-number gutter in the Files section.
 Do not inspect files beyond the shown excerpts for evidence. If an excerpt is truncated,
 only cite lines that appear in the Files section.
 Set evidence.quote to null; line ranges are enough for validation.
 
-Prompt context:
-${JSON.stringify(promptContext, null, 2)}
-
-JSON shape:
+${customBlock}JSON shape:
 {
   "findings": [
     {
@@ -265,6 +254,18 @@ JSON shape:
   ],
   "inspected": {"files":["string"],"symbols":["string"],"notes":["string"]}
 }
+
+Project:
+${JSON.stringify({ name: project.name, detected: project.detected }, null, 2)}
+
+Feature:
+${JSON.stringify(reviewFeatureView(feature), null, 2)}
+${cudaBlock}
+Valid evidence paths are exactly:
+${validEvidencePaths.map((path) => `- ${path}`).join("\n")}
+
+Prompt context:
+${JSON.stringify(promptContext, null, 2)}
 
 Files:
 ${fileBlocks.join("\n\n")}`;
