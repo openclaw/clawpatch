@@ -66,6 +66,38 @@ name = "dual_crate"
     expect(libSeed.contextFiles?.map((f) => f.path)).toContain("Cargo.toml");
   });
 
+  it("resolves modules beside a nested binary entrypoint", async () => {
+    const root = await createTempDir();
+    await mkdir(join(root, "src/bin/worker"), { recursive: true });
+    await writeFile(join(root, "Cargo.toml"), `[package]\nname="nested_bin"`);
+    await writeFile(join(root, "src/bin/worker/main.rs"), "mod protocol;");
+    await writeFile(join(root, "src/bin/worker/protocol.rs"), "pub fn run() {}");
+
+    const seeds = await rustSeeds(root);
+    const worker = seeds.find((seed) => seed.entryPath === "src/bin/worker/main.rs");
+
+    expect(worker?.contextFiles?.map((file) => file.path)).toEqual([
+      "Cargo.toml",
+      "src/bin/worker/protocol.rs",
+    ]);
+  });
+
+  it("resolves modules from a flat binary entrypoint stem", async () => {
+    const root = await createTempDir();
+    await mkdir(join(root, "src/bin/audit"), { recursive: true });
+    await writeFile(join(root, "Cargo.toml"), `[package]\nname="flat_bin"`);
+    await writeFile(join(root, "src/bin/audit.rs"), "mod output;");
+    await writeFile(join(root, "src/bin/audit/output.rs"), "pub fn write() {}");
+
+    const seeds = await rustSeeds(root);
+    const audit = seeds.find((seed) => seed.entryPath === "src/bin/audit.rs");
+
+    expect(audit?.contextFiles?.map((file) => file.path)).toEqual([
+      "Cargo.toml",
+      "src/bin/audit/output.rs",
+    ]);
+  });
+
   it("resolves contextFiles for workspace members", async () => {
     const root = await createTempDir();
     await writeFile(

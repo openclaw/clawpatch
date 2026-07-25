@@ -412,6 +412,15 @@ function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
   return unique;
 }
 
+function rustModuleDirectory(entryFile: string): string {
+  const parts = entryFile.split("/");
+  const entryName = parts.at(-1) ?? entryFile;
+  if (entryName === "main.rs" || entryName === "lib.rs" || entryName === "mod.rs") {
+    return parts.slice(0, -1).join("/");
+  }
+  return entryFile.replace(/\.rs$/u, "");
+}
+
 async function rustCrateContextFiles(
   root: string,
   manifestPath: string,
@@ -447,6 +456,8 @@ async function rustCrateContextFiles(
   const source = await readFile(entryFull, "utf8");
   const modPattern = /^\s*(?:pub\s+)?mod\s+(\w+)\s*;/gmu;
   const matches = [...source.matchAll(modPattern)];
+  const moduleDir = rustModuleDirectory(entryFile);
+  const modulePrefix = moduleDir.length > 0 ? `${moduleDir}/` : "";
 
   for (const match of matches) {
     const modName = match[1];
@@ -454,8 +465,8 @@ async function rustCrateContextFiles(
       continue;
     }
 
-    const modFile = `${prefix}src/${modName}.rs`;
-    const modDirFile = `${prefix}src/${modName}/mod.rs`;
+    const modFile = `${modulePrefix}${modName}.rs`;
+    const modDirFile = `${modulePrefix}${modName}/mod.rs`;
 
     if (await isSafeFile(root, join(root, modFile))) {
       refs.push({ path: modFile, reason: "declared module" });
