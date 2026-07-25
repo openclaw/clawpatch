@@ -10,7 +10,7 @@ import {
   stripLineComments,
   walk,
 } from "./shared.js";
-import { FeatureSeed } from "./types.js";
+import { FeatureSeed, SeedFileRef } from "./types.js";
 
 const rustFeatureTestLimit = 5;
 
@@ -32,20 +32,33 @@ export async function rustSeeds(root: string): Promise<FeatureSeed[]> {
     : [];
   const rootFeatureTests = rootTests.slice(0, rustFeatureTestLimit);
   if (rootHasPackage && (await isSafeFile(root, join(root, "src/main.rs")))) {
-    seeds.push(rustCommandSeed("src/main.rs", packageName, rustTestCommand, rootFeatureTests));
+    const context = await rustCrateContextFiles(root, "Cargo.toml", "src/main.rs", false);
+    seeds.push(
+      rustCommandSeed("src/main.rs", packageName, rustTestCommand, rootFeatureTests, context),
+    );
   }
   if (rootHasPackage && (await isSafeFile(root, join(root, "src/lib.rs")))) {
-    seeds.push(rustLibrarySeed("src/lib.rs", packageName, rustTestCommand, rootFeatureTests));
+    const context = await rustCrateContextFiles(root, "Cargo.toml", "src/lib.rs", true);
+    seeds.push(
+      rustLibrarySeed("src/lib.rs", packageName, rustTestCommand, rootFeatureTests, context),
+    );
   }
   if (rootHasPackage) {
     for (const file of (await walk(root, ["src/bin"])).filter((candidate) =>
       /^src\/bin\/([^/]+\.rs|[^/]+\/main\.rs)$/u.test(candidate),
     )) {
-      seeds.push(rustCommandSeed(file, rustBinCommand(file), rustTestCommand, rootFeatureTests));
+      const context = await rustCrateContextFiles(root, "Cargo.toml", file, false);
+      seeds.push(
+        rustCommandSeed(file, rustBinCommand(file), rustTestCommand, rootFeatureTests, context),
+      );
     }
     for (const test of rootTests) {
       const name = test.path.split("/").at(-1)?.replace(/\.rs$/u, "") ?? "integration";
-      seeds.push(rustIntegrationTestSeed(test.path, name, rustTestCommand));
+      seeds.push(
+        rustIntegrationTestSeed(test.path, name, rustTestCommand, [
+          { path: "Cargo.toml", reason: "cargo package manifest" },
+        ]),
+      );
     }
   }
   for (const member of await rustMemberDirs(root)) {
@@ -57,19 +70,41 @@ export async function rustSeeds(root: string): Promise<FeatureSeed[]> {
     const memberTests = await rustIntegrationTests(root, `${memberDir}/tests`, member.testCommand);
     const memberFeatureTests = memberTests.slice(0, rustFeatureTestLimit);
     if (await isSafeFile(root, join(root, memberMain))) {
-      seeds.push(rustCommandSeed(memberMain, memberName, member.testCommand, memberFeatureTests));
+      const context = await rustCrateContextFiles(
+        root,
+        `${memberDir}/Cargo.toml`,
+        memberMain,
+        false,
+      );
+      seeds.push(
+        rustCommandSeed(memberMain, memberName, member.testCommand, memberFeatureTests, context),
+      );
     }
     if (await isSafeFile(root, join(root, memberLib))) {
-      seeds.push(rustLibrarySeed(memberLib, memberName, member.testCommand, memberFeatureTests));
+      const context = await rustCrateContextFiles(root, `${memberDir}/Cargo.toml`, memberLib, true);
+      seeds.push(
+        rustLibrarySeed(memberLib, memberName, member.testCommand, memberFeatureTests, context),
+      );
     }
     for (const file of (await walk(root, [`${memberDir}/src/bin`])).filter(isRustBinFile)) {
+      const context = await rustCrateContextFiles(root, `${memberDir}/Cargo.toml`, file, false);
       seeds.push(
-        rustCommandSeed(file, rustBinCommand(file), member.testCommand, memberFeatureTests),
+        rustCommandSeed(
+          file,
+          rustBinCommand(file),
+          member.testCommand,
+          memberFeatureTests,
+          context,
+        ),
       );
     }
     for (const test of memberTests) {
       const name = test.path.split("/").at(-1)?.replace(/\.rs$/u, "") ?? "integration";
-      seeds.push(rustIntegrationTestSeed(test.path, `${memberName}/${name}`, member.testCommand));
+      seeds.push(
+        rustIntegrationTestSeed(test.path, `${memberName}/${name}`, member.testCommand, [
+          { path: `${memberDir}/Cargo.toml`, reason: "cargo package manifest" },
+        ]),
+      );
     }
   }
   return seeds;
@@ -241,6 +276,7 @@ function rustCommandSeed(
   command: string,
   testCommand: string | null = null,
   tests: RustTestRef[] = [],
+  contextFiles: SeedFileRef[] = [],
 ): FeatureSeed {
   return {
     title: `Rust command ${command}`,
@@ -254,6 +290,7 @@ function rustCommandSeed(
     command,
     tags: ["rust", "cli"],
     trustBoundaries: ["user-input", "filesystem", "process-exec", "network"],
+    contextFiles,
     tests,
     testCommand,
     skipNearbyTests: true,
@@ -265,6 +302,7 @@ function rustLibrarySeed(
   name: string,
   testCommand: string | null = null,
   tests: RustTestRef[] = [],
+  contextFiles: SeedFileRef[] = [],
 ): FeatureSeed {
   return {
     title: `Rust library ${name}`,
@@ -278,6 +316,7 @@ function rustLibrarySeed(
     command: null,
     tags: ["rust", "library"],
     trustBoundaries: packageTrustBoundaries(name),
+    contextFiles,
     tests,
     testCommand,
     skipNearbyTests: true,
@@ -301,6 +340,7 @@ function rustIntegrationTestSeed(
   file: string,
   name: string,
   testCommand: string | null = null,
+  contextFiles: SeedFileRef[] = [],
 ): FeatureSeed {
   return {
     title: `Rust integration test ${name}`,
@@ -314,6 +354,7 @@ function rustIntegrationTestSeed(
     command: null,
     tags: ["rust", "test"],
     trustBoundaries: [],
+    contextFiles,
     testCommand,
     skipNearbyTests: true,
   };
@@ -356,4 +397,76 @@ async function hasCargoPackageManifest(root: string, manifestPath: string): Prom
   }
   const manifest = stripLineComments(await readFile(full, "utf8"), "#");
   return cargoSection(manifest, "package").trim().length > 0;
+}
+
+function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
+  const seen = new Set<string>();
+  const unique: SeedFileRef[] = [];
+  for (const ref of refs) {
+    if (seen.has(ref.path)) {
+      continue;
+    }
+    seen.add(ref.path);
+    unique.push(ref);
+  }
+  return unique;
+}
+
+async function rustCrateContextFiles(
+  root: string,
+  manifestPath: string,
+  entryFile: string,
+  isLibrary: boolean,
+): Promise<SeedFileRef[]> {
+  const refs: SeedFileRef[] = [];
+  const manifestFull = join(root, manifestPath);
+  if (await isSafeFile(root, manifestFull)) {
+    refs.push({ path: manifestPath, reason: "cargo package manifest" });
+  }
+
+  const crateDir = manifestPath.replace(/\/Cargo\.toml$/u, "").replace(/^Cargo\.toml$/u, "");
+  const prefix = crateDir.length > 0 ? `${crateDir}/` : "";
+
+  if (isLibrary) {
+    const mainFile = `${prefix}src/main.rs`;
+    if (entryFile !== mainFile && (await isSafeFile(root, join(root, mainFile)))) {
+      refs.push({ path: mainFile, reason: "crate binary entry" });
+    }
+  } else {
+    const libFile = `${prefix}src/lib.rs`;
+    if (entryFile !== libFile && (await isSafeFile(root, join(root, libFile)))) {
+      refs.push({ path: libFile, reason: "crate library entry" });
+    }
+  }
+
+  const entryFull = join(root, entryFile);
+  if (!(await isSafeFile(root, entryFull))) {
+    return refs;
+  }
+
+  const source = await readFile(entryFull, "utf8");
+  const modPattern = /^\s*(?:pub\s+)?mod\s+(\w+)\s*;/gmu;
+  const matches = [...source.matchAll(modPattern)];
+
+  for (const match of matches) {
+    const modName = match[1];
+    if (modName === undefined) {
+      continue;
+    }
+
+    const modFile = `${prefix}src/${modName}.rs`;
+    const modDirFile = `${prefix}src/${modName}/mod.rs`;
+
+    if (await isSafeFile(root, join(root, modFile))) {
+      refs.push({ path: modFile, reason: "declared module" });
+    } else if (await isSafeFile(root, join(root, modDirFile))) {
+      refs.push({ path: modDirFile, reason: "declared module" });
+    }
+
+    if (refs.length >= 16) {
+      break;
+    }
+  }
+
+  return uniqueFileRefs(refs);
 }
