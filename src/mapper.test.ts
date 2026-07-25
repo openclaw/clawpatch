@@ -11026,7 +11026,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     );
 
     expect(library?.tests).toHaveLength(5);
-    expect(library?.contextFiles).toHaveLength(5);
+    expect(library?.contextFiles).toHaveLength(6);
     expect(integrationTests).toHaveLength(8);
   });
 
