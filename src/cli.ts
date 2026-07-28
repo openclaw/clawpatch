@@ -249,7 +249,7 @@ const commandSpecs = {
     run: doctorCommand,
   },
   "clean-locks": {
-    flags: [],
+    flags: ["staleOnly"],
     usage: ["clawpatch clean-locks [flags]"],
     run: cleanLocksCommand,
   },
@@ -383,6 +383,12 @@ const optionSpecs: Record<string, OptionSpec> = {
   force: { name: "force", kind: "boolean", target: "command", help: "  --force" },
   all: { name: "all", kind: "boolean", target: "command", help: "  --all" },
   draft: { name: "draft", kind: "boolean", target: "command", help: "  --draft" },
+  "stale-only": {
+    name: "staleOnly",
+    kind: "boolean",
+    target: "command",
+    help: "  --stale-only",
+  },
   "include-dirty": {
     name: "includeDirty",
     kind: "boolean",

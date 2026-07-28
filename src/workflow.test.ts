@@ -11,6 +11,7 @@ import {
   symlink,
   unlink,
 } from "node:fs/promises";
+import { hostname as osHostname } from "node:os";
 import { delimiter, join } from "node:path";
 import {
   fixCommand,
@@ -259,6 +260,9 @@ describe("workflow", () => {
     expect(() => parseArgs(["--dry-run", "clean-locks"])).toThrow(
       "unsupported flag for clean-locks: --dry-run",
     );
+    expect(parseArgs(["clean-locks", "--stale-only"]).flags).toMatchObject({
+      staleOnly: true,
+    });
     expect(parseArgs(["map", "--dry-run"]).flags).toMatchObject({
       dryRun: true,
     });
@@ -1629,6 +1633,141 @@ describe("workflow", () => {
     writeFileSpy.mockRestore();
   });
 
+  it("reclaims dead local feature locks before claiming", async () => {
+    const root = await fixtureRoot("clawpatch-dead-local-lock-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "dead-local-lock", bin: { stale: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    const staleLock = {
+      lockedByRunId: "interrupted",
+      lockedAt: new Date().toISOString(),
+      hostname: "local-host",
+      pid: 100,
+    };
+    const nextLock = {
+      lockedByRunId: "run-next",
+      lockedAt: new Date().toISOString(),
+      hostname: "local-host",
+      pid: 101,
+    };
+    await writeFeature(paths, {
+      ...feature!,
+      status: "claimed",
+      lock: staleLock,
+      updatedAt: new Date().toISOString(),
+    });
+    await writeFixture(
+      root,
+      `.clawpatch/locks/${feature!.featureId}.json`,
+      `${JSON.stringify(staleLock, null, 2)}\n`,
+    );
+
+    const claimed = await claimFeature(paths, feature!.featureId, nextLock, {
+      staleLock: { hostname: "local-host", isPidAlive: () => false },
+    });
+
+    expect(claimed.status).toBe("claimed");
+    expect(claimed.lock).toMatchObject({ lockedByRunId: "run-next" });
+    expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
+  });
+
+  it("keeps live local and remote feature locks claimed", async () => {
+    const root = await fixtureRoot("clawpatch-live-remote-locks-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "live-remote-locks",
+        bin: { live: "src/live.ts", remote: "src/remote.ts" },
+      }),
+    );
+    await writeFixture(root, "src/live.ts", "export const live = 1;\n");
+    await writeFixture(root, "src/remote.ts", "export const remote = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const features = (await readFeatures(paths)).filter((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(features).toHaveLength(2);
+    const liveLock = {
+      lockedByRunId: "live-run",
+      lockedAt: new Date().toISOString(),
+      hostname: "local-host",
+      pid: 100,
+    };
+    const remoteLock = {
+      lockedByRunId: "remote-run",
+      lockedAt: new Date().toISOString(),
+      hostname: "remote-host",
+      pid: 100,
+    };
+    for (const [feature, lock] of [
+      [features[0]!, liveLock],
+      [features[1]!, remoteLock],
+    ] as const) {
+      await writeFeature(paths, {
+        ...feature,
+        status: "claimed",
+        lock,
+        updatedAt: new Date().toISOString(),
+      });
+      await writeFixture(
+        root,
+        `.clawpatch/locks/${feature.featureId}.json`,
+        `${JSON.stringify(lock, null, 2)}\n`,
+      );
+    }
+
+    await expect(
+      claimFeature(
+        paths,
+        features[0]!.featureId,
+        {
+          lockedByRunId: "next-live",
+          lockedAt: new Date().toISOString(),
+          hostname: "local-host",
+          pid: 101,
+        },
+        {
+          staleLock: { hostname: "local-host", isPidAlive: () => true },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "lock-conflict" });
+    await expect(
+      claimFeature(
+        paths,
+        features[1]!.featureId,
+        {
+          lockedByRunId: "next-remote",
+          lockedAt: new Date().toISOString(),
+          hostname: "local-host",
+          pid: 101,
+        },
+        {
+          staleLock: { hostname: "local-host", isPidAlive: () => false },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "lock-conflict" });
+    expect(await readdir(paths.locks)).toEqual(
+      features.map((feature) => `${feature.featureId}.json`).toSorted(),
+    );
+  });
+
   it("does not claim a stale feature after another run finishes it", async () => {
     const root = await fixtureRoot("clawpatch-stale-lock-");
     await writeFixture(
@@ -2424,6 +2563,93 @@ describe("workflow", () => {
     expect(cleaned?.status).toBe("pending");
     expect(cleaned?.lock).toBeNull();
     expect(await readdir(paths.locks)).toEqual([]);
+  });
+
+  it("clean-locks --stale-only clears only dead local locks", async () => {
+    const root = await fixtureRoot("clawpatch-clean-stale-locks-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({
+        name: "clean-stale-locks",
+        bin: {
+          stale: "src/stale.ts",
+          live: "src/live.ts",
+          remote: "src/remote.ts",
+        },
+      }),
+    );
+    await writeFixture(root, "src/stale.ts", "export const stale = 1;\n");
+    await writeFixture(root, "src/live.ts", "export const live = 1;\n");
+    await writeFixture(root, "src/remote.ts", "export const remote = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const features = (await readFeatures(paths)).filter((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(features).toHaveLength(3);
+    const locks = [
+      {
+        lockedByRunId: "stale-run",
+        lockedAt: new Date().toISOString(),
+        hostname: osHostname(),
+        pid: 0,
+      },
+      {
+        lockedByRunId: "live-run",
+        lockedAt: new Date().toISOString(),
+        hostname: osHostname(),
+        pid: process.pid,
+      },
+      {
+        lockedByRunId: "remote-run",
+        lockedAt: new Date().toISOString(),
+        hostname: "remote-host",
+        pid: 0,
+      },
+    ];
+    for (const [index, feature] of features.entries()) {
+      const lock = locks[index]!;
+      await writeFeature(paths, {
+        ...feature,
+        status: "claimed",
+        lock,
+        updatedAt: new Date().toISOString(),
+      });
+      await writeFixture(
+        root,
+        `.clawpatch/locks/${feature.featureId}.json`,
+        `${JSON.stringify(lock, null, 2)}\n`,
+      );
+    }
+
+    const result = await cleanLocksCommand(context, { staleOnly: true });
+    const cleaned = await readFeatures(paths);
+
+    expect(result).toMatchObject({ cleared: 1, lockFilesCleared: 1 });
+    expect(cleaned.find((feature) => feature.featureId === features[0]!.featureId)).toMatchObject({
+      status: "pending",
+      lock: null,
+    });
+    expect(
+      cleaned.find((feature) => feature.featureId === features[1]!.featureId)?.lock,
+    ).toMatchObject({
+      lockedByRunId: "live-run",
+    });
+    expect(
+      cleaned.find((feature) => feature.featureId === features[2]!.featureId)?.lock,
+    ).toMatchObject({
+      lockedByRunId: "remote-run",
+    });
+    expect(await readdir(paths.locks)).toEqual(
+      features
+        .slice(1)
+        .map((feature) => `${feature.featureId}.json`)
+        .toSorted(),
+    );
   });
 
   it("surfaces crash-window lock files in status", async () => {

@@ -12,6 +12,7 @@ import { emitProgress } from "./progress.js";
 import { providerByName } from "./provider.js";
 import {
   clearFeatureLockFiles,
+  clearStaleFeatureLocks,
   ensureStateDirs,
   readFeatures,
   readFeatureLockIds,
@@ -266,8 +267,15 @@ export async function doctorCommand(
   };
 }
 
-export async function cleanLocksCommand(context: AppContext): Promise<unknown> {
+export async function cleanLocksCommand(
+  context: AppContext,
+  flags: Record<string, string | boolean> = {},
+): Promise<unknown> {
   const loaded = await loadProjectState(context);
+  if (flags["staleOnly"] === true) {
+    const cleared = await clearStaleFeatureLocks(loaded.paths);
+    return { cleared: cleared.featuresCleared, lockFilesCleared: cleared.lockFilesCleared };
+  }
   const features = await readFeatures(loaded.paths);
   let cleared = 0;
   for (const feature of features) {

@@ -1,4 +1,5 @@
 import { open, readdir, unlink } from "node:fs/promises";
+import { hostname as osHostname } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { ClawpatchError } from "./errors.js";
@@ -10,6 +11,7 @@ import {
   ProjectRecord,
   RunRecord,
   featureRecordSchema,
+  featureLockSchema,
   findingRecordSchema,
   patchAttemptSchema,
   projectRecordSchema,
@@ -26,6 +28,18 @@ export type StatePaths = {
   patches: string;
   reports: string;
   locks: string;
+};
+
+type FeatureLock = NonNullable<FeatureRecord["lock"]>;
+
+export type FeatureLockReclaimOptions = {
+  hostname?: string;
+  isPidAlive?: (pid: number) => boolean;
+};
+
+type ClaimFeatureOptions = {
+  allowNonPending?: boolean;
+  staleLock?: FeatureLockReclaimOptions;
 };
 
 export function statePaths(stateDir: string): StatePaths {
@@ -84,33 +98,48 @@ export async function writeFeature(paths: StatePaths, feature: FeatureRecord): P
 export async function claimFeature(
   paths: StatePaths,
   featureId: string,
-  lock: NonNullable<FeatureRecord["lock"]>,
-  options: { allowNonPending?: boolean } = {},
+  lock: FeatureLock,
+  options: ClaimFeatureOptions = {},
 ): Promise<FeatureRecord> {
   await ensureDir(paths.locks);
   const lockPath = featureLockPath(paths, featureId);
-  let handle;
-  try {
-    handle = await open(lockPath, "wx");
-    await handle.writeFile(`${JSON.stringify(lock, null, 2)}\n`, "utf8");
-  } catch (error: unknown) {
-    if (isNodeError(error, "EEXIST")) {
-      throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
+  let lockFileCreated = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let handle;
+    try {
+      handle = await open(lockPath, "wx");
+      await handle.writeFile(`${JSON.stringify(lock, null, 2)}\n`, "utf8");
+      lockFileCreated = true;
+      break;
+    } catch (error: unknown) {
+      if (isNodeError(error, "EEXIST")) {
+        if (attempt === 0 && (await reclaimStaleFeatureLock(paths, featureId, options.staleLock))) {
+          continue;
+        }
+        throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
+      }
+      if (handle !== undefined) {
+        await handle.close();
+        handle = undefined;
+        await releaseFeatureLock(paths, featureId);
+      }
+      throw error;
+    } finally {
+      await handle?.close();
     }
-    if (handle !== undefined) {
-      await handle.close();
-      handle = undefined;
-      await releaseFeatureLock(paths, featureId);
-    }
-    throw error;
-  } finally {
-    await handle?.close();
+  }
+  if (!lockFileCreated) {
+    throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
   }
 
   try {
-    const feature = await readFeature(paths, featureId);
+    let feature = await readFeature(paths, featureId);
     if (feature === null) {
       throw new ClawpatchError(`feature not found: ${featureId}`, 2, "feature-not-found");
+    }
+    if (feature.lock !== null && isStaleLocalFeatureLock(feature.lock, options.staleLock)) {
+      feature = clearFeatureRecordLock(feature);
+      await writeFeature(paths, feature);
     }
     if (feature.lock !== null) {
       throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
@@ -133,11 +162,19 @@ export async function claimFeature(
 }
 
 export async function releaseFeatureLock(paths: StatePaths, featureId: string): Promise<void> {
-  await unlink(featureLockPath(paths, featureId)).catch((error: unknown) => {
+  await deleteFeatureLockFile(paths, featureId);
+}
+
+async function deleteFeatureLockFile(paths: StatePaths, featureId: string): Promise<boolean> {
+  try {
+    await unlink(featureLockPath(paths, featureId));
+    return true;
+  } catch (error: unknown) {
     if (!isNodeError(error, "ENOENT")) {
       throw error;
     }
-  });
+    return false;
+  }
 }
 
 export async function clearFeatureLockFiles(paths: StatePaths): Promise<number> {
@@ -146,6 +183,43 @@ export async function clearFeatureLockFiles(paths: StatePaths): Promise<number> 
     await releaseFeatureLock(paths, id);
   }
   return lockIds.length;
+}
+
+export async function clearStaleFeatureLocks(
+  paths: StatePaths,
+  options: FeatureLockReclaimOptions = {},
+): Promise<{ featuresCleared: number; lockFilesCleared: number }> {
+  const lockFilesCleared = new Set<string>();
+  let featuresCleared = 0;
+  for (const feature of await readFeatures(paths)) {
+    if (feature.lock === null || !isStaleLocalFeatureLock(feature.lock, options)) {
+      continue;
+    }
+    const lockFile = await readFeatureLockFile(paths, feature.featureId);
+    if (lockFile !== null && !isStaleLocalFeatureLock(lockFile, options)) {
+      continue;
+    }
+    await writeFeature(paths, clearFeatureRecordLock(feature));
+    featuresCleared += 1;
+    if (lockFile !== null) {
+      if (await deleteFeatureLockFile(paths, feature.featureId)) {
+        lockFilesCleared.add(feature.featureId);
+      }
+    }
+  }
+
+  for (const id of await readFeatureLockIds(paths)) {
+    if (lockFilesCleared.has(id)) {
+      continue;
+    }
+    const lockFile = await readFeatureLockFile(paths, id);
+    if (lockFile !== null && isStaleLocalFeatureLock(lockFile, options)) {
+      if (await deleteFeatureLockFile(paths, id)) {
+        lockFilesCleared.add(id);
+      }
+    }
+  }
+  return { featuresCleared, lockFilesCleared: lockFilesCleared.size };
 }
 
 export async function readFeatureLockIds(paths: StatePaths): Promise<string[]> {
@@ -219,6 +293,78 @@ function recordPath(directory: string, id: string): string {
     throw new ClawpatchError(`invalid record id: ${id}`, 2, "invalid-input");
   }
   return join(directory, `${id}.json`);
+}
+
+async function reclaimStaleFeatureLock(
+  paths: StatePaths,
+  featureId: string,
+  options: FeatureLockReclaimOptions = {},
+): Promise<boolean> {
+  const [feature, fileLock] = await Promise.all([
+    readFeature(paths, featureId),
+    readFeatureLockFile(paths, featureId),
+  ]);
+  const featureLock = feature?.lock ?? null;
+  if (featureLock === null && fileLock === null) {
+    return false;
+  }
+  if (featureLock !== null && !isStaleLocalFeatureLock(featureLock, options)) {
+    return false;
+  }
+  if (fileLock !== null && !isStaleLocalFeatureLock(fileLock, options)) {
+    return false;
+  }
+  if (featureLock !== null && feature !== null) {
+    await writeFeature(paths, clearFeatureRecordLock(feature));
+  }
+  if (fileLock !== null) {
+    await deleteFeatureLockFile(paths, featureId);
+  }
+  return true;
+}
+
+function clearFeatureRecordLock(feature: FeatureRecord): FeatureRecord {
+  return {
+    ...feature,
+    status: feature.status === "claimed" ? "pending" : feature.status,
+    lock: null,
+    updatedAt: nowIso(),
+  };
+}
+
+async function readFeatureLockFile(
+  paths: StatePaths,
+  featureId: string,
+): Promise<FeatureLock | null> {
+  try {
+    return await readJson(featureLockPath(paths, featureId), featureLockSchema);
+  } catch {
+    return null;
+  }
+}
+
+export function isStaleLocalFeatureLock(
+  lock: FeatureLock,
+  options: FeatureLockReclaimOptions = {},
+): boolean {
+  const currentHostname = options.hostname ?? osHostname();
+  const isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
+  return lock.hostname === currentHostname && !isPidAlive(lock.pid);
+}
+
+function defaultIsPidAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error: unknown) {
+    if (isNodeError(error, "ESRCH")) {
+      return false;
+    }
+    return true;
+  }
 }
 
 function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
