@@ -96,7 +96,10 @@ export async function mapFeatureSeeds(
     if (seed === null) {
       continue;
     }
-    if (options.changedFiles !== undefined && !seedTouchesChangedFiles(seed, options.changedFiles)) {
+    if (
+      options.changedFiles !== undefined &&
+      !seedTouchesChangedFiles(seed, options.changedFiles)
+    ) {
       continue;
     }
     const identity = featureIdentity(seed, existingById);
@@ -319,10 +322,7 @@ function statusForChangedFeature(status: FeatureRecord["status"]): FeatureRecord
   return status;
 }
 
-function seedTouchesChangedFiles(
-  seed: FeatureSeed,
-  changedFiles: ReadonlySet<string>,
-): boolean {
+function seedTouchesChangedFiles(seed: FeatureSeed, changedFiles: ReadonlySet<string>): boolean {
   if (changedFiles.has(seed.entryPath)) {
     return true;
   }
