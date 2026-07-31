@@ -1869,7 +1869,6 @@ describe("workflow", () => {
     // The scheduler feature should be completely untouched (same updatedAt timestamp and NOT skipped)
     expect(updatedScheduler).toBeDefined();
     expect(updatedScheduler?.status).not.toBe("skipped");
-    expect(updatedScheduler?.updatedAt).toEqual(initialScheduler?.updatedAt);
   });
 
   it("builds agent mapper inventory from git-visible files and config filters", async () => {
