@@ -1844,24 +1844,28 @@ describe("workflow", () => {
     await initCommand(context, {});
     await mapCommand(context, { source: "agent", provider: "mock" });
     const initialFeatures = await readFeatures(statePaths(join(root, ".clawpatch")));
-    const initialScheduler = initialFeatures.find(f => f.ownedFiles.some(file => file.path === "agent/scheduler.custom"));
+    const initialScheduler = initialFeatures.find((f) =>
+      f.ownedFiles.some((file) => file.path === "agent/scheduler.custom"),
+    );
 
     await writeFixture(root, "agent/worker.custom", "changed worker source\n");
     await runCommand("git add agent/worker.custom", root);
     await runCommand("git commit -m 'update worker'", root);
 
-    const mapped = await mapCommand(context, {
+    const mapped = (await mapCommand(context, {
       source: "agent",
       provider: "mock",
-      since: "HEAD~1"
-    }) as any;
+      since: "HEAD~1",
+    })) as any;
 
     expect(mapped.incremental).toBe(true);
     expect(mapped.changedFiles).toBe(1);
 
     const updatedFeatures = await readFeatures(statePaths(join(root, ".clawpatch")));
-    const updatedScheduler = updatedFeatures.find(f => f.ownedFiles.some(file => file.path === "agent/scheduler.custom"));
-    
+    const updatedScheduler = updatedFeatures.find((f) =>
+      f.ownedFiles.some((file) => file.path === "agent/scheduler.custom"),
+    );
+
     // The scheduler feature should be completely untouched (same updatedAt timestamp and NOT skipped)
     expect(updatedScheduler).toBeDefined();
     expect(updatedScheduler?.status).not.toBe("skipped");
