@@ -131,7 +131,16 @@ type CommandSpec = {
 const commandSpecs = {
   init: { flags: ["force"], usage: ["clawpatch init [flags]"], run: initCommand },
   map: {
-    flags: ["dryRun", "source", "provider", "model", "reasoningEffort", "skipGitRepoCheck"],
+    flags: [
+      "dryRun",
+      "source",
+      "provider",
+      "model",
+      "reasoningEffort",
+      "skipGitRepoCheck",
+      "since",
+      "includeDirty",
+    ],
     usage: ["clawpatch map [flags]"],
     run: mapCommand,
   },

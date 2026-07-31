@@ -45,6 +45,7 @@ export type MapProgressEvent = {
 export type MapOptions = {
   onProgress?: (event: MapProgressEvent) => void;
   filters?: PathFilters;
+  changedFiles?: ReadonlySet<string>;
 };
 
 const featureMappers: FeatureMapper[] = [
@@ -93,6 +94,9 @@ export async function mapFeatureSeeds(
   for (const rawSeed of seeds) {
     const seed = filterSeed(rawSeed, options.filters);
     if (seed === null) {
+      continue;
+    }
+    if (options.changedFiles !== undefined && !seedTouchesChangedFiles(seed, options.changedFiles)) {
       continue;
     }
     const identity = featureIdentity(seed, existingById);
@@ -313,4 +317,38 @@ function statusForChangedFeature(status: FeatureRecord["status"]): FeatureRecord
     return "pending";
   }
   return status;
+}
+
+function seedTouchesChangedFiles(
+  seed: FeatureSeed,
+  changedFiles: ReadonlySet<string>,
+): boolean {
+  if (changedFiles.has(seed.entryPath)) {
+    return true;
+  }
+  if (seed.ownedFiles !== undefined) {
+    for (const file of seed.ownedFiles) {
+      if (changedFiles.has(file.path)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function featureTouchesChangedFiles(
+  feature: FeatureRecord,
+  changedFiles: ReadonlySet<string>,
+): boolean {
+  for (const entrypoint of feature.entrypoints) {
+    if (changedFiles.has(entrypoint.path)) {
+      return true;
+    }
+  }
+  for (const file of feature.ownedFiles) {
+    if (changedFiles.has(file.path)) {
+      return true;
+    }
+  }
+  return false;
 }

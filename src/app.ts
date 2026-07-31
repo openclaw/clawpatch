@@ -1,13 +1,14 @@
 import { appendFile } from "node:fs/promises";
 import { loadConfig, parseReasoningEffort, resolveStateDir } from "./config.js";
 import { applyProviderFlags, providerOptions, stringFlag } from "./command-support.js";
+import { changedFiles } from "./command-selection.js";
 import { loadProjectState, type AppContext } from "./app-context.js";
 import { detectProject } from "./detect.js";
 import { ClawpatchError } from "./errors.js";
 import { nowIso, writeJson } from "./fs.js";
 import { discoverGit } from "./git.js";
 import { mapWithSource } from "./agent-mapper.js";
-import { mapFeatures } from "./mapper.js";
+import { featureTouchesChangedFiles, mapFeatures } from "./mapper.js";
 import { emitProgress } from "./progress.js";
 import { providerByName } from "./provider.js";
 import {
@@ -79,13 +80,17 @@ export async function mapCommand(
   const provider = source === "heuristic" ? null : providerByName(config.provider.name);
   const existing = await readFeatures(loaded.paths);
   const filters = { include: config.include, exclude: config.exclude };
+  const incremental = hasIncrementalFlags(flags);
+  const diffFiles = incremental ? await changedFiles(loaded.root, flags) : undefined;
   emitProgress(context, "map", "start", {
     source,
     existing: existing.length,
     dryRun: flags["dryRun"] === true,
+    ...(diffFiles !== undefined ? { incremental: true, changedFiles: diffFiles.size } : {}),
   });
   const heuristic = await mapFeatures(loaded.root, loaded.project, existing, {
     filters,
+    ...(diffFiles !== undefined ? { changedFiles: diffFiles } : {}),
     onProgress: (event) => {
       emitProgress(context, "map", event.event, {
         mapper: event.mapper,
@@ -127,6 +132,7 @@ export async function mapCommand(
       source: result.decision.source,
       usedAgent: result.decision.usedAgent,
       reason: result.decision.reason,
+      ...(diffFiles !== undefined ? { incremental: true, changedFiles: diffFiles.size } : {}),
     };
   }
   emitProgress(context, "map", "write-start", {
@@ -137,6 +143,9 @@ export async function mapCommand(
   }
   for (const feature of existing) {
     if (!activeFeatureIds.has(feature.featureId)) {
+      if (diffFiles !== undefined && !featureTouchesChangedFiles(feature, diffFiles)) {
+        continue;
+      }
       await writeFeature(loaded.paths, {
         ...feature,
         status: "skipped",
@@ -158,6 +167,7 @@ export async function mapCommand(
     source: result.decision.source,
     usedAgent: result.decision.usedAgent,
     reason: result.decision.reason,
+    ...(diffFiles !== undefined ? { incremental: true, changedFiles: diffFiles.size } : {}),
     next: "clawpatch review --limit 3",
   };
 }
@@ -392,6 +402,10 @@ function parseMapSource(flags: Record<string, string | boolean>): "heuristic" | 
     2,
     "invalid-usage",
   );
+}
+
+function hasIncrementalFlags(flags: Record<string, string | boolean>): boolean {
+  return stringFlag(flags, "since") !== undefined || flags["includeDirty"] === true;
 }
 
 // eslint-disable-next-line no-underscore-dangle
