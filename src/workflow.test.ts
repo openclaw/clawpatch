@@ -1843,10 +1843,6 @@ describe("workflow", () => {
     const context = await makeContext(testOptions(root));
     await initCommand(context, {});
     await mapCommand(context, { source: "agent", provider: "mock" });
-    const initialFeatures = await readFeatures(statePaths(join(root, ".clawpatch")));
-    const initialScheduler = initialFeatures.find((f) =>
-      f.ownedFiles.some((file) => file.path === "agent/scheduler.custom"),
-    );
 
     await writeFixture(root, "agent/worker.custom", "changed worker source\n");
     await runCommand("git add agent/worker.custom", root);
