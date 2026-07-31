@@ -35,6 +35,7 @@ type AgentMapOptions = {
   provider: Provider | null;
   providerOptions: ProviderOptions;
   inventory?: PathFilters;
+  changedFiles?: ReadonlySet<string>;
   onProgress?: (event: string, fields: Record<string, string | number | boolean>) => void;
 };
 
@@ -156,6 +157,7 @@ export async function mapWithSource(
     options.providerOptions,
     inventory,
     options.inventory,
+    options.changedFiles,
   );
   options.onProgress?.("agent-done", {
     features: agent.features.length,
@@ -208,6 +210,7 @@ async function agentMap(
   providerOptions: ProviderOptions,
   inventory: RepoInventory,
   filters: PathFilters | undefined,
+  changedFiles: ReadonlySet<string> | undefined,
 ): Promise<MapResult> {
   const prompt = buildAgentMapPrompt(project, {
     manifests: inventory.manifests,
@@ -224,9 +227,10 @@ async function agentMap(
   const mappedSeeds = dedupeFeatureSeeds(
     seeds.filter((seed): seed is FeatureSeed => seed !== null),
   );
-  return filters === undefined
-    ? mapFeatureSeeds(root, project, existing, mappedSeeds)
-    : mapFeatureSeeds(root, project, existing, mappedSeeds, { filters });
+  return mapFeatureSeeds(root, project, existing, mappedSeeds, {
+    ...(filters !== undefined ? { filters } : {}),
+    ...(changedFiles !== undefined ? { changedFiles } : {}),
+  });
 }
 
 async function toSeed(

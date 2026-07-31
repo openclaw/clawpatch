@@ -112,6 +112,7 @@ export async function mapCommand(
     provider,
     providerOptions: providerOptions(config),
     inventory: filters,
+    ...(diffFiles !== undefined ? { changedFiles: diffFiles } : {}),
     onProgress: (event, fields) => {
       emitProgress(context, "map", event, fields);
     },

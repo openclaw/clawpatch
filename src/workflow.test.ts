@@ -1833,6 +1833,41 @@ describe("workflow", () => {
     expect(agentFeature?.tests).toEqual([{ path: "agent/worker.test.custom", command: null }]);
   });
 
+  it("applies --since changed files filter to agent-mapped features", async () => {
+    const root = await sinceFixture("clawpatch-agent-map-since-");
+    await writeFixture(root, "agent/worker.custom", "worker source\n");
+    await writeFixture(root, "agent/scheduler.custom", "scheduler source\n");
+    await runCommand("git add agent/worker.custom agent/scheduler.custom", root);
+    await runCommand("git commit -m 'initial custom files'", root);
+
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    await mapCommand(context, { source: "agent", provider: "mock" });
+    const initialFeatures = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const initialScheduler = initialFeatures.find(f => f.ownedFiles.some(file => file.path === "agent/scheduler.custom"));
+
+    await writeFixture(root, "agent/worker.custom", "changed worker source\n");
+    await runCommand("git add agent/worker.custom", root);
+    await runCommand("git commit -m 'update worker'", root);
+
+    const mapped = await mapCommand(context, {
+      source: "agent",
+      provider: "mock",
+      since: "HEAD~1"
+    }) as any;
+
+    expect(mapped.incremental).toBe(true);
+    expect(mapped.changedFiles).toBe(1);
+
+    const updatedFeatures = await readFeatures(statePaths(join(root, ".clawpatch")));
+    const updatedScheduler = updatedFeatures.find(f => f.ownedFiles.some(file => file.path === "agent/scheduler.custom"));
+    
+    // The scheduler feature should be completely untouched (same updatedAt timestamp and NOT skipped)
+    expect(updatedScheduler).toBeDefined();
+    expect(updatedScheduler?.status).not.toBe("skipped");
+    expect(updatedScheduler?.updatedAt).toEqual(initialScheduler?.updatedAt);
+  });
+
   it("builds agent mapper inventory from git-visible files and config filters", async () => {
     const root = await fixtureRoot("clawpatch-agent-map-git-inventory-");
     await writeFixture(
