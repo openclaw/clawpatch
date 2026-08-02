@@ -19,6 +19,7 @@ Provider names today:
 - `codex`: shells out to `codex exec` (default)
 - `acpx`: routes through any ACP-compatible coding agent via `acpx`
 - `claude`: shells out to Claude Code in print mode (`claude -p`)
+- `devin`: shells out to the local Devin CLI in print mode (`devin --print --prompt-file`)
 - `grok`: shells out to the xAI Grok Build CLI in headless mode (`grok --prompt-file`)
 - `opencode`: shells out to `opencode run --format json`
 - `pi`: shells out to `pi -p` (non-interactive print mode)
@@ -137,6 +138,44 @@ first colon:
 Migration note: `--provider codex --model gpt-5-codex` is not equivalent to
 `--provider acpx --model gpt-5-codex`; the latter selects an ACP agent named
 `gpt-5-codex`. Use `--provider acpx --model codex:gpt-5-codex`.
+
+## Devin
+
+The `devin` provider shells out to the local [Devin CLI](https://docs.devin.ai/cli)
+in non-interactive print mode:
+
+- availability check: `devin --version`
+- review / revalidate: `--permission-mode auto` — the Devin runtime auto-approves
+  read-only tools only and never grants write/execute in print mode, so this is
+  enforced read-only behavior (not a prompt-only directive)
+- fix: `--permission-mode accept-edits` — the Devin runtime auto-approves workspace
+  edits; run `fix` only in an isolated trusted checkout
+- prompt delivery: writes the full Clawpatch prompt to a temporary file and calls
+  `devin --print --prompt-file <path> --permission-mode <mode>`
+- reasoning effort: the Devin CLI has no `--reasoning-effort` flag (verified against
+  v3000.2.17), so the requested effort level is injected into the prompt text
+- output: parsed from stdout with the shared JSON extractor
+- timeout: 300 seconds by default, override with `CLAWPATCH_DEVIN_TIMEOUT_MS` or
+  `CLAWPATCH_PROVIDER_TIMEOUT_MS`
+- model selection: `--model <model>` is passed through to Devin when configured;
+  when unset, Devin uses its own configured default (`~/.config/devin/config.json`
+  on macOS/Linux, `%APPDATA%\devin\config.json` on Windows)
+- environment: the Devin subprocess inherits the ambient environment so it can
+  locate its config-file credentials and proxy settings; clawpatch does not inject
+  or strip environment variables for this provider
+
+Provider selection:
+
+```bash
+clawpatch review --provider devin
+CLAWPATCH_PROVIDER=devin clawpatch review
+clawpatch fix --finding <id> --provider devin
+clawpatch doctor --provider devin
+```
+
+Authentication: run `devin auth login` once before using this provider. The
+provider `check` runs `devin --version` only; a missing or expired auth token
+surfaces as a `provider-failure` error on the first review/map/fix call.
 
 ## Claude
 

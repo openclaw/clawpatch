@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
 import { __testing, extractJson, providerByName } from "./provider.js";
@@ -31,6 +32,9 @@ const {
   cursorFailureMessage,
   cursorPrompt,
   cursorTimeoutMs,
+  devinFailureMessage,
+  devinPrompt,
+  devinTimeoutMs,
   extractAcpxJson,
   extractCursorJson,
   extractClaudeStructuredOutput,
@@ -796,10 +800,10 @@ describe("Claude provider helpers", () => {
 
     expect(claudeEnv(false, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
-      HOME: "/tmp/claude/home",
-      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
-      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
-      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      HOME: join("/tmp/claude", "home"),
+      XDG_CONFIG_HOME: join("/tmp/claude", "xdg-config"),
+      XDG_CACHE_HOME: join("/tmp/claude", "xdg-cache"),
+      XDG_DATA_HOME: join("/tmp/claude", "xdg-data"),
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
@@ -807,10 +811,10 @@ describe("Claude provider helpers", () => {
     });
     expect(claudeEnv(true, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
-      HOME: "/tmp/claude/home",
-      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
-      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
-      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      HOME: join("/tmp/claude", "home"),
+      XDG_CONFIG_HOME: join("/tmp/claude", "xdg-config"),
+      XDG_CACHE_HOME: join("/tmp/claude", "xdg-cache"),
+      XDG_DATA_HOME: join("/tmp/claude", "xdg-data"),
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
@@ -836,9 +840,9 @@ describe("Claude provider helpers", () => {
       HOME: "/host-home",
       USERPROFILE: "C:\\Users\\operator",
       CLAUDE_CONFIG_DIR: "/host-claude-config",
-      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
-      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
-      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      XDG_CONFIG_HOME: join("/tmp/claude", "xdg-config"),
+      XDG_CACHE_HOME: join("/tmp/claude", "xdg-cache"),
+      XDG_DATA_HOME: join("/tmp/claude", "xdg-data"),
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
@@ -886,10 +890,10 @@ describe("Claude provider helpers", () => {
 
     expect(claudeEnv(false, "/tmp/claude", "isolated")).toEqual({
       PATH: "/bin",
-      HOME: "/tmp/claude/home",
-      XDG_CONFIG_HOME: "/tmp/claude/xdg-config",
-      XDG_CACHE_HOME: "/tmp/claude/xdg-cache",
-      XDG_DATA_HOME: "/tmp/claude/xdg-data",
+      HOME: join("/tmp/claude", "home"),
+      XDG_CONFIG_HOME: join("/tmp/claude", "xdg-config"),
+      XDG_CACHE_HOME: join("/tmp/claude", "xdg-cache"),
+      XDG_DATA_HOME: join("/tmp/claude", "xdg-data"),
       TMPDIR: "/tmp/claude",
       TEMP: "/tmp/claude",
       TMP: "/tmp/claude",
@@ -1742,6 +1746,7 @@ describe("providerByName", () => {
   it("returns provider instances for optional CLI-backed providers", () => {
     expect(providerByName("acpx").name).toBe("acpx");
     expect(providerByName("claude").name).toBe("claude");
+    expect(providerByName("devin").name).toBe("devin");
     expect(providerByName("grok").name).toBe("grok");
     expect(providerByName("opencode").name).toBe("opencode");
     expect(providerByName("pi").name).toBe("pi");
@@ -1830,6 +1835,48 @@ describe("evidenceRefSchema tolerance", () => {
     });
     expect(parsed.startLine).toBeNull();
     expect(parsed.endLine).toBeNull();
+  });
+});
+
+describe("Devin provider helpers", () => {
+  it("injects reasoning effort into the prompt and appends the JSON schema", () => {
+    const schema = { type: "object", properties: { ok: { type: "boolean" } } };
+    const withoutEffort = devinPrompt("review this", schema, null);
+    expect(withoutEffort).toContain("review this");
+    expect(withoutEffort).toContain("Return ONLY a JSON object");
+    expect(withoutEffort).toContain(JSON.stringify(schema));
+    expect(withoutEffort).not.toContain("REASONING EFFORT");
+
+    const withEffort = devinPrompt("review this", schema, "xhigh");
+    expect(withEffort).toContain("REASONING EFFORT: XHIGH");
+    expect(withEffort).toContain("Apply xhigh reasoning depth");
+    expect(withEffort).toContain("review this");
+    expect(withEffort).toContain(JSON.stringify(schema));
+
+    // "none" effort is treated like no effort (no preamble)
+    const noneEffort = devinPrompt("review this", schema, "none");
+    expect(noneEffort).not.toContain("REASONING EFFORT");
+  });
+
+  it("uses Devin-specific timeout before generic provider timeout", () => {
+    delete process.env["CLAWPATCH_DEVIN_TIMEOUT_MS"];
+    delete process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"];
+    expect(devinTimeoutMs()).toBe(300_000);
+
+    process.env["CLAWPATCH_PROVIDER_TIMEOUT_MS"] = "2000";
+    expect(devinTimeoutMs()).toBe(2000);
+
+    process.env["CLAWPATCH_DEVIN_TIMEOUT_MS"] = "3000";
+    expect(devinTimeoutMs()).toBe(3000);
+
+    process.env["CLAWPATCH_DEVIN_TIMEOUT_MS"] = "bad";
+    expect(devinTimeoutMs()).toBe(300_000);
+  });
+
+  it("uses bounded failure previews from stderr or stdout", () => {
+    expect(devinFailureMessage("", "auth required")).toContain("auth required");
+    expect(devinFailureMessage("stdout failure", "")).toContain("stdout failure");
+    expect(devinFailureMessage("", "")).toBe("devin provider failed");
   });
 });
 
