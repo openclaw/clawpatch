@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.7.2 - Unreleased
+## 0.7.2 - 2026-08-01
 
 - Reclaimed dead same-host review locks automatically and added `clean-locks --stale-only` for safe scripted cleanup while preserving live and remote locks, thanks @goutamadwant.
 - Fixed diff-scoped review and CI runs to include changed features regardless of their previous review status, preventing warm-state gates from silently skipping changed code, thanks @youhaowei.
-- Updated pnpm, Node typings, formatter and linter tooling, and security workflow actions.
+- Updated pnpm, Node typings, formatter and linter tooling, and security and repository automation actions.
 - Added Rust seed context for Cargo manifests, paired crate entrypoints, and directly declared modules across crate roots and binary layouts, thanks @Tanmay-008.
 
 ## 0.7.1 - 2026-07-20
