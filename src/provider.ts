@@ -6,6 +6,7 @@ import { acpxProvider, acpxTesting } from "./providers/acpx.js";
 import { claudeProvider, claudeTesting } from "./providers/claude.js";
 import { codexProvider, codexTesting } from "./providers/codex.js";
 import { cursorProvider, cursorTesting } from "./providers/cursor.js";
+import { devinProvider, devinTesting } from "./providers/devin.js";
 import { grokProvider } from "./providers/grok.js";
 import { mockFailProvider, mockProvider } from "./providers/mock.js";
 import { opencodeProvider, opencodeTesting } from "./providers/opencode.js";
@@ -18,6 +19,7 @@ const providers: Readonly<Record<string, Provider>> = {
   claude: claudeProvider,
   codex: codexProvider,
   cursor: cursorProvider,
+  devin: devinProvider,
   grok: grokProvider,
   mock: mockProvider,
   "mock-fail": mockFailProvider,
@@ -39,6 +41,7 @@ export const __testing = {
   ...claudeTesting,
   ...codexTesting,
   ...cursorTesting,
+  ...devinTesting,
   ...opencodeTesting,
   ...piTesting,
   providerExitCode,

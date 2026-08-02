@@ -905,6 +905,7 @@ Implemented providers:
 - `acpx`: ACP-compatible agents through `acpx`.
 - `claude`: Claude Code CLI in print mode.
 - `cursor`: experimental Cursor Agent CLI integration.
+- `devin`: Devin CLI in print mode with `--permission-mode` read-only enforcement.
 - `grok`: Grok Build CLI.
 - `opencode`: OpenCode CLI.
 - `pi`: pi coding agent.
