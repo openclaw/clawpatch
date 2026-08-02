@@ -2,6 +2,7 @@
 
 ## 0.7.2 - Unreleased
 
+- Updated pnpm, Node typings, formatter and linter tooling, and security workflow actions.
 - Added Rust seed context for Cargo manifests, paired crate entrypoints, and directly declared modules across crate roots and binary layouts, thanks @Tanmay-008.
 
 ## 0.7.1 - 2026-07-20
