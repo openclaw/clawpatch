@@ -124,7 +124,8 @@ export async function reviewCommand(
             registryPostValidator,
             allowNonPendingFeatureReview:
               stringFlag(flags, "feature") !== undefined ||
-              stringFlag(flags, "featureList") !== undefined,
+              stringFlag(flags, "featureList") !== undefined ||
+              hasFileFilter(flags),
           });
           findingIds.push(...reviewed.findingIds);
           for (const dropped of reviewed.droppedFindings) {
@@ -545,7 +546,9 @@ async function selectReviewFeatures(
     }
     return stringFlag(flags, "limit") === undefined ? selected : limitFeatures(selected, flags);
   }
-  const candidates = selectReviewCandidates(features, flags);
+  const candidates = selectReviewCandidates(features, flags, {
+    ignoreStatus: hasFileFilter(flags),
+  });
   const sinceFiltered = await filterFeaturesByFilesSince(loaded.root, candidates, flags);
   return limitFeatures(sinceFiltered, flags);
 }

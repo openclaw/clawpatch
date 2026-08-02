@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -16,6 +17,7 @@ type PackageSmokeTesting = {
       npmCache: string;
     }): string[];
     runtimeDependencyNames(packageJson: { dependencies?: Record<string, string> }): string[];
+    runtimeDependencyPaths(rootPath?: string): string[];
   };
 };
 
@@ -36,6 +38,16 @@ describe("package smoke harness", () => {
       dependencies: { zod: "^4.4.3" },
     });
     expect(dependencyNames).toEqual(["zod"]);
+
+    const packedDependencyNames = smoke.runtimeDependencyPaths().map((dependencyPath) => {
+      const packageJson = JSON.parse(
+        readFileSync(join(dependencyPath, "package.json"), "utf8"),
+      ) as { name: string };
+      return packageJson.name;
+    });
+    expect(packedDependencyNames).toEqual(
+      expect.arrayContaining(["proper-lockfile", "graceful-fs", "retry", "signal-exit", "zod"]),
+    );
 
     const packArgs = smoke.packDependencyArgs({
       dependencyPath: dependencySource,

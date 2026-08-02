@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const moduleRequire = createRequire(import.meta.url);
 const root = process.cwd();
 
 function createSmokeContext() {
@@ -251,10 +250,24 @@ function packPath(destination, output) {
 }
 
 function runtimeDependencyPaths(rootPath = root) {
-  const packageJson = JSON.parse(readFileSync(join(rootPath, "package.json"), "utf8"));
-  return runtimeDependencyNames(packageJson).map((name) =>
-    dirname(moduleRequire.resolve(`${name}/package.json`)),
-  );
+  const dependencyPaths = new Map();
+
+  function collect(packageJsonPath, packageRequire) {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
+    for (const name of runtimeDependencyNames(packageJson)) {
+      const dependencyPackageJson = packageRequire.resolve(`${name}/package.json`);
+      const dependencyPath = dirname(dependencyPackageJson);
+      if (dependencyPaths.has(dependencyPath)) {
+        continue;
+      }
+      dependencyPaths.set(dependencyPath, dependencyPath);
+      collect(dependencyPackageJson, createRequire(dependencyPackageJson));
+    }
+  }
+
+  const packageJsonPath = join(rootPath, "package.json");
+  collect(packageJsonPath, createRequire(packageJsonPath));
+  return [...dependencyPaths.values()];
 }
 
 function runtimeDependencyNames(packageJson) {
@@ -331,4 +344,5 @@ export const packageSmokeTestHooks = {
   installArgs,
   packDependencyArgs,
   runtimeDependencyNames,
+  runtimeDependencyPaths,
 };
