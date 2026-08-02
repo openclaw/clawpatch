@@ -854,6 +854,64 @@ describe("workflow", () => {
     });
   });
 
+  it("selects changed features regardless of their previous review status", async () => {
+    const root = await sinceFixture("clawpatch-since-status-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await commitAll(root, "change two");
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+    const expected = expectedFeatureIds(features, new Set(["src/two.ts"]), true);
+    const statuses: FeatureRecord["status"][] = ["reviewed", "needs-fix", "fixed"];
+    let statusIndex = 0;
+    for (const feature of features) {
+      if (!expected.includes(feature.featureId)) {
+        continue;
+      }
+      await writeFeature(paths, {
+        ...feature,
+        status: statuses[statusIndex % statuses.length]!,
+      });
+      statusIndex += 1;
+    }
+
+    const reviewed = await reviewCommand(context, { since: "base", dryRun: true });
+
+    expect(expected.length).toBeGreaterThan(0);
+    expect(reviewed).toMatchObject({ dryRun: true, featureIds: expected });
+  });
+
+  it("reviews changed non-pending features through the warm-state CI workflow", async () => {
+    const root = await sinceFixture("clawpatch-ci-since-status-");
+    const context = await makeContext(testOptions(root));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const paths = statePaths(join(root, ".clawpatch"));
+    const features = await readFeatures(paths);
+    const touched = expectedFeatureIds(features, new Set(["src/two.ts"]), true);
+    for (const feature of features) {
+      if (!touched.includes(feature.featureId)) {
+        continue;
+      }
+      await writeFeature(paths, { ...feature, status: "needs-fix" });
+    }
+    await writeFixture(root, "src/two.ts", "export const two = 'changed';\n");
+    await commitAll(root, "change two");
+
+    const result = await ciCommand(context, {
+      provider: "mock",
+      since: "base",
+      jobs: "1",
+    });
+
+    expect(touched.length).toBeGreaterThan(0);
+    expect(result).toMatchObject({ reviewed: touched.length });
+  });
+
   it("selects review features whose context files overlap the diff range", async () => {
     const root = await sinceFixture("clawpatch-since-context-");
     const context = await makeContext(testOptions(root));
