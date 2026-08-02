@@ -20,7 +20,9 @@ Current safety rules:
   strictly sandboxed. See docs/providers.md.
 - provider output must pass runtime schema validation.
 - feature locks are stored in feature records and `.clawpatch/locks/`; `status`
-  surfaces both, and `clean-locks` clears both.
+  surfaces both. Claims automatically reclaim same-host locks whose process is
+  dead, and `clean-locks --stale-only` applies the same conservative rule without
+  clearing live local or remote locks.
 - the mapper skips symlinked directories and common generated directories.
 
 Not implemented today:

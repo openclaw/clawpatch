@@ -13,6 +13,8 @@ import {
 } from "node:fs/promises";
 import { hostname as osHostname } from "node:os";
 import { delimiter, join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import lockfile from "proper-lockfile";
 import {
   fixCommand,
   cleanLocksCommand,
@@ -1681,6 +1683,104 @@ describe("workflow", () => {
     expect(claimed.status).toBe("claimed");
     expect(claimed.lock).toMatchObject({ lockedByRunId: "run-next" });
     expect(await readdir(paths.locks)).toEqual([`${feature!.featureId}.json`]);
+  });
+
+  it("serializes stale reclamation with a replacement live lock", async () => {
+    const root = await fixtureRoot("clawpatch-stale-lock-replacement-");
+    await writeFixture(
+      root,
+      "package.json",
+      JSON.stringify({ name: "stale-lock-replacement", bin: { stale: "src/index.ts" } }),
+    );
+    await writeFixture(root, "src/index.ts", "export const value = 1;\n");
+    const context = await makeContext(testOptions(root));
+    const paths = statePaths(join(root, ".clawpatch"));
+
+    await initCommand(context, {});
+    await mapCommand(context);
+    const feature = (await readFeatures(paths)).find((candidate) =>
+      candidate.title.includes("CLI command"),
+    );
+    expect(feature).toBeDefined();
+    const staleLock = {
+      lockedByRunId: "interrupted",
+      lockedAt: new Date().toISOString(),
+      hostname: "local-host",
+      pid: 100,
+    };
+    const replacementLock = {
+      lockedByRunId: "replacement",
+      lockedAt: new Date().toISOString(),
+      hostname: "local-host",
+      pid: 101,
+    };
+    await writeFeature(paths, {
+      ...feature!,
+      status: "claimed",
+      lock: staleLock,
+      updatedAt: new Date().toISOString(),
+    });
+    const lockPath = join(paths.locks, `${feature!.featureId}.json`);
+    await writeFixture(
+      root,
+      `.clawpatch/locks/${feature!.featureId}.json`,
+      `${JSON.stringify(staleLock)}\n`,
+    );
+    const releaseMutationLock = await lockfile.lock(lockPath, {
+      realpath: false,
+      stale: 5_000,
+      update: 1_000,
+    });
+    let claimSettled = false;
+    const pendingClaim = claimFeature(
+      paths,
+      feature!.featureId,
+      {
+        lockedByRunId: "delayed-reclaimer",
+        lockedAt: new Date().toISOString(),
+        hostname: "local-host",
+        pid: 102,
+      },
+      {
+        staleLock: {
+          hostname: "local-host",
+          isPidAlive: (pid) => pid === replacementLock.pid,
+        },
+      },
+    );
+    void pendingClaim.then(
+      () => {
+        claimSettled = true;
+      },
+      () => {
+        claimSettled = true;
+      },
+    );
+    await delay(25);
+    expect(claimSettled).toBe(false);
+
+    await writeFeature(paths, {
+      ...feature!,
+      status: "claimed",
+      lock: replacementLock,
+      updatedAt: new Date().toISOString(),
+    });
+    await writeFixture(
+      root,
+      `.clawpatch/locks/${feature!.featureId}.json`,
+      `${JSON.stringify(replacementLock)}\n`,
+    );
+    await releaseMutationLock();
+
+    await expect(pendingClaim).rejects.toMatchObject({ code: "lock-conflict" });
+    expect(
+      (await readFeatures(paths)).find((item) => item.featureId === feature!.featureId)?.lock,
+    ).toMatchObject({
+      lockedByRunId: "replacement",
+    });
+    expect(JSON.parse(await readFile(lockPath, "utf8"))).toMatchObject({
+      lockedByRunId: "replacement",
+    });
   });
 
   it("keeps live local and remote feature locks claimed", async () => {

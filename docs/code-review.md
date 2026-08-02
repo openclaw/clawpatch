@@ -81,9 +81,11 @@ appends a compact summary to `GITHUB_STEP_SUMMARY` when that file is available.
 
 Progress uses stderr so `--json` stdout remains machine-readable. The worker
 pool is per-process, and lock files under `.clawpatch/locks/` prevent
-overlapping review processes from claiming the same feature. Interrupted runs
-can leave recoverable lock files; clear them with `clawpatch clean-locks` after
-confirming no review process is still active. `clawpatch status` includes both
+overlapping review processes from claiming the same feature. Interrupted local
+runs with dead process IDs are reclaimed automatically on the next claim. Use
+`clawpatch clean-locks --stale-only` for conservative cleanup that preserves live
+local locks and locks from other hosts; the unfiltered `clean-locks` command still
+requires confirming that no review process is active. `clawpatch status` includes both
 feature-record locks and lock files in `activeLocks`, and reports the lock-file
 count as `lockFiles`.
 

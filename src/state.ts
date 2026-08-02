@@ -1,6 +1,7 @@
 import { open, readdir, unlink } from "node:fs/promises";
 import { hostname as osHostname } from "node:os";
 import { join } from "node:path";
+import lockfile from "proper-lockfile";
 import { z } from "zod";
 import { ClawpatchError } from "./errors.js";
 import { ensureDir, nowIso, pathExists, readJson, writeJson } from "./fs.js";
@@ -102,6 +103,17 @@ export async function claimFeature(
   options: ClaimFeatureOptions = {},
 ): Promise<FeatureRecord> {
   await ensureDir(paths.locks);
+  return withFeatureLockMutation(paths, featureId, () =>
+    claimFeatureUnderMutationLock(paths, featureId, lock, options),
+  );
+}
+
+async function claimFeatureUnderMutationLock(
+  paths: StatePaths,
+  featureId: string,
+  lock: FeatureLock,
+  options: ClaimFeatureOptions,
+): Promise<FeatureRecord> {
   const lockPath = featureLockPath(paths, featureId);
   let lockFileCreated = false;
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -189,37 +201,21 @@ export async function clearStaleFeatureLocks(
   paths: StatePaths,
   options: FeatureLockReclaimOptions = {},
 ): Promise<{ featuresCleared: number; lockFilesCleared: number }> {
-  const lockFilesCleared = new Set<string>();
+  const features = await readFeatures(paths);
+  const featureIds = new Set([
+    ...features.map((feature) => feature.featureId),
+    ...(await readFeatureLockIds(paths)),
+  ]);
   let featuresCleared = 0;
-  for (const feature of await readFeatures(paths)) {
-    if (feature.lock === null || !isStaleLocalFeatureLock(feature.lock, options)) {
-      continue;
-    }
-    const lockFile = await readFeatureLockFile(paths, feature.featureId);
-    if (lockFile !== null && !isStaleLocalFeatureLock(lockFile, options)) {
-      continue;
-    }
-    await writeFeature(paths, clearFeatureRecordLock(feature));
-    featuresCleared += 1;
-    if (lockFile !== null) {
-      if (await deleteFeatureLockFile(paths, feature.featureId)) {
-        lockFilesCleared.add(feature.featureId);
-      }
-    }
+  let lockFilesCleared = 0;
+  for (const featureId of featureIds) {
+    const cleared = await withFeatureLockMutation(paths, featureId, () =>
+      clearStaleFeatureLockUnderMutationLock(paths, featureId, options),
+    );
+    featuresCleared += cleared.featureCleared ? 1 : 0;
+    lockFilesCleared += cleared.lockFileCleared ? 1 : 0;
   }
-
-  for (const id of await readFeatureLockIds(paths)) {
-    if (lockFilesCleared.has(id)) {
-      continue;
-    }
-    const lockFile = await readFeatureLockFile(paths, id);
-    if (lockFile !== null && isStaleLocalFeatureLock(lockFile, options)) {
-      if (await deleteFeatureLockFile(paths, id)) {
-        lockFilesCleared.add(id);
-      }
-    }
-  }
-  return { featuresCleared, lockFilesCleared: lockFilesCleared.size };
+  return { featuresCleared, lockFilesCleared };
 }
 
 export async function readFeatureLockIds(paths: StatePaths): Promise<string[]> {
@@ -321,6 +317,57 @@ async function reclaimStaleFeatureLock(
     await deleteFeatureLockFile(paths, featureId);
   }
   return true;
+}
+
+async function clearStaleFeatureLockUnderMutationLock(
+  paths: StatePaths,
+  featureId: string,
+  options: FeatureLockReclaimOptions,
+): Promise<{ featureCleared: boolean; lockFileCleared: boolean }> {
+  const [feature, fileLock] = await Promise.all([
+    readFeature(paths, featureId),
+    readFeatureLockFile(paths, featureId),
+  ]);
+  const featureLock = feature?.lock ?? null;
+  if (featureLock !== null && !isStaleLocalFeatureLock(featureLock, options)) {
+    return { featureCleared: false, lockFileCleared: false };
+  }
+  if (fileLock !== null && !isStaleLocalFeatureLock(fileLock, options)) {
+    return { featureCleared: false, lockFileCleared: false };
+  }
+  if (featureLock !== null && feature !== null) {
+    await writeFeature(paths, clearFeatureRecordLock(feature));
+  }
+  const lockFileCleared = fileLock !== null && (await deleteFeatureLockFile(paths, featureId));
+  return { featureCleared: featureLock !== null, lockFileCleared };
+}
+
+async function withFeatureLockMutation<T>(
+  paths: StatePaths,
+  featureId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await ensureDir(paths.locks);
+  const target = featureLockPath(paths, featureId);
+  let release: (() => Promise<void>) | undefined;
+  try {
+    release = await lockfile.lock(target, {
+      realpath: false,
+      stale: 5_000,
+      update: 1_000,
+      retries: { retries: 10, factor: 1.5, minTimeout: 10, maxTimeout: 100 },
+    });
+  } catch (error: unknown) {
+    if (isNodeError(error, "ELOCKED")) {
+      throw new ClawpatchError(`feature locked: ${featureId}`, 7, "lock-conflict");
+    }
+    throw error;
+  }
+  try {
+    return await operation();
+  } finally {
+    await release();
+  }
 }
 
 function clearFeatureRecordLock(feature: FeatureRecord): FeatureRecord {

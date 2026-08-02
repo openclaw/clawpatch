@@ -2,6 +2,7 @@
 
 ## 0.7.2 - Unreleased
 
+- Reclaimed dead same-host review locks automatically and added `clean-locks --stale-only` for safe scripted cleanup while preserving live and remote locks, thanks @goutamadwant.
 - Added Rust seed context for Cargo manifests, paired crate entrypoints, and directly declared modules across crate roots and binary layouts, thanks @Tanmay-008.
 
 ## 0.7.1 - 2026-07-20

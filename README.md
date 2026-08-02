@@ -151,7 +151,7 @@ Supported provider names today:
 - `clawpatch revalidate --finding <id>`: re-check one finding
 - `clawpatch revalidate --all`: re-check open findings with report-style filters
 - `clawpatch doctor`: check provider availability
-- `clawpatch clean-locks`: clear feature locks
+- `clawpatch clean-locks`: clear feature locks; add `--stale-only` to reclaim only dead local locks
 
 Useful flags:
 
