@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.7.3 - Unreleased
+
 ## 0.7.2 - 2026-08-01
 
 - Reclaimed dead same-host review locks automatically and added `clean-locks --stale-only` for safe scripted cleanup while preserving live and remote locks, thanks @goutamadwant.
