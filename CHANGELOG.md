@@ -2,6 +2,8 @@
 
 ## 0.7.3 - Unreleased
 
+- Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
+
 ## 0.7.2 - 2026-08-01
 
 - Reclaimed dead same-host review locks automatically and added `clean-locks --stale-only` for safe scripted cleanup while preserving live and remote locks, thanks @goutamadwant.
