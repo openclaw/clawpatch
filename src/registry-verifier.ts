@@ -179,12 +179,11 @@ export async function verifyPackageSpec(
   // already returns a verdict, but a future refactor or a rogue
   // `fetchImpl` that throws a non-Error (e.g. a Symbol or null) would
   // otherwise poison the cache with a permanently-rejected promise.
-  const verdictPromise = resolveVerdict(spec, options).catch(
-    (error: unknown): RegistryVerdict =>
-      unknownVerdict(
-        spec,
-        error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-      ),
+  const verdictPromise = resolveVerdict(spec, options).catch((error: unknown): RegistryVerdict =>
+    unknownVerdict(
+      spec,
+      error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+    ),
   );
   if (cache) {
     cache.set(cacheKey, verdictPromise);

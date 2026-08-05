@@ -90,15 +90,13 @@ type CanonicalEvidenceRef = {
 function canonicalEvidence(finding: ReviewOutput["findings"][number]["evidence"]): string {
   return JSON.stringify(
     finding
-      .map(
-        (evidence): CanonicalEvidenceRef => ({
-          path: evidence.path,
-          startLine: evidence.startLine,
-          endLine: evidence.endLine,
-          symbol: evidence.symbol,
-          quote: evidence.quote,
-        }),
-      )
+      .map((evidence): CanonicalEvidenceRef => ({
+        path: evidence.path,
+        startLine: evidence.startLine,
+        endLine: evidence.endLine,
+        symbol: evidence.symbol,
+        quote: evidence.quote,
+      }))
       .toSorted(compareCanonicalEvidence),
   );
 }

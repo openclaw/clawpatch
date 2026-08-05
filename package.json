@@ -37,13 +37,13 @@
   "devDependencies": {
     "@types/node": "^26.1.2",
     "@types/proper-lockfile": "^4.1.4",
-    "oxfmt": "^0.61.0",
-    "oxlint": "^1.76.0",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@11.18.0"
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee"
 }

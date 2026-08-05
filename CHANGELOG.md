@@ -4,6 +4,7 @@
 
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
 - Updated transitive Vitest dependencies.
+- Updated pnpm, formatter and linter tooling, and GitHub Actions dependencies.
 
 ## 0.7.2 - 2026-08-01
 
