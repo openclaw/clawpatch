@@ -66,13 +66,13 @@ jobs:
 
       - name: Initialize CodeQL
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.profile == 'all' || inputs.profile == matrix.category }}
-        uses: github/codeql-action/init@9e3211c9a3b9311dfe05da2ed48eea3386f042dd # v4.37.6
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           languages: ${{ matrix.language }}
           config-file: ${{ matrix.config_file }}
 
       - name: Analyze
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.profile == 'all' || inputs.profile == matrix.category }}
-        uses: github/codeql-action/analyze@9e3211c9a3b9311dfe05da2ed48eea3386f042dd # v4.37.6
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
         with:
           category: "/codeql/${{ matrix.category }}"
