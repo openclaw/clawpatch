@@ -2,6 +2,9 @@
 
 ## 0.7.3 - Unreleased
 
+- Added Rust source-group mapping for package modules under each crate `src/`,
+  partitioned into bounded review slices while leaving `lib.rs`, `main.rs`, and
+  bin entrypoints on the existing command and library features.
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
 - Updated transitive Vitest dependencies.
 - Updated pnpm, formatter and linter tooling, and GitHub Actions dependencies.

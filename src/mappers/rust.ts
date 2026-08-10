@@ -2,9 +2,11 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathExists } from "../fs.js";
 import { shellQuotePath } from "../shell.js";
+import { partitionFileGroups } from "./grouping.js";
 import {
   isSafeDirectory,
   isSafeFile,
+  packageKind,
   packageTrustBoundaries,
   normalize,
   stripLineComments,
@@ -13,6 +15,7 @@ import {
 import { FeatureSeed, SeedFileRef } from "./types.js";
 
 const rustFeatureTestLimit = 5;
+const sourceGroupMaxOwnedFiles = 12;
 
 type RustTestRef = {
   path: string;
@@ -60,6 +63,14 @@ export async function rustSeeds(root: string): Promise<FeatureSeed[]> {
         ]),
       );
     }
+    seeds.push(
+      ...(await rustSourceGroupSeeds(root, {
+        sourceRoot: "src",
+        packageName,
+        manifestPath: "Cargo.toml",
+        testCommand: rustTestCommand,
+      })),
+    );
   }
   for (const member of await rustMemberDirs(root)) {
     const memberDir = member.dir;
@@ -106,8 +117,97 @@ export async function rustSeeds(root: string): Promise<FeatureSeed[]> {
         ]),
       );
     }
+    seeds.push(
+      ...(await rustSourceGroupSeeds(root, {
+        sourceRoot: `${memberDir}/src`,
+        packageName: memberName,
+        manifestPath: `${memberDir}/Cargo.toml`,
+        testCommand: member.testCommand,
+      })),
+    );
   }
   return seeds;
+}
+
+type RustSourceGroupOptions = {
+  sourceRoot: string;
+  packageName: string;
+  manifestPath: string;
+  testCommand: string | null;
+};
+
+async function rustSourceGroupSeeds(
+  root: string,
+  options: RustSourceGroupOptions,
+): Promise<FeatureSeed[]> {
+  const { sourceRoot, packageName, manifestPath, testCommand } = options;
+  if (!(await isSafeDirectory(root, join(root, sourceRoot)))) {
+    return [];
+  }
+  const files = (await walk(root, [sourceRoot])).filter(
+    (path) => isRustSourceFile(path) && !isRustPackageEntrypoint(path, sourceRoot),
+  );
+  if (files.length === 0) {
+    return [];
+  }
+
+  const contextFiles = await rustManifestContextFiles(root, manifestPath);
+  const seeds: FeatureSeed[] = [];
+  for (const group of partitionFileGroups(sourceRoot, files, sourceGroupMaxOwnedFiles)) {
+    const entryPath = group.files[0] ?? sourceRoot;
+    seeds.push({
+      title: `Rust source ${group.label}`,
+      summary:
+        group.files.length === 1
+          ? `Rust source file ${group.files[0]}.`
+          : `Rust source group ${group.label} with ${group.files.length} files.`,
+      kind: packageKind(`${packageName} ${group.label}`),
+      source: "rust-source-group",
+      confidence: "medium",
+      entryPath,
+      identityKey: group.label,
+      symbol: group.label,
+      route: null,
+      command: null,
+      ownedFiles: group.files.map((path) => ({
+        path,
+        reason: `source group ${group.label}`,
+      })),
+      contextFiles,
+      tags: ["rust", "source-group"],
+      trustBoundaries: packageTrustBoundaries(`${packageName} ${group.label}`),
+      testCommand,
+      skipNearbyTests: true,
+    });
+  }
+  return seeds;
+}
+
+function isRustSourceFile(path: string): boolean {
+  return path.endsWith(".rs");
+}
+
+/**
+ * Package entrypoints already mapped as command/library/bin features.
+ * Remaining modules under src/ become reviewable source groups.
+ */
+function isRustPackageEntrypoint(path: string, sourceRoot: string): boolean {
+  if (path === `${sourceRoot}/lib.rs` || path === `${sourceRoot}/main.rs`) {
+    return true;
+  }
+  return new RegExp(`^${escapeRegExp(sourceRoot)}/bin/([^/]+\\.rs|[^/]+/main\\.rs)$`, "u").test(
+    path,
+  );
+}
+
+async function rustManifestContextFiles(
+  root: string,
+  manifestPath: string,
+): Promise<SeedFileRef[]> {
+  if (!(await isSafeFile(root, join(root, manifestPath)))) {
+    return [];
+  }
+  return [{ path: manifestPath, reason: "cargo package manifest" }];
 }
 
 type RustMemberDir = {

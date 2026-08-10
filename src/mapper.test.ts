@@ -11030,6 +11030,120 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(integrationTests).toHaveLength(8);
   });
 
+  it("maps Rust source groups for crate modules without re-owning entrypoints", async () => {
+    const root = await fixtureRoot("clawpatch-rust-source-groups-");
+    await writeFixture(
+      root,
+      "Cargo.toml",
+      '[workspace]\nmembers = ["crates/core", "crates/cli"]\n',
+    );
+    await writeFixture(root, "crates/core/Cargo.toml", '[package]\nname = "core"\n');
+    await writeFixture(root, "crates/core/src/lib.rs", "pub mod auth;\npub mod storage;\n");
+    await writeFixture(root, "crates/core/src/auth/mod.rs", "pub fn login() {}\n");
+    await writeFixture(root, "crates/core/src/auth/token.rs", "pub fn mint() {}\n");
+    await writeFixture(root, "crates/core/src/storage/mod.rs", "pub fn open() {}\n");
+    await writeFixture(root, "crates/core/src/storage/db.rs", "pub fn connect() {}\n");
+    await writeFixture(root, "crates/cli/Cargo.toml", '[package]\nname = "cli"\n');
+    await writeFixture(root, "crates/cli/src/main.rs", "fn main() {}\n");
+    await writeFixture(root, "crates/cli/src/commands.rs", "pub fn run() {}\n");
+    await writeFixture(root, "crates/cli/src/bin/worker.rs", "fn main() {}\n");
+    await writeFixture(root, "crates/cli/src/bin/admin/main.rs", "fn main() {}\n");
+    await writeFixture(root, "crates/cli/src/bin/admin/helpers.rs", "pub fn prep() {}\n");
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const sourceGroups = result.features.filter(
+      (feature) => feature.source === "rust-source-group",
+    );
+    const owned = sourceGroups.flatMap((feature) => feature.ownedFiles.map((file) => file.path));
+    const titles = sourceGroups.map((feature) => feature.title);
+
+    expect(sourceGroups.length).toBeGreaterThanOrEqual(2);
+    expect(owned).toContain("crates/core/src/auth/mod.rs");
+    expect(owned).toContain("crates/core/src/auth/token.rs");
+    expect(owned).toContain("crates/core/src/storage/mod.rs");
+    expect(owned).toContain("crates/core/src/storage/db.rs");
+    expect(owned).toContain("crates/cli/src/commands.rs");
+    expect(owned).toContain("crates/cli/src/bin/admin/helpers.rs");
+    expect(owned).not.toContain("crates/core/src/lib.rs");
+    expect(owned).not.toContain("crates/cli/src/main.rs");
+    expect(owned).not.toContain("crates/cli/src/bin/worker.rs");
+    expect(owned).not.toContain("crates/cli/src/bin/admin/main.rs");
+    expect(titles.some((title) => title.includes("crates/core/src"))).toBe(true);
+    expect(
+      sourceGroups.find((feature) =>
+        feature.ownedFiles.some((file) => file.path === "crates/core/src/auth/mod.rs"),
+      ),
+    ).toMatchObject({
+      kind: "library",
+      confidence: "medium",
+      tags: expect.arrayContaining(["rust", "source-group"]),
+      contextFiles: [{ path: "crates/core/Cargo.toml", reason: "cargo package manifest" }],
+      tests: [],
+    });
+    expect(sourceGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
+    expect(result.features.some((feature) => feature.title === "Rust library core")).toBe(true);
+    expect(result.features.some((feature) => feature.title === "Rust command cli")).toBe(true);
+    expect(result.features.some((feature) => feature.title === "Rust command worker")).toBe(true);
+  });
+
+  it("partitions oversized Rust source directories into bounded groups", async () => {
+    const root = await fixtureRoot("clawpatch-rust-source-chunk-");
+    await writeFixture(root, "Cargo.toml", '[package]\nname = "chunky"\n');
+    await writeFixture(root, "src/lib.rs", "pub fn root() {}\n");
+    for (let index = 1; index <= 20; index += 1) {
+      await writeFixture(root, `src/module_${index}.rs`, `pub fn f${index}() {}\n`);
+    }
+
+    const project = await detectProject(root);
+    const result = await mapFeatures(root, project, []);
+    const sourceGroups = result.features.filter(
+      (feature) => feature.source === "rust-source-group",
+    );
+    const owned = sourceGroups.flatMap((feature) => feature.ownedFiles.map((file) => file.path));
+
+    expect(sourceGroups.length).toBeGreaterThan(1);
+    expect(owned).toHaveLength(20);
+    expect(owned).not.toContain("src/lib.rs");
+    expect(sourceGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
+    expect(sourceGroups.every((feature) => feature.entrypoints[0]?.path.endsWith(".rs"))).toBe(
+      true,
+    );
+    expect(
+      sourceGroups.every((feature) =>
+        feature.contextFiles.some(
+          (file) => file.path === "Cargo.toml" && file.reason === "cargo package manifest",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps Rust source group identities stable when modules are added", async () => {
+    const root = await fixtureRoot("clawpatch-rust-source-stable-");
+    await writeFixture(root, "Cargo.toml", '[package]\nname = "stable"\n');
+    await writeFixture(root, "src/lib.rs", "pub mod alpha;\n");
+    await writeFixture(root, "src/alpha.rs", "pub fn a() {}\n");
+    await writeFixture(root, "src/beta.rs", "pub fn b() {}\n");
+
+    const project = await detectProject(root);
+    const first = await mapFeatures(root, project, []);
+    const firstGroups = first.features.filter((feature) => feature.source === "rust-source-group");
+    const firstIds = firstGroups.map((feature) => feature.featureId).toSorted();
+
+    await writeFixture(root, "src/gamma.rs", "pub fn c() {}\n");
+    const second = await mapFeatures(root, project, first.features);
+    const secondGroups = second.features.filter(
+      (feature) => feature.source === "rust-source-group",
+    );
+    const secondIds = secondGroups.map((feature) => feature.featureId).toSorted();
+
+    expect(firstIds.length).toBeGreaterThan(0);
+    for (const id of firstIds) {
+      expect(secondIds).toContain(id);
+    }
+    expect(second.stale).toBe(0);
+  });
+
   it("maps CMake C and C++ targets without duplicating main files", async () => {
     const root = await fixtureRoot("clawpatch-cmake-cpp-map-");
     const cmakeRoot = root.replaceAll("\\", "/");

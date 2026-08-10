@@ -53,7 +53,9 @@ Supported deterministic mappers today:
   groups including Hilt, Dagger, Koin, and Metro
 - Ruby project metadata, executables, source groups, RSpec/Minitest suites,
   Rails configs, routes, views, assets, and database files
-- Rust Cargo commands, libraries, workspace crates, and integration tests
+- Rust Cargo commands, libraries, workspace crates, integration tests, and
+  bounded source groups under each package `src/` (entrypoint `lib.rs` /
+  `main.rs` / bin files stay on command and library features)
 - C/C++/CUDA standalone `main()` files, CMake targets, autotools targets, and
   bounded loose source groups
 - C#/.NET projects from `.sln`, `.slnx`, `.csproj`, `.fsproj`, and `.vbproj`,
