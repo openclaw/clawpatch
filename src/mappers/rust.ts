@@ -154,7 +154,6 @@ async function rustSourceGroupSeeds(
   const contextFiles = await rustManifestContextFiles(root, manifestPath);
   const seeds: FeatureSeed[] = [];
   for (const group of partitionFileGroups(sourceRoot, files, sourceGroupMaxOwnedFiles)) {
-    const entryPath = group.files[0] ?? sourceRoot;
     seeds.push({
       title: `Rust source ${group.label}`,
       summary:
@@ -164,7 +163,7 @@ async function rustSourceGroupSeeds(
       kind: packageKind(`${packageName} ${group.label}`),
       source: "rust-source-group",
       confidence: "medium",
-      entryPath,
+      entryPath: manifestPath,
       identityKey: group.label,
       symbol: group.label,
       route: null,

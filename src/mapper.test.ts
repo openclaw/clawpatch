@@ -11106,7 +11106,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     expect(owned).toHaveLength(20);
     expect(owned).not.toContain("src/lib.rs");
     expect(sourceGroups.every((feature) => feature.ownedFiles.length <= 12)).toBe(true);
-    expect(sourceGroups.every((feature) => feature.entrypoints[0]?.path.endsWith(".rs"))).toBe(
+    expect(sourceGroups.every((feature) => feature.entrypoints[0]?.path === "Cargo.toml")).toBe(
       true,
     );
     expect(
@@ -11130,7 +11130,7 @@ let package = Package(name: "HybridApp", targets: [.target(name: "HybridApp")])
     const firstGroups = first.features.filter((feature) => feature.source === "rust-source-group");
     const firstIds = firstGroups.map((feature) => feature.featureId).toSorted();
 
-    await writeFixture(root, "src/gamma.rs", "pub fn c() {}\n");
+    await writeFixture(root, "src/aardvark.rs", "pub fn first() {}\n");
     const second = await mapFeatures(root, project, first.features);
     const secondGroups = second.features.filter(
       (feature) => feature.source === "rust-source-group",

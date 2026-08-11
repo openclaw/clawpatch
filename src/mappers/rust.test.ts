@@ -34,10 +34,21 @@ fn main() {}
     await writeFile(join(root, "src/utils/mod.rs"), "fn utils() {}");
 
     const seeds = await rustSeeds(root);
-    expect(seeds).toHaveLength(1);
+    expect(seeds).toHaveLength(2);
 
-    const contextPaths = seeds[0]!.contextFiles?.map((f) => f.path);
+    const command = seeds.find((seed) => seed.source === "rust-command");
+    const contextPaths = command?.contextFiles?.map((f) => f.path);
     expect(contextPaths).toEqual(["Cargo.toml", "src/api.rs", "src/utils/mod.rs"]);
+
+    const sourceGroup = seeds.find((seed) => seed.source === "rust-source-group");
+    expect(sourceGroup).toMatchObject({
+      entryPath: "Cargo.toml",
+      identityKey: "src",
+      ownedFiles: [
+        { path: "src/api.rs", reason: "source group src" },
+        { path: "src/utils/mod.rs", reason: "source group src" },
+      ],
+    });
   });
 
   it("cross-links lib.rs and main.rs", async () => {
@@ -119,18 +130,25 @@ members = ["crates/web", "crates/db"]
     await writeFile(join(root, "crates/db/src/models.rs"), "");
 
     const seeds = await rustSeeds(root);
-    expect(seeds).toHaveLength(2);
+    expect(seeds).toHaveLength(4);
 
-    const webSeed = seeds.find((s) => s.entryPath === "crates/web/src/main.rs")!;
+    const webSeed = seeds.find((seed) => seed.source === "rust-command")!;
     expect(webSeed.contextFiles?.map((f) => f.path)).toEqual([
       "crates/web/Cargo.toml",
       "crates/web/src/routes.rs",
     ]);
 
-    const dbSeed = seeds.find((s) => s.entryPath === "crates/db/src/lib.rs")!;
+    const dbSeed = seeds.find((seed) => seed.source === "rust-library")!;
     expect(dbSeed.contextFiles?.map((f) => f.path)).toEqual([
       "crates/db/Cargo.toml",
       "crates/db/src/models.rs",
+    ]);
+
+    const sourceGroups = seeds.filter((seed) => seed.source === "rust-source-group");
+    expect(sourceGroups).toHaveLength(2);
+    expect(sourceGroups.map((seed) => seed.entryPath).toSorted()).toEqual([
+      "crates/db/Cargo.toml",
+      "crates/web/Cargo.toml",
     ]);
   });
 });
