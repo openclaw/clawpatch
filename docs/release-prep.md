@@ -38,6 +38,9 @@ npm pack --dry-run --json --ignore-scripts
 
 ## Manual Checks
 
+- Confirm npm Trusted Publisher is bound to GitHub repository
+  `openclaw/clawpatch`, workflow filename `release.yml`, environment
+  `npm-release`, and the `npm publish` action.
 - Confirm `CHANGELOG.md` has all user-visible, operational, or security-relevant
   changes under the next unreleased version.
 - Confirm README and docs mention any new mapper behavior, commands, or safety

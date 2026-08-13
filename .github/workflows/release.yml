@@ -17,6 +17,7 @@ jobs:
   release:
     name: Publish npm and GitHub release
     runs-on: ubuntu-latest
+    environment: npm-release
     timeout-minutes: 20
     permissions:
       contents: write

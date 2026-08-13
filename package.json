@@ -3,6 +3,10 @@
   "version": "0.7.2",
   "description": "Automated code review that lands fixes.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/openclaw/clawpatch.git"
+  },
   "bin": {
     "clawpatch": "dist/cli.js"
   },
