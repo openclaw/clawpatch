@@ -2,6 +2,7 @@
 
 ## 0.7.3 - Unreleased
 
+- Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
 - Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
 - Updated transitive Vitest dependencies.

@@ -145,9 +145,19 @@ export async function openPrCommand(
   const pushArgs = hadRecordedCommit
     ? ["push", "origin", `${commitSha}:refs/heads/${branch}`]
     : ["push", "-u", "origin", branch];
-  await checkedRun("git push", runCommandArgs("git", pushArgs, git.root));
+  await checkedRun(
+    "git push",
+    runCommandArgs("git", pushArgs, git.root, undefined, {
+      timeoutMs: gitPushTimeoutMs(),
+    }),
+  );
   const ghArgs = prCreateArgs(base, branch, title, draft);
-  const gh = await checkedRun("gh pr create", runCommandArgs(githubCli(), ghArgs, git.root, body));
+  const gh = await checkedRun(
+    "gh pr create",
+    runCommandArgs(githubCli(), ghArgs, git.root, body, {
+      timeoutMs: ghPrCreateTimeoutMs(),
+    }),
+  );
   const prUrl = firstUrl(gh.stdout) ?? gh.stdout.trim();
   await writePatchPrGitState(loaded.paths, patch, { commitSha, branchName: branch, prUrl });
   return {
@@ -492,6 +502,16 @@ async function checkedRun(
 
 function githubCli(): string {
   return process.env["CLAWPATCH_GH"] ?? "gh";
+}
+
+export function gitPushTimeoutMs(): number {
+  const configured = Number(process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"] ?? "120000");
+  return Number.isFinite(configured) && configured > 0 ? configured : 120_000;
+}
+
+export function ghPrCreateTimeoutMs(): number {
+  const configured = Number(process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"] ?? "60000");
+  return Number.isFinite(configured) && configured > 0 ? configured : 60_000;
 }
 
 async function localBranchExists(gitRoot: string, branch: string): Promise<boolean> {
