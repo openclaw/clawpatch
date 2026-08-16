@@ -26,12 +26,24 @@ describe("open-pr command timeouts", () => {
     restoreEnv("PATH", previousEnv.PATH);
   });
 
-  it("defaults git push to 120s and gh pr create to 60s", () => {
+  it("defaults git push to 10m and gh pr create to 5m", () => {
     delete process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"];
     delete process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"];
 
-    expect(gitPushTimeoutMs()).toBe(120_000);
-    expect(ghPrCreateTimeoutMs()).toBe(60_000);
+    expect(gitPushTimeoutMs()).toBe(600_000);
+    expect(ghPrCreateTimeoutMs()).toBe(300_000);
+  });
+
+  it("accepts positive timeout overrides and rejects invalid values", () => {
+    process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"] = "1234";
+    process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"] = "5678";
+    expect(gitPushTimeoutMs()).toBe(1_234);
+    expect(ghPrCreateTimeoutMs()).toBe(5_678);
+
+    process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"] = "invalid";
+    process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"] = "0";
+    expect(gitPushTimeoutMs()).toBe(600_000);
+    expect(ghPrCreateTimeoutMs()).toBe(300_000);
   });
 
   it(
