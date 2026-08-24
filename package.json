@@ -41,7 +41,7 @@
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/proper-lockfile": "^4.1.4",
-    "oxfmt": "^0.62.0",
+    "oxfmt": "^0.64.0",
     "oxlint": "^1.77.0",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
