@@ -4,6 +4,7 @@
 
 - Updated pnpm, Node typings, formatter and linter tooling, Vitest/Vite, CodeQL, TruffleHog, and the release workflow's npm CLI.
 - Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
+- Fixed Windows command timeouts so a hung `taskkill` cannot block `runCommandArgs` after the command timeout already fired, thanks @SebTardif.
 - Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
 - Updated transitive Vitest dependencies.

@@ -1,8 +1,9 @@
-import { access, mkdtemp, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { describe, expect, it } from "vitest";
-import { runCommand, runCommandArgs } from "./exec.js";
+import { delimiter, join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { runCommand, runCommandArgs, taskkillTimeoutMs, taskkillTree } from "./exec.js";
+import { fixtureRoot, writeFixture } from "./test-helpers.js";
 
 describe("runCommand", () => {
   it("runs a shell command and passes stdin", async () => {
@@ -220,3 +221,82 @@ describe("runCommandArgs", () => {
     expect(JSON.parse(result.stdout)).toEqual(args);
   });
 });
+
+const HANG_TEST_TIMEOUT_MS = 4_000;
+const SHORT_TIMEOUT_MS = 80;
+
+describe("taskkillTree", () => {
+  const previousEnv = {
+    CLAWPATCH_TASKKILL_TIMEOUT_MS: process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"],
+    PATH: process.env["PATH"],
+  };
+
+  afterEach(() => {
+    restoreEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", previousEnv.CLAWPATCH_TASKKILL_TIMEOUT_MS);
+    restoreEnv("PATH", previousEnv.PATH);
+  });
+
+  it("defaults taskkill wait to 5s and rejects invalid overrides", () => {
+    delete process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"];
+    expect(taskkillTimeoutMs()).toBe(5_000);
+
+    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "1234";
+    expect(taskkillTimeoutMs()).toBe(1_234);
+
+    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "invalid";
+    expect(taskkillTimeoutMs()).toBe(5_000);
+
+    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "0";
+    expect(taskkillTimeoutMs()).toBe(5_000);
+  });
+
+  it(
+    "times out a hung taskkill instead of blocking the timeout path",
+    { timeout: HANG_TEST_TIMEOUT_MS },
+    async () => {
+      const root = await fixtureRoot("clawpatch-taskkill-timeout-");
+      process.env["PATH"] =
+        `${await writeHangTaskkill(root)}${delimiter}${process.env["PATH"] ?? ""}`;
+      process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = String(SHORT_TIMEOUT_MS);
+
+      const outcome = await Promise.race([
+        taskkillTree(42_424).then(() => "resolved" as const),
+        new Promise<"hung">((resolve) => {
+          setTimeout(() => {
+            resolve("hung");
+          }, 1_500);
+        }),
+      ]);
+
+      expect(outcome).toBe("resolved");
+    },
+  );
+});
+
+async function writeHangTaskkill(root: string): Promise<string> {
+  const binDir = join(root, "bin");
+  if (process.platform === "win32") {
+    await writeFixture(
+      root,
+      "bin/taskkill.cmd",
+      "@echo off\r\n:loop\r\ntimeout /t 30 >nul\r\ngoto loop\r\n",
+    );
+    return binDir;
+  }
+  const wrapper = join(binDir, "taskkill");
+  await writeFixture(
+    root,
+    "bin/taskkill",
+    '#!/bin/sh\nexec node -e "setInterval(() => {}, 1000)"\n',
+  );
+  await chmod(wrapper, 0o755);
+  return binDir;
+}
+
+function restoreEnv(name: string, previous: string | undefined): void {
+  if (previous === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = previous;
+}
