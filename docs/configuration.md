@@ -75,8 +75,9 @@ Environment overrides:
 - `CLAWPATCH_CLAUDE_AUTH_CONTEXT` (`isolated` or `host`; default `isolated`)
 - `CLAWPATCH_GIT_PUSH_TIMEOUT_MS` (default `600000`, or 10 minutes)
 - `CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS` (default `300000`, or 5 minutes)
+- `CLAWPATCH_GO_LIST_TIMEOUT_MS` (default `120000`, or 2 minutes)
 
-The `open-pr` timeout overrides must be positive millisecond values. Invalid values fall back to
+Timeout overrides must be positive millisecond values. Invalid values fall back to
 their defaults.
 
 `provider.codexConfig` passes primitive values to Codex as `-c key=value`.

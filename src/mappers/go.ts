@@ -1,9 +1,18 @@
-import { spawn } from "node:child_process";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
+import { runCommandArgs } from "../exec.js";
 import { pathExists } from "../fs.js";
 import { packageKind, packageTrustBoundaries, normalize, shouldSkip } from "./shared.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
+
+const defaultGoListTimeoutMs = 120_000;
+
+export function goListTimeoutMs(): number {
+  const configured = Number(
+    process.env["CLAWPATCH_GO_LIST_TIMEOUT_MS"] ?? String(defaultGoListTimeoutMs),
+  );
+  return Number.isFinite(configured) && configured > 0 ? configured : defaultGoListTimeoutMs;
+}
 
 export async function goSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {
   if (!(await pathExists(join(root, "go.mod")))) {
@@ -96,21 +105,18 @@ async function fallbackGoPackages(
   return packages;
 }
 
-async function runGoList(root: string): Promise<string> {
-  const child = spawn("go", ["list", "-e", "-f", "{{.Dir}}|{{.ImportPath}}|{{.Name}}", "./..."], {
-    cwd: root,
-    stdio: ["ignore", "pipe", "ignore"],
-  });
-  let stdout = "";
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk: string) => {
-    stdout += chunk;
-  });
-  await new Promise<void>((resolve) => {
-    child.on("close", () => resolve());
-    child.on("error", () => resolve());
-  });
-  return stdout;
+export async function runGoList(root: string, timeoutMs = goListTimeoutMs()): Promise<string> {
+  const result = await runCommandArgs(
+    "go",
+    ["list", "-e", "-f", "{{.Dir}}|{{.ImportPath}}|{{.Name}}", "./..."],
+    root,
+    undefined,
+    { timeoutMs, trimOutput: false },
+  );
+  if (result.exitCode === 124) {
+    return "";
+  }
+  return result.stdout;
 }
 
 async function isSkippedGoPackageDir(root: string, dir: string): Promise<boolean> {
