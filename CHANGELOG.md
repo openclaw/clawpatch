@@ -2,6 +2,7 @@
 
 ## 0.7.3 - Unreleased
 
+- Updated Zod to 4.5.2 for lower-memory runtime schema validation.
 - Updated pnpm, Node typings, formatter and linter tooling, Vitest/Vite, CodeQL, TruffleHog, and the release workflow's npm CLI.
 - Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
 - Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
