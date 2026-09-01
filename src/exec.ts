@@ -21,7 +21,9 @@ export function taskkillTimeoutMs(): number {
   const configured = Number(
     process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] ?? String(defaultTaskkillTimeoutMs),
   );
-  return Number.isFinite(configured) && configured > 0 ? configured : defaultTaskkillTimeoutMs;
+  return Number.isFinite(configured) && configured >= 1 && configured <= 2_147_483_647
+    ? Math.trunc(configured)
+    : defaultTaskkillTimeoutMs;
 }
 
 export async function runCommand(
@@ -152,6 +154,10 @@ function terminateChild(child: SpawnedChild, onForceKill: () => void): NodeJS.Ti
 async function killChild(child: SpawnedChild, signal: NodeJS.Signals): Promise<void> {
   if (process.platform === "win32" && child.pid !== undefined) {
     await taskkillTree(child.pid);
+    // A failed or hung tree killer must not leave the direct child keeping the CLI alive.
+    try {
+      child.kill(signal);
+    } catch {}
     return;
   }
   try {

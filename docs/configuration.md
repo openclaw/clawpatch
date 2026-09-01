@@ -75,9 +75,16 @@ Environment overrides:
 - `CLAWPATCH_CLAUDE_AUTH_CONTEXT` (`isolated` or `host`; default `isolated`)
 - `CLAWPATCH_GIT_PUSH_TIMEOUT_MS` (default `600000`, or 10 minutes)
 - `CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS` (default `300000`, or 5 minutes)
+- `CLAWPATCH_TASKKILL_TIMEOUT_MS` (Windows cleanup deadline; default `5000`, or 5 seconds)
 
 The `open-pr` timeout overrides must be positive millisecond values. Invalid values fall back to
 their defaults.
+
+`CLAWPATCH_TASKKILL_TIMEOUT_MS` must be between `1` and `2147483647` milliseconds;
+invalid values fall back to 5 seconds. Fractional values are truncated. Each Windows
+process-tree cleanup attempt is bounded independently of the command deadline.
+If cleanup fails or times out, Clawpatch also terminates the direct child; descendant
+cleanup remains best effort when `taskkill` is unavailable or hung.
 
 `provider.codexConfig` passes primitive values to Codex as `-c key=value`.
 Only config loaded by `--config` or `CLAWPATCH_CONFIG` may set non-empty

@@ -1,9 +1,9 @@
-import { access, chmod, mkdtemp, writeFile } from "node:fs/promises";
+import childProcess, { spawn, type ChildProcess } from "node:child_process";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand, runCommandArgs, taskkillTimeoutMs, taskkillTree } from "./exec.js";
-import { fixtureRoot, writeFixture } from "./test-helpers.js";
 
 describe("runCommand", () => {
   it("runs a shell command and passes stdin", async () => {
@@ -222,81 +222,112 @@ describe("runCommandArgs", () => {
   });
 });
 
-const HANG_TEST_TIMEOUT_MS = 4_000;
-const SHORT_TIMEOUT_MS = 80;
+vi.mock("node:child_process", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:child_process")>();
+  return { ...original, spawn: vi.fn(original.spawn) };
+});
+
+const cleanupTimeoutMs = 1_000;
 
 describe("taskkillTree", () => {
-  const previousEnv = {
-    CLAWPATCH_TASKKILL_TIMEOUT_MS: process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"],
-    PATH: process.env["PATH"],
-  };
-
   afterEach(() => {
-    restoreEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", previousEnv.CLAWPATCH_TASKKILL_TIMEOUT_MS);
-    restoreEnv("PATH", previousEnv.PATH);
+    vi.unstubAllEnvs();
+    vi.mocked(spawn).mockImplementation(childProcess.spawn);
   });
 
-  it("defaults taskkill wait to 5s and rejects invalid overrides", () => {
-    delete process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"];
+  it("defaults to 5s and accepts supported millisecond overrides", () => {
+    vi.stubEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", undefined);
     expect(taskkillTimeoutMs()).toBe(5_000);
-
-    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "1234";
+    vi.stubEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", "1234");
     expect(taskkillTimeoutMs()).toBe(1_234);
-
-    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "invalid";
-    expect(taskkillTimeoutMs()).toBe(5_000);
-
-    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = "0";
-    expect(taskkillTimeoutMs()).toBe(5_000);
+    vi.stubEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", "2147483647");
+    expect(taskkillTimeoutMs()).toBe(2_147_483_647);
   });
 
-  it(
-    "times out a hung taskkill instead of blocking the timeout path",
-    { timeout: HANG_TEST_TIMEOUT_MS },
+  it.each(["invalid", "", "0", "-1", "0.5", "Infinity", "2147483648"])(
+    "rejects unsupported timeout override %s",
+    (value) => {
+      vi.stubEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", value);
+      expect(taskkillTimeoutMs()).toBe(5_000);
+    },
+  );
+
+  it("bounds a verified hanging cleanup process", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawpatch-taskkill-"));
+    const marker = join(root, "killer.json");
+    const children = interceptTaskkill(marker);
+    try {
+      await taskkillTree(42_424, cleanupTimeoutMs);
+      expect(JSON.parse(await readFile(marker, "utf8"))).toEqual(["/pid", "42424", "/T", "/F"]);
+      expect(children).toHaveLength(1);
+      await expect
+        .poll(() => children[0]?.exitCode !== null || children[0]?.signalCode !== null)
+        .toBe(true);
+    } finally {
+      for (const child of children) child.kill("SIGKILL");
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(process.platform === "win32")(
+    "returns a timeout and kills the original child when taskkill hangs",
     async () => {
-      const root = await fixtureRoot("clawpatch-taskkill-timeout-");
-      process.env["PATH"] =
-        `${await writeHangTaskkill(root)}${delimiter}${process.env["PATH"] ?? ""}`;
-      process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] = String(SHORT_TIMEOUT_MS);
-
-      const outcome = await Promise.race([
-        taskkillTree(42_424).then(() => "resolved" as const),
-        new Promise<"hung">((resolve) => {
-          setTimeout(() => {
-            resolve("hung");
-          }, 1_500);
-        }),
-      ]);
-
-      expect(outcome).toBe("resolved");
+      const root = await mkdtemp(join(tmpdir(), "clawpatch-taskkill-caller-"));
+      const marker = join(root, "killer.json");
+      const children = interceptTaskkill(marker);
+      vi.stubEnv("CLAWPATCH_TASKKILL_TIMEOUT_MS", String(cleanupTimeoutMs));
+      let pid: number | undefined;
+      try {
+        const result = await runCommandArgs(
+          process.execPath,
+          ["-e", "console.log(process.pid); setInterval(() => {}, 1000)"],
+          root,
+          undefined,
+          { timeoutMs: 1_000 },
+        );
+        pid = Number(result.stdout.trim());
+        expect(pid).toBeGreaterThan(0);
+        expect(result.exitCode).toBe(124);
+        expect(result.stderr).toContain("command timed out after 1000ms");
+        expect(JSON.parse(await readFile(marker, "utf8"))).toEqual([
+          "/pid",
+          String(pid),
+          "/T",
+          "/F",
+        ]);
+        expect(children.length).toBeGreaterThan(0);
+        expect(() => process.kill(pid!, 0)).toThrow();
+      } finally {
+        if (pid) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch {}
+        }
+        for (const child of children) child.kill("SIGKILL");
+        await rm(root, { recursive: true, force: true });
+      }
     },
   );
 });
 
-async function writeHangTaskkill(root: string): Promise<string> {
-  const binDir = join(root, "bin");
-  if (process.platform === "win32") {
-    await writeFixture(
-      root,
-      "bin/taskkill.cmd",
-      "@echo off\r\n:loop\r\ntimeout /t 30 >nul\r\ngoto loop\r\n",
+function interceptTaskkill(marker: string): ChildProcess[] {
+  const realSpawn = childProcess.spawn;
+  const children: ChildProcess[] = [];
+  vi.mocked(spawn).mockImplementation(((...params: Parameters<typeof spawn>) => {
+    const [program, args = [], options = {}] = params;
+    if (program !== "taskkill") return realSpawn(program, args, options);
+    const child = realSpawn(
+      process.execPath,
+      [
+        "-e",
+        "require('node:fs').writeFileSync(process.argv[1], JSON.stringify(process.argv.slice(2))); setInterval(() => {}, 1000)",
+        marker,
+        ...args,
+      ],
+      options,
     );
-    return binDir;
-  }
-  const wrapper = join(binDir, "taskkill");
-  await writeFixture(
-    root,
-    "bin/taskkill",
-    '#!/bin/sh\nexec node -e "setInterval(() => {}, 1000)"\n',
-  );
-  await chmod(wrapper, 0o755);
-  return binDir;
-}
-
-function restoreEnv(name: string, previous: string | undefined): void {
-  if (previous === undefined) {
-    delete process.env[name];
-    return;
-  }
-  process.env[name] = previous;
+    children.push(child);
+    return child;
+  }) as typeof childProcess.spawn);
+  return children;
 }
