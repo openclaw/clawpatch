@@ -10,11 +10,22 @@ type CommandOptions = {
   timeoutMs?: number;
   replaceEnv?: boolean;
   maxOutputChars?: number;
+  windowsVerbatimArguments?: boolean;
 };
 
 const abortSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
 const abortableChildren = new Set<SpawnedChild>();
 const abortHandlers = new Map<NodeJS.Signals, () => void>();
+const defaultTaskkillTimeoutMs = 5_000;
+
+export function taskkillTimeoutMs(): number {
+  const configured = Number(
+    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] ?? String(defaultTaskkillTimeoutMs),
+  );
+  return Number.isFinite(configured) && configured >= 1 && configured <= 2_147_483_647
+    ? Math.trunc(configured)
+    : defaultTaskkillTimeoutMs;
+}
 
 export async function runCommand(
   command: string,
@@ -32,8 +43,13 @@ export async function runCommandRaw(
   options: CommandOptions = {},
 ): Promise<CommandResult> {
   const shell = process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "/bin/sh";
-  const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
-  const result = await runCommandArgs(shell, args, cwd, input, options);
+  const windows = process.platform === "win32";
+  // cmd.exe owns shell quoting; Node's executable argument escaping breaks quoted paths.
+  const args = windows ? ["/d", "/s", "/c", `"${command}"`] : ["-c", command];
+  const result = await runCommandArgs(shell, args, cwd, input, {
+    ...options,
+    windowsVerbatimArguments: windows,
+  });
   return { ...result, command };
 }
 
@@ -57,7 +73,8 @@ export async function runCommandArgs(
     detached: process.platform !== "win32" && options.timeoutMs !== undefined,
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
-    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+    windowsVerbatimArguments:
+      options.windowsVerbatimArguments ?? spawnSpec.windowsVerbatimArguments,
   });
   const stdout = new OutputBuffer(options.maxOutputChars);
   const stderr = new OutputBuffer(options.maxOutputChars);
@@ -144,6 +161,10 @@ function terminateChild(child: SpawnedChild, onForceKill: () => void): NodeJS.Ti
 async function killChild(child: SpawnedChild, signal: NodeJS.Signals): Promise<void> {
   if (process.platform === "win32" && child.pid !== undefined) {
     await taskkillTree(child.pid);
+    // A failed or hung tree killer must not leave the direct child keeping the CLI alive.
+    try {
+      child.kill(signal);
+    } catch {}
     return;
   }
   try {
@@ -157,14 +178,33 @@ async function killChild(child: SpawnedChild, signal: NodeJS.Signals): Promise<v
   } catch {}
 }
 
-async function taskkillTree(pid: number): Promise<void> {
+export async function taskkillTree(pid: number, timeoutMs = taskkillTimeoutMs()): Promise<void> {
   await new Promise<void>((resolve) => {
     const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], {
       stdio: "ignore",
       windowsHide: true,
     });
-    killer.on("error", () => resolve());
-    killer.on("close", () => resolve());
+    let settled = false;
+    const finish = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(() => {
+      try {
+        killer.kill("SIGKILL");
+      } catch {}
+      finish();
+    }, timeoutMs);
+    killer.on("error", () => {
+      finish();
+    });
+    killer.on("close", () => {
+      finish();
+    });
   });
 }
 

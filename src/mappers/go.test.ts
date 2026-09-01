@@ -1,13 +1,15 @@
-import { chmod } from "node:fs/promises";
+import { chmod, readFile, rm } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { shellQuotePath } from "../shell.js";
 import { fixtureRoot, writeFixture } from "../test-helpers.js";
 import { goListTimeoutMs, goSeeds, runGoList } from "./go.js";
 import { emptyTaskGraph } from "./task-graph.js";
 import type { MapperContext } from "./types.js";
 
-const HANG_TEST_TIMEOUT_MS = 4_000;
-const SHORT_TIMEOUT_MS = 80;
+const HANG_TEST_TIMEOUT_MS = 10_000;
+const SHORT_TIMEOUT_MS = 3_000;
+const roots: string[] = [];
 
 describe("go list timeout", () => {
   const previousEnv = {
@@ -15,9 +17,10 @@ describe("go list timeout", () => {
     PATH: process.env["PATH"],
   };
 
-  afterEach(() => {
+  afterEach(async () => {
     restoreEnv("CLAWPATCH_GO_LIST_TIMEOUT_MS", previousEnv.CLAWPATCH_GO_LIST_TIMEOUT_MS);
     restoreEnv("PATH", previousEnv.PATH);
+    await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
   });
 
   it("defaults go list to 2m and rejects invalid overrides", () => {
@@ -34,6 +37,16 @@ describe("go list timeout", () => {
     expect(goListTimeoutMs()).toBe(120_000);
   });
 
+  it.each(["-1", "0.5", "Infinity", "2147483648"])("rejects unsupported override %s", (value) => {
+    process.env["CLAWPATCH_GO_LIST_TIMEOUT_MS"] = value;
+    expect(goListTimeoutMs()).toBe(120_000);
+  });
+
+  it("accepts the maximum supported timer delay", () => {
+    process.env["CLAWPATCH_GO_LIST_TIMEOUT_MS"] = "2147483647";
+    expect(goListTimeoutMs()).toBe(2_147_483_647);
+  });
+
   it(
     "times out a hung go list instead of blocking the mapper",
     { timeout: HANG_TEST_TIMEOUT_MS },
@@ -46,7 +59,14 @@ describe("go list timeout", () => {
       const stdout = await runGoList(root, SHORT_TIMEOUT_MS);
 
       expect(stdout).toBe("");
-      expect(Date.now() - started).toBeLessThan(1_500);
+      expect(JSON.parse(await readFile(join(root, "go-invoked.json"), "utf8"))).toEqual([
+        "list",
+        "-e",
+        "-f",
+        "{{.Dir}}|{{.ImportPath}}|{{.Name}}",
+        "./...",
+      ]);
+      expect(Date.now() - started).toBeLessThan(7_000);
     },
   );
 
@@ -63,24 +83,36 @@ describe("go list timeout", () => {
       const started = Date.now();
       const seeds = await goSeeds(root, mapperContext(["internal/store/chats.go"]));
 
-      expect(Date.now() - started).toBeLessThan(1_500);
+      expect(Date.now() - started).toBeLessThan(7_000);
       expect(seeds.map((seed) => seed.title)).toContain("Go package store");
+      expect(await readFile(join(root, "go-invoked.json"), "utf8")).toContain("list");
     },
   );
 });
 
 async function writeHangGo(root: string): Promise<string> {
+  roots.push(root);
   const binDir = join(root, "bin");
+  const script = join(binDir, "go.cjs");
+  await writeFixture(
+    root,
+    "bin/go.cjs",
+    [
+      `require('node:fs').writeFileSync(${JSON.stringify(join(root, "go-invoked.json"))}, JSON.stringify(process.argv.slice(2)));`,
+      `console.log(${JSON.stringify(`${root}|example.com/hang|main`)});`,
+      "setInterval(() => {}, 1000);",
+    ].join("\n"),
+  );
   if (process.platform === "win32") {
-    await writeFixture(
-      root,
-      "bin/go.cmd",
-      "@echo off\r\n:loop\r\ntimeout /t 30 >nul\r\ngoto loop\r\n",
-    );
+    await writeFixture(root, "bin/go.cmd", `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`);
     return binDir;
   }
   const wrapper = join(binDir, "go");
-  await writeFixture(root, "bin/go", "#!/bin/sh\nwhile true; do sleep 30; done\n");
+  await writeFixture(
+    root,
+    "bin/go",
+    `#!/bin/sh\nexec ${shellQuotePath(process.execPath)} ${shellQuotePath(script)} "$@"\n`,
+  );
   await chmod(wrapper, 0o755);
   return binDir;
 }
