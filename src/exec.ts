@@ -10,6 +10,7 @@ type CommandOptions = {
   timeoutMs?: number;
   replaceEnv?: boolean;
   maxOutputChars?: number;
+  windowsVerbatimArguments?: boolean;
 };
 
 const abortSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM", "SIGHUP"];
@@ -42,8 +43,13 @@ export async function runCommandRaw(
   options: CommandOptions = {},
 ): Promise<CommandResult> {
   const shell = process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "/bin/sh";
-  const args = process.platform === "win32" ? ["/d", "/s", "/c", command] : ["-c", command];
-  const result = await runCommandArgs(shell, args, cwd, input, options);
+  const windows = process.platform === "win32";
+  // cmd.exe owns shell quoting; Node's executable argument escaping breaks quoted paths.
+  const args = windows ? ["/d", "/s", "/c", `"${command}"`] : ["-c", command];
+  const result = await runCommandArgs(shell, args, cwd, input, {
+    ...options,
+    windowsVerbatimArguments: windows,
+  });
   return { ...result, command };
 }
 
@@ -67,7 +73,8 @@ export async function runCommandArgs(
     detached: process.platform !== "win32" && options.timeoutMs !== undefined,
     shell: false,
     stdio: ["pipe", "pipe", "pipe"],
-    windowsVerbatimArguments: spawnSpec.windowsVerbatimArguments,
+    windowsVerbatimArguments:
+      options.windowsVerbatimArguments ?? spawnSpec.windowsVerbatimArguments,
   });
   const stdout = new OutputBuffer(options.maxOutputChars);
   const stderr = new OutputBuffer(options.maxOutputChars);

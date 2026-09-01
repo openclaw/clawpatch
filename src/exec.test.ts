@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runCommand, runCommandArgs, taskkillTimeoutMs, taskkillTree } from "./exec.js";
+import { shellQuotePath } from "./shell.js";
 
 describe("runCommand", () => {
   it("runs a shell command and passes stdin", async () => {
@@ -16,7 +17,7 @@ describe("runCommand", () => {
     );
 
     const result = await runCommand(
-      `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}`,
+      `${shellQuotePath(process.execPath)} ${shellQuotePath(script)}`,
       dir,
       "ok",
     );
@@ -29,7 +30,7 @@ describe("runCommand", () => {
     const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-shell-"));
     const script = join(dir, "large-output.mjs");
     await writeFile(script, "process.stdout.write('x'.repeat(9000));", "utf8");
-    const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}`;
+    const command = `${shellQuotePath(process.execPath)} ${shellQuotePath(script)}`;
 
     const trimmed = await runCommand(command, dir);
     const raw = await runCommand(command, dir, undefined, { trimOutput: false });
@@ -46,13 +47,13 @@ describe("runCommand", () => {
     await writeFile(hanging, "setInterval(() => {}, 1000);", "utf8");
 
     const bounded = await runCommand(
-      `${JSON.stringify(process.execPath)} ${JSON.stringify(noisy)}`,
+      `${shellQuotePath(process.execPath)} ${shellQuotePath(noisy)}`,
       dir,
       undefined,
       { trimOutput: false, maxOutputChars: 10_000 },
     );
     const timedOut = await runCommand(
-      `${JSON.stringify(process.execPath)} ${JSON.stringify(hanging)}`,
+      `${shellQuotePath(process.execPath)} ${shellQuotePath(hanging)}`,
       dir,
       undefined,
       { timeoutMs: 50 },
