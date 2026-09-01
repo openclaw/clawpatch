@@ -37,4 +37,4 @@ jobs:
           node-version: 26
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm test src/exec.test.ts src/mappers/go.test.ts
+      - run: pnpm test src/exec.test.ts

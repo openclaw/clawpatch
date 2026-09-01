@@ -6,8 +6,8 @@
 - Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
 - Fixed Windows command timeouts so a hung `taskkill` cannot keep the CLI or its direct child running after the cleanup deadline, thanks @SebTardif.
 - Fixed Windows shell validation commands with quoted executable paths.
-- Fixed `clawpatch map` so a wedged `go list` times out and falls back to repository files, thanks @SebTardif.
 - Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
+- Fixed `clawpatch map` so a wedged `go list` times out and falls back to repository files, thanks @SebTardif.
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
 - Updated transitive Vitest dependencies.
 - Updated pnpm, formatter and linter tooling, and GitHub Actions dependencies.

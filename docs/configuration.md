@@ -66,6 +66,12 @@ package coordinates; set it to `true` only when that network access is acceptabl
 [Code review > Registry verifier](code-review.md#registry-verifier) for
 the full verdict matrix.
 
+Go package discovery has a two-minute deadline. `CLAWPATCH_GO_LIST_TIMEOUT_MS`
+accepts `1` through `2147483647` milliseconds; invalid values fall back to two
+minutes and fractional values are truncated. If `go list` times out, Clawpatch
+discards incomplete output and maps packages from repository files instead.
+Process cleanup can add a bounded delay after the discovery deadline.
+
 Environment overrides:
 
 - `CLAWPATCH_STATE_DIR`
@@ -73,10 +79,10 @@ Environment overrides:
 - `CLAWPATCH_MODEL`
 - `CLAWPATCH_REASONING_EFFORT`
 - `CLAWPATCH_CLAUDE_AUTH_CONTEXT` (`isolated` or `host`; default `isolated`)
+- `CLAWPATCH_GO_LIST_TIMEOUT_MS` (Go discovery deadline; default `120000`, or 2 minutes)
 - `CLAWPATCH_GIT_PUSH_TIMEOUT_MS` (default `600000`, or 10 minutes)
 - `CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS` (default `300000`, or 5 minutes)
 - `CLAWPATCH_TASKKILL_TIMEOUT_MS` (Windows cleanup deadline; default `5000`, or 5 seconds)
-- `CLAWPATCH_GO_LIST_TIMEOUT_MS` (Go discovery deadline; default `120000`, or 2 minutes)
 
 The `open-pr` timeout overrides must be positive millisecond values. Invalid values fall back to
 their defaults.
@@ -86,11 +92,6 @@ invalid values fall back to 5 seconds. Fractional values are truncated. Each Win
 process-tree cleanup attempt is bounded independently of the command deadline.
 If cleanup fails or times out, Clawpatch also terminates the direct child; descendant
 cleanup remains best effort when `taskkill` is unavailable or hung.
-
-`CLAWPATCH_GO_LIST_TIMEOUT_MS` uses the same supported millisecond range. Invalid
-values fall back to 2 minutes, and fractional values are truncated. If `go list`
-times out, Clawpatch discards incomplete output and maps Go packages from repository
-files instead. Process cleanup can add a bounded delay after the discovery deadline.
 
 `provider.codexConfig` passes primitive values to Codex as `-c key=value`.
 Only config loaded by `--config` or `CLAWPATCH_CONFIG` may set non-empty
