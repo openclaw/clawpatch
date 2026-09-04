@@ -2,6 +2,7 @@
 
 ## 0.7.3 - Unreleased
 
+- Updated Zod to 4.5.4 and refreshed pnpm, Node typings, formatter and linter tooling, and TruffleHog.
 - Updated Zod to 4.5.2 for lower-memory runtime schema validation.
 - Updated pnpm, Node typings, formatter and linter tooling, Vitest/Vite, CodeQL, TruffleHog, and the release workflow's npm CLI.
 - Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
