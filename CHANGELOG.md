@@ -2,17 +2,17 @@
 
 ## 0.7.3 - Unreleased
 
-- Updated Zod to 4.5.4 and refreshed pnpm, Node typings, formatter and linter tooling, and TruffleHog.
-- Updated Zod to 4.5.2 for lower-memory runtime schema validation.
-- Updated pnpm, Node typings, formatter and linter tooling, Vitest/Vite, CodeQL, TruffleHog, and the release workflow's npm CLI.
+**Highlights:** Broader Rust module coverage and bounded timeouts for Go discovery and pull-request publishing.
+
+- Added bounded Rust source-group slices under each Cargo package's `src/`, keeping command, library, and binary entrypoints on their existing features, thanks @joshuaboys.
 - Fixed `clawpatch open-pr` so a stalled `git push` or `gh pr create` times out instead of hanging the command, thanks @SebTardif.
 - Fixed Windows command timeouts so a hung `taskkill` cannot keep the CLI or its direct child running after the cleanup deadline, thanks @SebTardif.
 - Fixed Windows shell validation commands with quoted executable paths.
-- Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
 - Fixed `clawpatch map` so a wedged `go list` times out and falls back to repository files, thanks @SebTardif.
 - Reworked the README around a verified install and quickstart path, with deeper command, mapper, provider, and safety details linked to the existing docs.
-- Updated transitive Vitest dependencies.
-- Updated pnpm, formatter and linter tooling, and GitHub Actions dependencies.
+- Updated Zod to 4.5.4 for lower-memory runtime schema validation.
+- Updated pnpm, Node typings, formatter and linter tooling, Vitest 5/Vite, GitHub Actions dependencies, and the release workflow's npm CLI.
+- Bound npm trusted publishing to the `npm-release` GitHub environment and restored canonical package repository metadata.
 
 ## 0.7.2 - 2026-08-01
 
