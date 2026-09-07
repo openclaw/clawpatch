@@ -35,6 +35,7 @@
     "crabbox:warmup": "crabbox warmup"
   },
   "dependencies": {
+    "js-tokens": "^10.0.0",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.5.4"
   },

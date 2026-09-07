@@ -289,6 +289,22 @@ describe("literal HTTP syntax", () => {
     ]);
   });
 
+  it("keeps calls after regex literals in control-flow bodies and TypeScript", () => {
+    for (const prefix of [
+      "if (enabled)",
+      "while (enabled)",
+      "for (;enabled;)",
+      "if (enabled && check())",
+    ]) {
+      const source = prefix + ` /["']/.test(value); fetch("/api/login");`;
+      expect(httpEndpoints(source, "client.ts", "caller").map((r) => r.path)).toEqual([
+        "/api/login",
+      ]);
+    }
+    const source = `@decorator class Client { run(value: string): void { if (enabled) /["']/.test(value); fetch("/api/login"); } }`;
+    expect(httpEndpoints(source, "client.ts", "caller").map((r) => r.path)).toEqual(["/api/login"]);
+  });
+
   it("matches unescaped static path punctuation and Unicode", () => {
     for (const path of [
       "/users/@me",

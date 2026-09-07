@@ -46,7 +46,14 @@ describe("package smoke harness", () => {
       return packageJson.name;
     });
     expect(packedDependencyNames).toEqual(
-      expect.arrayContaining(["proper-lockfile", "graceful-fs", "retry", "signal-exit", "zod"]),
+      expect.arrayContaining([
+        "js-tokens",
+        "proper-lockfile",
+        "graceful-fs",
+        "retry",
+        "signal-exit",
+        "zod",
+      ]),
     );
 
     const packArgs = smoke.packDependencyArgs({

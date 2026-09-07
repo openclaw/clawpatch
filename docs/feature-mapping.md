@@ -219,8 +219,8 @@ files are skipped. Methods and paths must match exactly. Additional fetch option
 template literals, escaped literals, whitespace in paths, query strings, fragments,
 absolute URLs, parameters, wildcard paths,
 Axios, and other handler syntaxes are unsupported. Comments and string contents
-are skipped. Complex template interpolations containing division or regular
-expressions conservatively end scanning of that caller file. Actix-shaped `web::scope(...)` and any Rust `.mount(...)` call disable the pass
+are skipped. JavaScript tokenization follows [js-tokens](https://github.com/lydell/js-tokens)
+lexical coverage; files that exceed tokenizer limits are skipped. Actix-shaped `web::scope(...)` and any Rust `.mount(...)` call disable the pass
 because their prefixes are unresolved, including mounts in helpers whose server
 was constructed elsewhere. External prefixes and macro-generated
 routes remain outside this heuristic; the supplied roots must use the same path

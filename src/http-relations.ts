@@ -1,4 +1,5 @@
 import { open, realpath, stat } from "node:fs/promises";
+import jsTokens from "js-tokens";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { ClawpatchError } from "./errors.js";
 import { pathMatchesFilters, walk, type PathFilters } from "./mappers/shared.js";
@@ -156,7 +157,7 @@ export async function findHttpRelations(
 }
 
 function hasRouteMount(source: string): boolean {
-  const tokens = codeSource(source, codeMask(source, true));
+  const tokens = codeSource(source, rustCodeMask(source));
   return (
     /\bweb\s*::\s*scope\s*(?:\(|::\s*<)/u.test(tokens) || /\.\s*mount\s*(?:\(|::\s*<)/u.test(tokens)
   );
@@ -198,7 +199,7 @@ export function httpEndpoints(
   role: "caller" | "handler",
 ): Endpoint[] {
   if (role === "caller" && /\.[jt]sx$/u.test(file)) return [];
-  const code = codeMask(source, role === "handler");
+  const code = role === "handler" ? rustCodeMask(source) : javascriptCodeMask(source);
   const tokens = codeSource(source, code);
   const literal = String.raw`(["'])(\/(?:(?!\1)[^\\\r\n])*)\1`;
   const pattern =
@@ -243,9 +244,40 @@ function previousCodeChar(tokens: string, index: number): string | undefined {
   return undefined;
 }
 
-// Mask literals/comments before matching. Unsupported JS regex/template syntax is
-// deliberately skipped rather than evaluating source or interpolations.
-function codeMask(source: string, rust: boolean): Uint8Array {
+function javascriptCodeMask(source: string): Uint8Array {
+  const mask = new Uint8Array(source.length);
+  let offset = 0;
+  let templateDepth = 0;
+  try {
+    for (const token of jsTokens(source)) {
+      const end = offset + token.value.length;
+      if (token.type === "TemplateHead") templateDepth += 1;
+      if (
+        templateDepth === 0 &&
+        [
+          "IdentifierName",
+          "PrivateIdentifier",
+          "NumericLiteral",
+          "Punctuator",
+          "WhiteSpace",
+          "LineTerminatorSequence",
+          "Invalid",
+        ].includes(token.type)
+      ) {
+        mask.fill(1, offset, end);
+      }
+      if (token.type === "TemplateTail") templateDepth -= 1;
+      offset = end;
+    }
+  } catch (error) {
+    // A failed tokenization must never expose part of a string as caller code.
+    if (error instanceof RangeError) return new Uint8Array(source.length);
+    throw error;
+  }
+  return mask;
+}
+
+function rustCodeMask(source: string): Uint8Array {
   const mask = new Uint8Array(source.length);
   let i = 0;
   while (i < source.length) {
@@ -258,7 +290,7 @@ function codeMask(source: string, rust: boolean): Uint8Array {
       let depth = 1;
       i += 2;
       while (i < source.length && depth) {
-        if (rust && source.startsWith("/*", i)) {
+        if (source.startsWith("/*", i)) {
           depth += 1;
           i += 2;
         } else if (source.startsWith("*/", i)) {
@@ -268,7 +300,7 @@ function codeMask(source: string, rust: boolean): Uint8Array {
       }
       continue;
     }
-    const raw = rust ? /^r(#+)?"/u.exec(source.slice(i)) : null;
+    const raw = /^r(#+)?"/u.exec(source.slice(i));
     if (raw !== null) {
       const end = source.indexOf(`"${raw[1] ?? ""}`, i + raw[0].length);
       i = end < 0 ? source.length : end + 1 + (raw[1]?.length ?? 0);
@@ -277,16 +309,11 @@ function codeMask(source: string, rust: boolean): Uint8Array {
     const char = source[i]!;
     // Rust lifetimes are identifiers, not unterminated character literals.
     if (
-      rust &&
       char === "'" &&
       /^'[A-Za-z_]\w*(?![\w'])/u.test(source.slice(i)) &&
       !/^'[^'\n]+'/u.test(source.slice(i))
     ) {
       mask[i++] = 1;
-      continue;
-    }
-    if (!rust && char === "`") {
-      i = templateEnd(source, i);
       continue;
     }
     if (char === '"' || char === "'") {
@@ -297,84 +324,9 @@ function codeMask(source: string, rust: boolean): Uint8Array {
       }
       continue;
     }
-    if (!rust && char === "/") {
-      const before = source.slice(0, i).trimEnd();
-      if (
-        !before ||
-        /[([{=,:;!&|?*~^]$/u.test(before) ||
-        /(?:return|throw|yield|=>)$/u.test(before)
-      ) {
-        i += 1;
-        let characterClass = false;
-        while (i < source.length) {
-          const current = source[i++];
-          if (current === "\\") i += 1;
-          else if (current === "[") characterClass = true;
-          else if (current === "]") characterClass = false;
-          else if (current === "/" && !characterClass) break;
-        }
-        continue;
-      }
-    }
     mask[i++] = 1;
   }
   return mask;
-}
-
-function templateEnd(source: string, start: number): number {
-  const depths = [0];
-  let i = start + 1;
-  while (i < source.length) {
-    const frame = depths.length - 1;
-    const depth = depths[frame]!;
-    const char = source[i]!;
-    if (char === "\\") {
-      i += 2;
-      continue;
-    }
-    if (depth === 0) {
-      if (char === "`") {
-        depths.pop();
-        if (depths.length === 0) return i + 1;
-      }
-      if (source.startsWith("${", i)) {
-        depths[frame] = 1;
-        i += 2;
-        continue;
-      }
-    } else {
-      if (char === "`") {
-        depths.push(0);
-        i += 1;
-        continue;
-      }
-      if (char === '"' || char === "'") {
-        i += 1;
-        while (i < source.length) {
-          if (source[i] === "\\") i += 2;
-          else if (source[i++] === char) break;
-        }
-        continue;
-      }
-      if (source.startsWith("//", i)) {
-        const end = source.indexOf("\n", i);
-        i = end < 0 ? source.length : end;
-        continue;
-      }
-      if (source.startsWith("/*", i)) {
-        const end = source.indexOf("*/", i + 2);
-        i = end < 0 ? source.length : end + 2;
-        continue;
-      }
-      // A slash in an interpolation could be division or a regex containing braces.
-      // Leave the rest unscanned rather than guessing where the template ends.
-      if (char === "/") return source.length;
-      if (char === "{") depths[frame] = depth + 1;
-      if (char === "}") depths[frame] = depth - 1;
-    }
-    i += 1;
-  }
-  return source.length;
 }
 
 function within(file: string, scope: string): boolean {

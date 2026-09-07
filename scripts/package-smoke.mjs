@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -255,7 +255,7 @@ function runtimeDependencyPaths(rootPath = root) {
   function collect(packageJsonPath, packageRequire) {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
     for (const name of runtimeDependencyNames(packageJson)) {
-      const dependencyPackageJson = packageRequire.resolve(`${name}/package.json`);
+      const dependencyPackageJson = runtimeDependencyManifest(packageRequire, name);
       const dependencyPath = dirname(dependencyPackageJson);
       if (dependencyPaths.has(dependencyPath)) {
         continue;
@@ -268,6 +268,19 @@ function runtimeDependencyPaths(rootPath = root) {
   const packageJsonPath = join(rootPath, "package.json");
   collect(packageJsonPath, createRequire(packageJsonPath));
   return [...dependencyPaths.values()];
+}
+
+function runtimeDependencyManifest(packageRequire, name) {
+  let directory = dirname(packageRequire.resolve(name));
+  for (;;) {
+    const candidate = join(directory, "package.json");
+    if (existsSync(candidate) && JSON.parse(readFileSync(candidate, "utf8")).name === name) {
+      return candidate;
+    }
+    const parent = dirname(directory);
+    if (parent === directory) throw new Error(`package metadata not found for ${name}`);
+    directory = parent;
+  }
 }
 
 function runtimeDependencyNames(packageJson) {
@@ -329,7 +342,7 @@ function verifyRuntimeDependencies(context) {
   for (const name of runtimeDependencyNames(packageJson)) {
     run(context, "node", [
       "-e",
-      "require.resolve(`${process.argv[1]}/package.json`, { paths: [process.argv[2]] })",
+      "require.resolve(process.argv[1], { paths: [process.argv[2]] })",
       name,
       packageRoot,
     ]);
