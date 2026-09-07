@@ -246,6 +246,12 @@ describe("literal HTTP syntax", () => {
       ["GET", "/get"],
       ["POST", "/post"],
     ]);
+    expect(httpEndpoints('fetch("/patch", { method: "patch" });', "client.ts", "caller")).toEqual(
+      [],
+    );
+    expect(
+      httpEndpoints('fetch("/patch", { method: "PATCH" });', "client.ts", "caller")[0]?.method,
+    ).toBe("PATCH");
   });
 
   it("ignores comments, regexes, templates, strings, Rust raw strings and nested comments", () => {
@@ -303,6 +309,23 @@ describe("literal HTTP syntax", () => {
     }
     const source = `@decorator class Client { run(value: string): void { if (enabled) /["']/.test(value); fetch("/api/login"); } }`;
     expect(httpEndpoints(source, "client.ts", "caller").map((r) => r.path)).toEqual(["/api/login"]);
+  });
+
+  it("matches identifier boundaries without accepting private methods or Unicode prefixes", () => {
+    const source =
+      'class Client { #fetch() {} run() { this.#fetch("/private"); } } πfetch("/unicode"); const item = object.member\nfetch("/real");';
+    expect(httpEndpoints(source, "client.ts", "caller").map((r) => r.path)).toEqual(["/real"]);
+  });
+
+  it("recognizes literal calls across comments and trailing commas", () => {
+    const source =
+      'fetch /* route */ ("/get",);\nfetch("/post", { "method": /* verb */ "post", },);';
+    expect(
+      httpEndpoints(source, "client.ts", "caller").map(({ method, path }) => [method, path]),
+    ).toEqual([
+      ["GET", "/get"],
+      ["POST", "/post"],
+    ]);
   });
 
   it("matches unescaped static path punctuation and Unicode", () => {

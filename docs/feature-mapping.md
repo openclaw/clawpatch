@@ -215,7 +215,7 @@ The first version matches unescaped literal `fetch("/path")` (GET) and
 `fetch("/path", { method: "POST" })` calls to Rust `#[get("/path")]`,
 `#[post("/path")]`, `put`, `patch`, `delete`, `head`, or `options` attributes.
 Caller scanning supports `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`; JSX/TSX
-files are skipped. Methods and paths must match exactly. Additional fetch options, computed values,
+files are skipped. Matching uses the standard HTTP method and exact literal path. Additional fetch options, computed values,
 template literals, escaped literals, whitespace in paths, query strings, fragments,
 absolute URLs, parameters, wildcard paths,
 Axios, and other handler syntaxes are unsupported. Comments and string contents

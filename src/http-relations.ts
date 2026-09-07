@@ -1,5 +1,5 @@
 import { open, realpath, stat } from "node:fs/promises";
-import jsTokens from "js-tokens";
+import jsTokens, { type Token } from "js-tokens";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { ClawpatchError } from "./errors.js";
 import { pathMatchesFilters, walk, type PathFilters } from "./mappers/shared.js";
@@ -22,6 +22,8 @@ const maxFiles = 500;
 const totalLimit = 8_000_000;
 const counterpartLimit = 3;
 const methods = "get|post|put|patch|delete|head|options";
+const methodNames = new Set(methods.toUpperCase().split("|"));
+const fetchNormalizedMethods = new Set(["DELETE", "GET", "HEAD", "OPTIONS", "POST", "PUT"]);
 
 export function httpRoots(value: string): [string, string] {
   const parts = value.split(":");
@@ -198,17 +200,12 @@ export function httpEndpoints(
   file: string,
   role: "caller" | "handler",
 ): Endpoint[] {
-  if (role === "caller" && /\.[jt]sx$/u.test(file)) return [];
-  const code = role === "handler" ? rustCodeMask(source) : javascriptCodeMask(source);
-  const tokens = codeSource(source, code);
-  const literal = String.raw`(["'])(\/(?:(?!\1)[^\\\r\n])*)\1`;
-  const pattern =
-    role === "caller"
-      ? new RegExp(
-          String.raw`\bfetch\s*\(\s*${literal}\s*(?:,\s*\{\s*method\s*:\s*["'](${methods.toUpperCase()})["']\s*\}\s*)?\)`,
-          "gu",
-        )
-      : new RegExp(String.raw`#\[\s*(${methods})\s*\(\s*"(\/[^"\\\r\n]*)"\s*\)\s*\]`, "gu");
+  if (role === "caller") return /\.[jt]sx$/u.test(file) ? [] : javascriptEndpoints(source, file);
+  const code = rustCodeMask(source);
+  const pattern = new RegExp(
+    String.raw`#\[\s*(${methods})\s*\(\s*"(\/[^"\\\r\n]*)"\s*\)\s*\]`,
+    "gu",
+  );
   const endpoints: Endpoint[] = [];
   let line = 1;
   let lineCursor = 0;
@@ -216,65 +213,100 @@ export function httpEndpoints(
     while (lineCursor < match.index) {
       if (source[lineCursor++] === "\n") line += 1;
     }
-    if (
-      !code[match.index] ||
-      (role === "caller" &&
-        (/[\w$]/u.test(source[match.index - 1] ?? "") ||
-          previousCodeChar(tokens, match.index) === "."))
-    )
-      continue;
-    const method = role === "caller" ? (match[3] ?? "GET") : match[1]!.toUpperCase();
-    const path = match[2]!;
-    if (
-      path.startsWith("//") ||
-      /[?#*{}<>\s]/u.test(path) ||
-      path.split("/").some((part) => part === "." || part === ".." || part.startsWith(":"))
-    )
-      continue;
-    endpoints.push({ method, path, file, line });
+    if (code[match.index] && isHttpPath(match[2]!))
+      endpoints.push({ method: match[1]!.toUpperCase(), path: match[2]!, file, line });
   }
   return endpoints;
 }
 
-function previousCodeChar(tokens: string, index: number): string | undefined {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-    const char = tokens[cursor]!;
-    if (!/\s/u.test(char)) return char;
-  }
-  return undefined;
-}
+type LocatedToken = { token: Token; line: number; inTemplate: boolean };
 
-function javascriptCodeMask(source: string): Uint8Array {
-  const mask = new Uint8Array(source.length);
-  let offset = 0;
+function javascriptEndpoints(source: string, file: string): Endpoint[] {
+  const tokens: LocatedToken[] = [];
+  let line = 1;
   let templateDepth = 0;
   try {
     for (const token of jsTokens(source)) {
-      const end = offset + token.value.length;
       if (token.type === "TemplateHead") templateDepth += 1;
       if (
-        templateDepth === 0 &&
-        [
-          "IdentifierName",
-          "PrivateIdentifier",
-          "NumericLiteral",
-          "Punctuator",
-          "WhiteSpace",
-          "LineTerminatorSequence",
-          "Invalid",
-        ].includes(token.type)
-      ) {
-        mask.fill(1, offset, end);
-      }
+        token.type !== "WhiteSpace" &&
+        token.type !== "LineTerminatorSequence" &&
+        !token.type.endsWith("Comment")
+      )
+        tokens.push({ token, line, inTemplate: templateDepth > 0 });
       if (token.type === "TemplateTail") templateDepth -= 1;
-      offset = end;
+      for (const char of token.value) if (char === "\n") line += 1;
     }
   } catch (error) {
-    // A failed tokenization must never expose part of a string as caller code.
-    if (error instanceof RangeError) return new Uint8Array(source.length);
+    // Do not emit partial relations if the tokenizer exceeds its own limits.
+    if (error instanceof RangeError) return [];
     throw error;
   }
-  return mask;
+  const endpoints: Endpoint[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const current = tokens[index]!;
+    if (
+      current.inTemplate ||
+      current.token.type !== "IdentifierName" ||
+      current.token.value !== "fetch"
+    )
+      continue;
+    const previous = tokens[index - 1]?.token.value;
+    if (previous === "." || previous === "?.") continue;
+    const call = literalFetchCall(tokens, index);
+    if (call !== null) endpoints.push({ ...call, file, line: current.line });
+  }
+  return endpoints;
+}
+
+function literalFetchCall(
+  tokens: LocatedToken[],
+  start: number,
+): { method: string; path: string } | null {
+  let index = start + 1;
+  if (tokens[index++]?.token.value !== "(") return null;
+  const path = unescapedString(tokens[index++]?.token);
+  if (path === null || !isHttpPath(path)) return null;
+  let method = "GET";
+  if (tokens[index]?.token.value === ",") {
+    index += 1;
+    if (tokens[index]?.token.value !== ")") {
+      if (tokens[index++]?.token.value !== "{") return null;
+      const key = tokens[index++]?.token;
+      if (
+        !(key?.type === "IdentifierName" && key.value === "method") &&
+        unescapedString(key) !== "method"
+      )
+        return null;
+      if (tokens[index++]?.token.value !== ":") return null;
+      const raw = unescapedString(tokens[index++]?.token);
+      if (raw === null) return null;
+      const upper = raw.toUpperCase();
+      // Fetch normalizes these six verbs; PATCH remains case-sensitive.
+      const value = fetchNormalizedMethods.has(upper) ? upper : raw;
+      if (!methodNames.has(value)) return null;
+      method = value;
+      if (tokens[index]?.token.value === ",") index += 1;
+      if (tokens[index++]?.token.value !== "}") return null;
+      if (tokens[index]?.token.value === ",") index += 1;
+    }
+  }
+  return tokens[index]?.token.value === ")" ? { method, path } : null;
+}
+
+function unescapedString(token: Token | undefined): string | null {
+  return token?.type === "StringLiteral" && token.closed && !token.value.includes("\\")
+    ? token.value.slice(1, -1)
+    : null;
+}
+
+function isHttpPath(path: string): boolean {
+  return (
+    path.startsWith("/") &&
+    !path.startsWith("//") &&
+    !/[?#*{}<>\s]/u.test(path) &&
+    !path.split("/").some((part) => part === "." || part === ".." || part.startsWith(":"))
+  );
 }
 
 function rustCodeMask(source: string): Uint8Array {
