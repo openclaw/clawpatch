@@ -150,6 +150,12 @@ describe("HTTP candidate context", () => {
       'fn configure() { web/* prefix */::scope("/v2"); }\n',
     );
     expect((await setup.scan()).skippedReason).toContain("prefixes");
+    await writeFixture(
+      setup.root,
+      "backend/src/config.rs",
+      'fn configure(server: Rocket<Build>) { server.mount::<_, _>("/v2", routes![login]); }\n',
+    );
+    expect((await setup.scan()).skippedReason).toContain("prefixes");
   });
 
   it("honors filters and refuses partial scans, missing sources, and symlinked roots", async () => {
@@ -273,6 +279,21 @@ describe("literal HTTP syntax", () => {
       ).map((r) => r.path),
     ).toEqual(["/real"]);
     expect(httpEndpoints('<div>fetch("/fake")</div>', "client.tsx", "caller")).toEqual([]);
+  });
+
+  it("matches unescaped static path punctuation and Unicode", () => {
+    for (const path of [
+      "/users/@me",
+      "/search/a+b",
+      "/encoded/%2F",
+      "/Über",
+      "/authors/O'Reilly",
+      "/time/12:00",
+    ]) {
+      const literal = JSON.stringify(path);
+      expect(httpEndpoints(`fetch(${literal})`, "client.ts", "caller")[0]?.path).toBe(path);
+      expect(httpEndpoints(`#[get(${literal})]`, "main.rs", "handler")[0]?.path).toBe(path);
+    }
   });
 
   it("tracks line numbers across a dense supported source file", () => {

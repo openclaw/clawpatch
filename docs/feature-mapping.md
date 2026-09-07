@@ -211,12 +211,13 @@ not discover deployment origins, proxy rules, or service topology. The output
 contains **candidate** HTTP relations, not proof of runtime connectivity.
 Verify routing before relying on a relation in a finding.
 
-The first version matches literal `fetch("/path")` (GET) and
+The first version matches unescaped literal `fetch("/path")` (GET) and
 `fetch("/path", { method: "POST" })` calls to Rust `#[get("/path")]`,
 `#[post("/path")]`, `put`, `patch`, `delete`, `head`, or `options` attributes.
 Caller scanning supports `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`; JSX/TSX
 files are skipped. Methods and paths must match exactly. Additional fetch options, computed values,
-template literals, query strings, absolute URLs, parameters, wildcard paths,
+template literals, escaped literals, whitespace in paths, query strings, fragments,
+absolute URLs, parameters, wildcard paths,
 Axios, and other handler syntaxes are unsupported. Comments and string contents
 are skipped. Complex template interpolations containing division or regular
 expressions conservatively end scanning of that caller file. Actix-shaped `web::scope(...)` and any Rust `.mount(...)` call disable the pass

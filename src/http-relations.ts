@@ -157,7 +157,9 @@ export async function findHttpRelations(
 
 function hasRouteMount(source: string): boolean {
   const tokens = codeSource(source, codeMask(source, true));
-  return /\bweb\s*::\s*scope\s*\(/u.test(tokens) || /\.\s*mount\s*\(/u.test(tokens);
+  return (
+    /\bweb\s*::\s*scope\s*(?:\(|::\s*<)/u.test(tokens) || /\.\s*mount\s*(?:\(|::\s*<)/u.test(tokens)
+  );
 }
 
 function codeSource(source: string, mask: Uint8Array): string {
@@ -198,14 +200,14 @@ export function httpEndpoints(
   if (role === "caller" && /\.[jt]sx$/u.test(file)) return [];
   const code = codeMask(source, role === "handler");
   const tokens = codeSource(source, code);
-  const literal = String.raw`(["'])(\/[A-Za-z0-9_./~-]*)\1`;
+  const literal = String.raw`(["'])(\/(?:(?!\1)[^\\\r\n])*)\1`;
   const pattern =
     role === "caller"
       ? new RegExp(
           String.raw`\bfetch\s*\(\s*${literal}\s*(?:,\s*\{\s*method\s*:\s*["'](${methods.toUpperCase()})["']\s*\}\s*)?\)`,
           "gu",
         )
-      : new RegExp(String.raw`#\[\s*(${methods})\s*\(\s*"(\/[A-Za-z0-9_./~-]*)"\s*\)\s*\]`, "gu");
+      : new RegExp(String.raw`#\[\s*(${methods})\s*\(\s*"(\/[^"\\\r\n]*)"\s*\)\s*\]`, "gu");
   const endpoints: Endpoint[] = [];
   let line = 1;
   let lineCursor = 0;
@@ -222,7 +224,11 @@ export function httpEndpoints(
       continue;
     const method = role === "caller" ? (match[3] ?? "GET") : match[1]!.toUpperCase();
     const path = match[2]!;
-    if (path.startsWith("//") || path.split("/").some((part) => part === "." || part === ".."))
+    if (
+      path.startsWith("//") ||
+      /[?#*{}<>\s]/u.test(path) ||
+      path.split("/").some((part) => part === "." || part === ".." || part.startsWith(":"))
+    )
       continue;
     endpoints.push({ method, path, file, line });
   }
