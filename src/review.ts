@@ -9,6 +9,7 @@ import { findingFromOutput, mergeFinding } from "./findings.js";
 import { nowIso } from "./fs.js";
 import { discoverGit } from "./git.js";
 import { runId } from "./id.js";
+import { findHttpRelations, withHttpContext, type HttpRelation } from "./http-relations.js";
 import { emitProgress } from "./progress.js";
 import { providerByName } from "./provider.js";
 import type { DroppedFinding } from "./provider-types.js";
@@ -50,6 +51,14 @@ export async function reviewCommand(
   const mode = reviewMode(flags);
   const customPrompt = await loadCustomReviewPrompt(flags);
   const features = await selectReviewFeatures(loaded, flags);
+  const linkHttp = stringFlag(flags, "linkHttp");
+  const http =
+    linkHttp === undefined
+      ? undefined
+      : await findHttpRelations(loaded.root, await readFeatures(loaded.paths), linkHttp, {
+          include: config.include,
+          exclude: config.exclude,
+        });
   if (features.length === 0 && hasFileFilter(flags)) {
     if (flags["dryRun"] === true) {
       return { next: "no features touched by diff" };
@@ -69,6 +78,7 @@ export async function reviewCommand(
   if (flags["dryRun"] === true) {
     return {
       dryRun: true,
+      ...(http === undefined ? {} : { http }),
       wouldReview: features.length,
       mode,
       jobs: reviewJobs(flags),
@@ -122,6 +132,7 @@ export async function reviewCommand(
             customPrompt,
             limiter,
             registryPostValidator,
+            httpRelations: http?.relations ?? [],
             allowNonPendingFeatureReview:
               stringFlag(flags, "feature") !== undefined ||
               stringFlag(flags, "featureList") !== undefined ||
@@ -200,6 +211,7 @@ export async function reviewCommand(
     config.provider.name,
   );
   return {
+    ...(http === undefined ? {} : { http }),
     run: currentRunId,
     reviewed: features.length,
     findings: findingIds.length,
@@ -296,6 +308,7 @@ type ReviewFeatureOptions = {
   limiter: RpmLimiter;
   registryPostValidator: FindingPostValidator | undefined;
   allowNonPendingFeatureReview: boolean;
+  httpRelations: HttpRelation[];
 };
 
 async function reviewFeature(
@@ -337,7 +350,7 @@ async function reviewFeature(
     const reviewPrompt = await buildReviewPromptBundle(
       loaded.root,
       loaded.project,
-      lockedFeature,
+      withHttpContext(lockedFeature, options.httpRelations),
       config,
       mode,
       customPrompt,

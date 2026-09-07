@@ -8,6 +8,7 @@ import { nowIso, writeJson } from "./fs.js";
 import { discoverGit } from "./git.js";
 import { mapWithSource } from "./agent-mapper.js";
 import { mapFeatures } from "./mapper.js";
+import { findHttpRelations } from "./http-relations.js";
 import { emitProgress } from "./progress.js";
 import { providerByName } from "./provider.js";
 import {
@@ -112,6 +113,11 @@ export async function mapCommand(
       emitProgress(context, "map", event, fields);
     },
   });
+  const linkHttp = stringFlag(flags, "linkHttp");
+  const http =
+    linkHttp === undefined
+      ? {}
+      : { http: await findHttpRelations(loaded.root, result.features, linkHttp, filters) };
   const activeFeatureIds = new Set(result.features.map((feature) => feature.featureId));
   if (flags["dryRun"] === true) {
     emitProgress(context, "map", "done", {
@@ -120,6 +126,7 @@ export async function mapCommand(
       elapsed: `${Math.round((Date.now() - started) / 1000)}s`,
     });
     return {
+      ...http,
       dryRun: true,
       features: result.features.length,
       new: result.created,
@@ -152,6 +159,7 @@ export async function mapCommand(
     elapsed: `${Math.round((Date.now() - started) / 1000)}s`,
   });
   return {
+    ...http,
     features: result.features.length,
     new: result.created,
     changed: result.changed,

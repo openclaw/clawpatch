@@ -21,6 +21,7 @@ import {
 } from "./app.js";
 import { ClawpatchError } from "./errors.js";
 import { GlobalOptions } from "./config.js";
+import { httpRoots } from "./http-relations.js";
 
 const moduleRequire = createRequire(import.meta.url);
 
@@ -112,6 +113,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     command = "status";
   }
   validateCommandFlags(command, flags);
+  if (typeof flags["linkHttp"] === "string") httpRoots(flags["linkHttp"]);
   validateCommandRequirements(command, flags);
   return { command, flags, global, help: false, version: false };
 }
@@ -131,7 +133,15 @@ type CommandSpec = {
 const commandSpecs = {
   init: { flags: ["force"], usage: ["clawpatch init [flags]"], run: initCommand },
   map: {
-    flags: ["dryRun", "source", "provider", "model", "reasoningEffort", "skipGitRepoCheck"],
+    flags: [
+      "dryRun",
+      "source",
+      "provider",
+      "model",
+      "reasoningEffort",
+      "skipGitRepoCheck",
+      "linkHttp",
+    ],
     usage: ["clawpatch map [flags]"],
     run: mapCommand,
   },
@@ -140,6 +150,7 @@ const commandSpecs = {
     flags: [
       "feature",
       "featureList",
+      "linkHttp",
       "project",
       "limit",
       "since",
@@ -315,6 +326,12 @@ const optionSpecs: Record<string, OptionSpec> = {
     kind: "value",
     target: "command",
     help: "  --rate-limit-per-minute <n>   cap provider calls per 60s window (env: CLAWPATCH_RPM)",
+  },
+  "link-http": {
+    name: "linkHttp",
+    kind: "value",
+    target: "command",
+    help: "  --link-http <caller:backend>  opt-in HTTP candidate context between directory roots",
   },
   source: {
     name: "source",

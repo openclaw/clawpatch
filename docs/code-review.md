@@ -187,3 +187,9 @@ coordinates to the public npm registry. Enable it explicitly with
 deduplicates registry calls per `(name, version)`.
 
 [slop-paper]: https://arxiv.org/abs/2406.10279
+
+For a Node frontend and Rust backend sharing one HTTP path namespace,
+`review --link-http frontend:backend` adds bounded, literal HTTP candidate context
+only for that review. Existing feature records and default review behavior are
+unchanged. See [Optional HTTP relations](feature-mapping.md#optional-http-relations)
+for the root-pair assertion, supported syntax, ambiguity rules, and limits.

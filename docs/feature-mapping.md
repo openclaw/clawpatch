@@ -195,3 +195,53 @@ Known gaps:
   or runtime route conventions
 - no import graph expansion beyond nearby tests yet
 - agent mapping depends on provider quality and validates paths but not semantic intent
+
+## Optional HTTP relations
+
+For a Node/TypeScript frontend and Rust backend that share one HTTP path
+namespace, opt in with explicit, non-overlapping repository-relative roots:
+
+```sh
+clawpatch map --link-http frontend:backend --json
+clawpatch review --link-http frontend:backend --limit 3
+```
+
+The root pair asserts which client and service belong together. Clawpatch does
+not discover deployment origins, proxy rules, or service topology. The output
+contains **candidate** HTTP relations, not proof of runtime connectivity.
+Verify routing before relying on a relation in a finding.
+
+The first version matches literal `fetch("/path")` (GET) and
+`fetch("/path", { method: "POST" })` calls to Rust `#[get("/path")]`,
+`#[post("/path")]`, `put`, `patch`, `delete`, `head`, or `options` attributes.
+Caller scanning supports `.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`; JSX/TSX
+files are skipped. Methods and paths must match exactly. Additional fetch options, computed values,
+template literals, query strings, absolute URLs, parameters, wildcard paths,
+Axios, and other handler syntaxes are unsupported. Comments and string contents
+are skipped. Complex template interpolations containing division or regular
+expressions conservatively end scanning of that caller file. Actix-shaped `web::scope(...)` and any Rust `.mount(...)` call disable the pass
+because their prefixes are unresolved, including mounts in helpers whose server
+was constructed elsewhere. External prefixes and macro-generated
+routes remain outside this heuristic; the supplied roots must use the same path
+namespace. Multiple recognized handlers for the same method/path are ambiguous
+and produce no link, even when declared in one file.
+
+Mapping returns an `http` object containing `relations`, `omitted`, and
+`skippedReason`; `--dry-run` returns it too. Each relation identifies the HTTP
+method/path, caller and handler files/lines, and the features owning those files.
+Default mapping output and stored feature slices remain unchanged. Reviews with
+this flag recompute relations from current source, then append up to three
+counterpart files to an ephemeral prompt copy after existing context. Existing
+context-file and per-file prompt limits still apply, including omission reporting.
+Review without the flag never adds HTTP context. Mapping alone does not enable
+it for later reviews, fixes, revalidation, or `ci` runs.
+
+The scan honors configured include/exclude filters and normal mapper directory
+exclusions, skips symlinks, and links only files owned by active features. It
+scans at most 500 source files, 256,000 bytes per file, and 8,000,000 bytes total;
+exceeding a scan budget returns no relations with a reason rather than matching
+against an incomplete inventory. Output is sorted by source path and declaration
+order and limited to 200 relations; `omitted` counts links dropped by that output
+limit. The three-file review context limit is applied independently for each
+feature, so a broad co-owner cannot suppress context for a narrower feature. There is no graph storage
+or feature schema migration.
