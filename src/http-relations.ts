@@ -123,18 +123,18 @@ export async function findHttpRelations(
     }
   }
   const ownerIds = new Map([...ownersByFile].map(([file, ids]) => [file, [...ids].toSorted()]));
-  const byRoute = new Map<string, Endpoint[]>();
+  // Once a route is ambiguous, retaining more endpoints only wastes work.
+  const byRoute = new Map<string, Endpoint | null>();
   for (const handler of handlers) {
     const key = `${handler.method} ${handler.path}`;
-    byRoute.set(key, [...(byRoute.get(key) ?? []), handler]);
+    byRoute.set(key, byRoute.has(key) ? null : handler);
   }
   const relations: HttpRelation[] = [];
   const seen = new Set<string>();
   let omitted = 0;
   for (const caller of callers) {
-    const matches = byRoute.get(`${caller.method} ${caller.path}`) ?? [];
-    if (matches.length !== 1) continue;
-    const handler = matches[0]!;
+    const handler = byRoute.get(`${caller.method} ${caller.path}`);
+    if (handler === undefined || handler === null) continue;
     const callerIds = ownerIds.get(caller.file) ?? [];
     const handlerIds = ownerIds.get(handler.file) ?? [];
     if (!callerIds.length || !handlerIds.length) continue;

@@ -296,6 +296,27 @@ describe("literal HTTP syntax", () => {
     }
   });
 
+  it("keeps unique routes usable in a dense duplicate-handler inventory", async () => {
+    const setup = await fixture();
+    const handlers = Array.from(
+      { length: 4_000 },
+      (_, i) => `#[get("/api/login")]\nfn route_${i}() {}\n`,
+    ).join("");
+    await writeFixture(
+      setup.root,
+      "backend/src/main.rs",
+      handlers + '#[get("/health")]\nfn health() {}\nfn main() {}\n',
+    );
+    await writeFixture(
+      setup.root,
+      "frontend/src/app.ts",
+      'fetch("/api/login");\nfetch("/health");\n',
+    );
+    const result = await setup.scan();
+    expect(result.skippedReason).toBeNull();
+    expect(result.relations.map((relation) => relation.path)).toEqual(["/health"]);
+  });
+
   it("tracks line numbers across a dense supported source file", () => {
     const endpoints = httpEndpoints('fetch("/");\n'.repeat(20_000), "client.ts", "caller");
     expect(endpoints).toHaveLength(20_000);
