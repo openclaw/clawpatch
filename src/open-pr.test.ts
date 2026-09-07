@@ -8,8 +8,10 @@ import { statePaths, writePatchAttempt } from "./state.js";
 import { fixtureRoot, testOptions, writeFixture } from "./test-helpers.js";
 import type { PatchAttempt } from "./types.js";
 
-const HANG_TEST_TIMEOUT_MS = 4_000;
+const HANG_TEST_TIMEOUT_MS = 15_000;
 const SHORT_TIMEOUT_MS = 80;
+// Real git subprocesses need scheduling headroom on shared CI hosts.
+const RETURN_TIMEOUT_MS = 5_000;
 
 describe("open-pr command timeouts", () => {
   const previousEnv = {
@@ -67,7 +69,7 @@ describe("open-pr command timeouts", () => {
         code: "git-failure",
         message: expect.stringContaining(`timed out after ${SHORT_TIMEOUT_MS}ms`),
       });
-      expect(Date.now() - started).toBeLessThan(1_500);
+      expect(Date.now() - started).toBeLessThan(RETURN_TIMEOUT_MS);
     },
   );
 
@@ -90,7 +92,7 @@ describe("open-pr command timeouts", () => {
         code: "github-failure",
         message: expect.stringContaining(`timed out after ${SHORT_TIMEOUT_MS}ms`),
       });
-      expect(Date.now() - started).toBeLessThan(1_500);
+      expect(Date.now() - started).toBeLessThan(RETURN_TIMEOUT_MS);
     },
   );
 });

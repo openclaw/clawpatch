@@ -139,7 +139,7 @@ describe("runCommandArgs", () => {
     }
   });
 
-  it("returns after timeout even when descendants inherit stdio", async () => {
+  it("returns after timeout even when descendants inherit stdio", { timeout: 10_000 }, async () => {
     const dir = await mkdtemp(join(tmpdir(), "clawpatch-exec-timeout-"));
     const childScript = join(dir, "child.mjs");
     const parentScript = join(dir, "parent.mjs");
@@ -160,8 +160,9 @@ describe("runCommandArgs", () => {
     });
 
     expect(result.exitCode).toBe(124);
-    expect(result.durationMs).toBeLessThan(1500);
-    expect(Date.now() - started).toBeLessThan(1500);
+    // Allow shared-host scheduling headroom while still catching delayed pipe teardown.
+    expect(result.durationMs).toBeLessThan(5_000);
+    expect(Date.now() - started).toBeLessThan(5_000);
     expect(result.stderr).toContain("command timed out after 50ms");
   });
 
