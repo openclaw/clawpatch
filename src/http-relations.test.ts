@@ -281,6 +281,14 @@ describe("literal HTTP syntax", () => {
     expect(httpEndpoints('<div>fetch("/fake")</div>', "client.tsx", "caller")).toEqual([]);
   });
 
+  it("skips deeply nested templates without consuming the call stack", () => {
+    const source =
+      "const nested = " + "`x${".repeat(10_000) + "0" + "}`".repeat(10_000) + '; fetch("/real");';
+    expect(httpEndpoints(source, "client.ts", "caller").map((endpoint) => endpoint.path)).toEqual([
+      "/real",
+    ]);
+  });
+
   it("matches unescaped static path punctuation and Unicode", () => {
     for (const path of [
       "/users/@me",

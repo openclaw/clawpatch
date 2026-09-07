@@ -322,24 +322,30 @@ function codeMask(source: string, rust: boolean): Uint8Array {
 }
 
 function templateEnd(source: string, start: number): number {
-  let depth = 0;
+  const depths = [0];
   let i = start + 1;
   while (i < source.length) {
+    const frame = depths.length - 1;
+    const depth = depths[frame]!;
     const char = source[i]!;
     if (char === "\\") {
       i += 2;
       continue;
     }
     if (depth === 0) {
-      if (char === "`") return i + 1;
+      if (char === "`") {
+        depths.pop();
+        if (depths.length === 0) return i + 1;
+      }
       if (source.startsWith("${", i)) {
-        depth = 1;
+        depths[frame] = 1;
         i += 2;
         continue;
       }
     } else {
       if (char === "`") {
-        i = templateEnd(source, i);
+        depths.push(0);
+        i += 1;
         continue;
       }
       if (char === '"' || char === "'") {
@@ -363,8 +369,8 @@ function templateEnd(source: string, start: number): number {
       // A slash in an interpolation could be division or a regex containing braces.
       // Leave the rest unscanned rather than guessing where the template ends.
       if (char === "/") return source.length;
-      if (char === "{") depth += 1;
-      if (char === "}") depth -= 1;
+      if (char === "{") depths[frame] = depth + 1;
+      if (char === "}") depths[frame] = depth - 1;
     }
     i += 1;
   }
