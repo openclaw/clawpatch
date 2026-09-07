@@ -1,6 +1,13 @@
 # Changelog
 
-## 0.7.4 - Unreleased
+## 0.8.0 - Unreleased
+
+**Highlights:** Opt-in HTTP context connects Node callers and Rust handlers during review.
+
+- Added `map --link-http caller:backend` and `review --link-http caller:backend` for bounded, method-aware HTTP candidate context, with ambiguity checks and unchanged default feature records, thanks @Tanmay-008.
+- Fixed source packaging with pnpm 12 by using the portable `pnpm run build` prepack command.
+- Updated the pnpm GitHub Actions setup to 6.1.0.
+- Added shared-host scheduling headroom to timeout regression tests while retaining explicit bounded-return checks.
 
 ## 0.7.3 - 2026-09-05
 

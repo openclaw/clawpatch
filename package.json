@@ -19,7 +19,7 @@
   "type": "module",
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
-    "prepack": "pnpm -s build",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint . --config oxlint.json",
     "format": "oxfmt --write .",
