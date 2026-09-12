@@ -2,6 +2,8 @@
 
 ## 0.8.1 - Unreleased
 
+- Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.
+
 - Updated Zod and development tooling, aligned Node typings with the Node 22 floor, and added Node 22/24 runtime CI with pinned GitHub Actions.
 
 - Updated workflow and architecture docs to match current providers, explicit PR creation, validation order, and stale-lock recovery.

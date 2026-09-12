@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { lstat, readdir, readlink } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { runCommand } from "./exec.js";
-import { parseGitStatus } from "./git-status.js";
+import { ClawpatchError } from "./errors.js";
+import { dirtyFiles } from "./git.js";
 
 export async function hasSourceDirtyWorktree(root: string, stateDir: string): Promise<boolean> {
   const paths = await sourceChangedPaths(root, stateDir);
@@ -13,7 +13,7 @@ export async function hasSourceDirtyWorktree(root: string, stateDir: string): Pr
 export async function sourceChangedSnapshots(
   root: string,
   stateDir: string,
-): Promise<Map<string, string> | null> {
+): Promise<Map<string, string>> {
   const paths =
     (await sourceChangedPaths(root, stateDir)) ?? (await sourceSnapshotPaths(root, stateDir));
   const snapshots = new Map<string, string>();
@@ -33,18 +33,17 @@ export function changedPathsBetweenSnapshots(
 }
 
 async function sourceChangedPaths(root: string, stateDir: string): Promise<Set<string> | null> {
-  const result = await runCommand("git status --porcelain=v1 -z -uall", root, undefined, {
-    trimOutput: false,
-  });
-  if (result.exitCode !== 0) {
-    return null;
+  let paths: Set<string>;
+  try {
+    paths = await dirtyFiles(root);
+  } catch (error) {
+    if (error instanceof ClawpatchError && error.code === "git-failure") {
+      return null;
+    }
+    throw error;
   }
   const relativeStateDir = normalizePath(relative(root, stateDir));
-  return new Set(
-    parseGitStatus(result.stdout)
-      .map((change) => change.primaryPath)
-      .filter((path) => path.length > 0 && !isStatePath(path, relativeStateDir)),
-  );
+  return new Set([...paths].filter((path) => !isStatePath(path, relativeStateDir)));
 }
 
 async function pathFingerprint(root: string, path: string): Promise<string> {

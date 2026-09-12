@@ -80,8 +80,7 @@ export async function fixCommand(
   }
   await writePatchAttempt(loaded.paths, initialPatch);
   const startedAt = nowIso();
-  const beforeChanged =
-    (await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir)) ?? new Map();
+  const beforeChanged = await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir);
   let plan: FixPlanOutput;
   try {
     plan = await provider.fix(loaded.root, prompt, providerOptions(config));
@@ -120,8 +119,7 @@ export async function fixCommand(
       }),
     );
   }
-  const afterChanged =
-    (await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir)) ?? new Map();
+  const afterChanged = await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir);
   const filesChanged = changedPathsBetweenSnapshots(beforeChanged, afterChanged);
   const failed = commandsRun.some((result) => result.exitCode !== 0);
   const patch: PatchAttempt = {

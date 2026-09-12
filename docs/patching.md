@@ -23,6 +23,10 @@ Current behavior:
 - records command results
 - links the patch attempt to the finding
 
+When `--root` selects a subdirectory of a Git repository, dirty checks and patch
+file records are scoped to that project. Its state directory and sibling-project
+changes are excluded; renames record both the old and new project-relative paths.
+
 Status updates:
 
 - validation success marks the finding `uncertain`
