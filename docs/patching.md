@@ -20,6 +20,7 @@ Current behavior:
 - lets the provider edit the worktree during the explicit fix command
 - runs the configured formatter, feature-specific tests, typecheck, lint, and
   configured test command, with duplicates removed (see [Validation](validation.md))
+- records source edits even when the provider fails before validation
 - records command results
 - links the patch attempt to the finding
 

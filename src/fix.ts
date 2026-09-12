@@ -86,9 +86,11 @@ export async function fixCommand(
     plan = await provider.fix(loaded.root, prompt, providerOptions(config));
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
+    const afterChanged = await sourceChangedSnapshots(loaded.root, loaded.paths.stateDir);
     await writePatchAttempt(loaded.paths, {
       ...initialPatch,
       status: "failed",
+      filesChanged: changedPathsBetweenSnapshots(beforeChanged, afterChanged),
       plan: `${initialPatch.plan}\n\nProvider failed: ${message}`,
       provider: {
         name: provider.name,

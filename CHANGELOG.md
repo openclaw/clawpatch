@@ -2,6 +2,8 @@
 
 ## 0.8.1 - Unreleased
 
+- Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.
+
 - Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.
 
 - Updated Zod and development tooling, aligned Node typings with the Node 22 floor, and added Node 22/24 runtime CI with pinned GitHub Actions.
