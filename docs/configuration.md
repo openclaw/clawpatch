@@ -100,5 +100,6 @@ are rejected if they set it, because Codex config can change provider routing
 and credential lookup. Keep secrets out of config files; use Codex provider
 settings such as `env_key` to read an already-exported environment variable.
 
-`git.commit` and `git.openPr` are reserved config fields. The current CLI does
-not commit or open PRs.
+`git.commit` and `git.openPr` are reserved config fields and do not enable
+automation. Commit and PR creation require the explicit
+[`open-pr` command](patching.md#opening-a-pr).
