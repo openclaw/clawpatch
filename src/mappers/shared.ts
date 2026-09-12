@@ -2,7 +2,7 @@ import { lstat, readdir, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { pathExists } from "../fs.js";
 import { TrustBoundary } from "../types.js";
-import { FeatureSeed } from "./types.js";
+import { FeatureSeed, SeedFileRef } from "./types.js";
 
 export type TestRef = {
   path: string;
@@ -494,4 +494,17 @@ function rustTestPrefixesForEntry(entryPath: string): string[] {
     return [`${parts.slice(0, srcIndex).join("/")}/tests/`];
   }
   return ["tests/"];
+}
+
+export function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
+  const seen = new Set<string>();
+  const output: SeedFileRef[] = [];
+  for (const ref of refs) {
+    if (seen.has(ref.path)) {
+      continue;
+    }
+    seen.add(ref.path);
+    output.push(ref);
+  }
+  return output;
 }

@@ -7,14 +7,8 @@ import {
   projectTags,
   projectTargetCommand,
 } from "./projects.js";
-import { pathMatchesPrefix, walk } from "./shared.js";
-import {
-  FeatureSeed,
-  MapperContext,
-  SeedFileRef,
-  SeedTestRef,
-  suppressedTestCommandTag,
-} from "./types.js";
+import { uniqueFileRefs, pathMatchesPrefix, walk } from "./shared.js";
+import { FeatureSeed, MapperContext, SeedTestRef, suppressedTestCommandTag } from "./types.js";
 import type { NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
 
@@ -1999,19 +1993,6 @@ function uniqueRoutes(routes: ServerRoute[]): ServerRoute[] {
     }
     seen.add(key);
     output.push(route);
-  }
-  return output;
-}
-
-function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
   }
   return output;
 }

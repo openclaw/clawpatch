@@ -1,7 +1,14 @@
+import {
+  parsePnpmWorkspace,
+  isExcludedWorkspace,
+  hasWorkspaceGlob,
+  globSegmentRegExp,
+} from "./workspace-patterns.js";
 import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import {
+  uniqueFileRefs,
   isSafeDirectory,
   isSampleProjectPath,
   normalize,
@@ -386,25 +393,6 @@ function packageWorkspacePatterns(pkg: PackageJson): string[] {
   return [];
 }
 
-function parsePnpmWorkspace(source: string): string[] {
-  const patterns: string[] = [];
-  let inPackages = false;
-  for (const rawLine of source.split("\n")) {
-    const line = rawLine.replace(/#.*/u, "");
-    if (/^\S/u.test(line)) {
-      inPackages = /^packages\s*:/u.test(line);
-    }
-    if (!inPackages) {
-      continue;
-    }
-    const match = /^\s*-\s*["']?([^"'\s]+)["']?\s*$/u.exec(line);
-    if (match?.[1] !== undefined) {
-      patterns.push(match[1]);
-    }
-  }
-  return patterns;
-}
-
 async function expandWorkspacePattern(root: string, pattern: string): Promise<string[]> {
   const normalized = normalizeWorkspacePattern(pattern);
   if (normalized === null) {
@@ -444,30 +432,6 @@ function normalizeWorkspacePattern(pattern: string): string | null {
     return null;
   }
   return normalized;
-}
-
-function isExcludedWorkspace(packageRoot: string, excludes: string[]): boolean {
-  return excludes.some((pattern) => workspacePatternMatches(pattern, packageRoot));
-}
-
-function workspacePatternMatches(pattern: string, packageRoot: string): boolean {
-  if (pattern === packageRoot) {
-    return true;
-  }
-  if (hasWorkspaceGlob(pattern)) {
-    return workspaceGlobMatches(pattern, packageRoot);
-  }
-  if (pattern.endsWith("/**")) {
-    return pathMatchesPrefix(packageRoot, pattern.slice(0, -3));
-  }
-  if (pattern.endsWith("/*")) {
-    const parent = pattern.slice(0, -2);
-    if (!pathMatchesPrefix(packageRoot, parent)) {
-      return false;
-    }
-    return packageRoot.slice(parent.length + 1).split("/").length === 1;
-  }
-  return false;
 }
 
 async function expandWorkspaceGlob(root: string, pattern: string): Promise<string[]> {
@@ -521,37 +485,6 @@ async function safeDirectoryEntries(root: string, prefix: string): Promise<strin
     .filter((entry) => entry.isDirectory() && !entry.isSymbolicLink())
     .map((entry) => entry.name)
     .toSorted();
-}
-
-function hasWorkspaceGlob(pattern: string): boolean {
-  return /[*?]/u.test(pattern);
-}
-
-function workspaceGlobMatches(pattern: string, packageRoot: string): boolean {
-  return globSegmentsMatch(pattern.split("/"), packageRoot.split("/"));
-}
-
-function globSegmentsMatch(pattern: string[], candidate: string[]): boolean {
-  const [segment, ...remainingPattern] = pattern;
-  if (segment === undefined) {
-    return candidate.length === 0;
-  }
-  if (segment === "**") {
-    return (
-      globSegmentsMatch(remainingPattern, candidate) ||
-      (candidate.length > 0 && globSegmentsMatch(pattern, candidate.slice(1)))
-    );
-  }
-  const [candidateSegment, ...remainingCandidate] = candidate;
-  if (candidateSegment === undefined || !globSegmentRegExp(segment).test(candidateSegment)) {
-    return false;
-  }
-  return globSegmentsMatch(remainingPattern, remainingCandidate);
-}
-
-function globSegmentRegExp(segment: string): RegExp {
-  const escaped = segment.replace(/[.+^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`^${escaped.replace(/\*/gu, "[^/]*").replace(/\?/gu, "[^/]")}$`, "u");
 }
 
 function hasReactDependency(pkg: PackageJson): boolean {
@@ -1383,17 +1316,4 @@ async function safeFile(root: string, path: string): Promise<boolean> {
   }
   const info = await lstat(fullPath);
   return info.isFile() && !info.isSymbolicLink();
-}
-
-function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
-  }
-  return output;
 }

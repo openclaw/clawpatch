@@ -9,7 +9,14 @@ import {
 import { pathExists } from "../fs.js";
 import { TrustBoundary } from "../types.js";
 import { chunkFiles } from "./grouping.js";
-import { isSafeDirectory, isSafeFile, pathMatchesPrefix, shouldSkip, walk } from "./shared.js";
+import {
+  uniqueFileRefs,
+  isSafeDirectory,
+  isSafeFile,
+  pathMatchesPrefix,
+  shouldSkip,
+  walk,
+} from "./shared.js";
 import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";
 
 type RouteRef = {
@@ -184,7 +191,7 @@ async function controllerSeeds(
         route: controllerRoutes[0]?.uri ?? null,
         command: null,
         ownedFiles: [{ path, reason: "controller" }],
-        contextFiles: uniqueRefs([
+        contextFiles: uniqueFileRefs([
           ...controllerRoutes.map((route) => ({ path: route.file, reason: "route definition" })),
           ...(await phpUseContextFiles(root, path, controllerByClass)),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
@@ -242,7 +249,7 @@ async function commandSeeds(
         route: null,
         command: signature,
         ownedFiles: [{ path, reason: "Artisan command" }],
-        contextFiles: uniqueRefs([
+        contextFiles: uniqueFileRefs([
           ...(await phpUseContextFiles(root, path)),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ]),
@@ -295,7 +302,7 @@ async function serviceSeeds(
         route: null,
         command: null,
         ownedFiles: [{ path, reason: "service" }],
-        contextFiles: uniqueRefs([
+        contextFiles: uniqueFileRefs([
           ...(await phpUseContextFiles(root, path)),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ]),
@@ -354,7 +361,7 @@ async function phpClassSeeds(
         route: null,
         command: null,
         ownedFiles: [{ path, reason: titlePrefix.toLowerCase() }],
-        contextFiles: uniqueRefs([
+        contextFiles: uniqueFileRefs([
           ...(await phpUseContextFiles(root, path)),
           ...tests.map((test) => ({ path: test.path, reason: "associated test" })),
         ]),
@@ -1145,19 +1152,6 @@ async function existingRefs(root: string, refs: Array<[string, string]>): Promis
     if (await pathExists(join(root, path))) {
       output.push({ path, reason });
     }
-  }
-  return output;
-}
-
-function uniqueRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
   }
   return output;
 }

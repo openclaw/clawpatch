@@ -1,9 +1,16 @@
+import {
+  pyprojectHasToolSection,
+  pythonTomlStringValues,
+  readTomlBracketValue,
+  pythonRequirementName,
+} from "../python-metadata.js";
 import { readFile, readdir } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { pathExists } from "../fs.js";
 import { shellQuotePath } from "../shell.js";
 import { partitionFileGroups } from "./grouping.js";
 import {
+  uniqueFileRefs,
   isSafeDirectory,
   isSafeFile,
   normalize,
@@ -384,25 +391,12 @@ async function workspaceMemberSeed(
     ...(seed.ownedFiles === undefined
       ? {}
       : { ownedFiles: seed.ownedFiles.map((file) => ({ ...file, path: prefixPath(file.path) })) }),
-    contextFiles: uniqueSeedFileRefs([...(contextFiles ?? []), ...workspaceRuntimeContext]),
+    contextFiles: uniqueFileRefs([...(contextFiles ?? []), ...workspaceRuntimeContext]),
     ...(seed.tests === undefined
       ? {}
       : { tests: seed.tests.map((test) => ({ ...test, path: prefixPath(test.path) })) }),
     ...(seed.testPrefixes === undefined ? {} : { testPrefixes: seed.testPrefixes.map(prefixPath) }),
   };
-}
-
-function uniqueSeedFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
-  }
-  return output;
 }
 
 function workspaceMemberSummary(seed: FeatureSeed, member: string): string {
@@ -741,15 +735,6 @@ async function pythonTestCommand(root: string, pyproject: PyprojectInfo): Promis
     return "hatch run pytest";
   }
   return "pytest";
-}
-
-async function pyprojectHasToolSection(root: string, tool: string): Promise<boolean> {
-  if (!(await pathExists(join(root, "pyproject.toml")))) {
-    return false;
-  }
-  const source = await readFile(join(root, "pyproject.toml"), "utf8");
-  const escaped = tool.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(`^\\s*\\[\\[?tool\\.${escaped}(?:\\.|\\])`, "mu").test(source);
 }
 
 async function dependencyFileHas(root: string, dependency: string): Promise<boolean> {
@@ -2411,7 +2396,7 @@ function dependencyNames(source: string): Set<string> {
   const names = new Set<string>();
   for (const array of tomlArrayAssignments(source, ["dependencies", "dev-dependencies"])) {
     for (const value of arrayValues(array)) {
-      const name = requirementName(value);
+      const name = pythonRequirementName(value);
       if (name !== null) {
         names.add(name);
       }
@@ -2426,7 +2411,7 @@ function dependencyNames(source: string): Set<string> {
     ...tablesMatching(source, /^tool\.poetry\.group\.[^.]+\.dependencies$/u),
   ]) {
     for (const value of assignedKeysAndValues(dependencyTable)) {
-      const name = requirementName(value);
+      const name = pythonRequirementName(value);
       if (name !== null) {
         names.add(name);
       }
@@ -2438,7 +2423,7 @@ function dependencyNames(source: string): Set<string> {
     table(source, "tool.pdm.dev-dependencies"),
   ]) {
     for (const value of assignedValues(dependencyTable)) {
-      const name = requirementName(value);
+      const name = pythonRequirementName(value);
       if (name !== null) {
         names.add(name);
       }
@@ -2452,7 +2437,7 @@ function tomlArrayAssignments(source: string, keys: string[]): string[] {
   for (const key of keys) {
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
     for (const match of source.matchAll(new RegExp(`^\\s*${escaped}\\s*=\\s*\\[`, "gmu"))) {
-      arrays.push(readBracketValue(source, match.index + match[0].lastIndexOf("[")));
+      arrays.push(readTomlBracketValue(source, match.index + match[0].lastIndexOf("[")));
     }
   }
   return arrays;
@@ -2468,7 +2453,7 @@ function assignedValues(source: string): string[] {
     const lineEnd = source.indexOf("\n", valueStart);
     const rawValue = source.slice(valueStart, lineEnd === -1 ? source.length : lineEnd).trim();
     if (rawValue.startsWith("[")) {
-      values.push(...arrayValues(readBracketValue(source, valueStart)));
+      values.push(...arrayValues(readTomlBracketValue(source, valueStart)));
       continue;
     }
     values.push(...arrayValues(rawValue));
@@ -2488,80 +2473,14 @@ function assignedKeysAndValues(source: string): string[] {
 }
 
 function arrayValues(source: string): string[] {
-  return stringValues(source);
-}
-
-function stringValues(source: string): string[] {
-  const values: string[] = [];
-  let quote: string | null = null;
-  let value = "";
-  let escaped = false;
-  for (let index = 0; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote !== null) {
-      if (escaped) {
-        value += char;
-        escaped = false;
-      } else if (char === "\\" && quote === '"') {
-        escaped = true;
-      } else if (char === quote) {
-        values.push(value);
-        quote = null;
-        value = "";
-      } else {
-        value += char;
-      }
-      continue;
-    }
-    if (char === "#") {
-      const nextNewline = source.indexOf("\n", index + 1);
-      if (nextNewline === -1) {
-        break;
-      }
-      index = nextNewline;
-    } else if (char === '"' || char === "'") {
-      quote = char;
-      value = "";
-    }
-  }
-  return values;
-}
-
-function readBracketValue(source: string, bracketIndex: number): string {
-  let depth = 0;
-  let quote: string | null = null;
-  let escaped = false;
-  for (let index = bracketIndex; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote !== null) {
-      if (escaped) {
-        escaped = false;
-      } else if (char === "\\") {
-        escaped = true;
-      } else if (char === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-    } else if (char === "[") {
-      depth += 1;
-    } else if (char === "]") {
-      depth -= 1;
-      if (depth === 0) {
-        return source.slice(bracketIndex, index + 1);
-      }
-    }
-  }
-  return source.slice(bracketIndex);
+  return pythonTomlStringValues(source);
 }
 
 function requirementNames(source: string): Set<string> {
   return new Set(
     source
       .split("\n")
-      .map((line) => requirementName(line))
+      .map((line) => pythonRequirementName(line))
       .filter((name): name is string => name !== null),
   );
 }
@@ -2605,20 +2524,11 @@ function setupCfgRequirementNames(source: string): Set<string> {
 
 function addRequirementNames(names: Set<string>, value: string): void {
   for (const part of value.split(",")) {
-    const name = requirementName(part);
+    const name = pythonRequirementName(part);
     if (name !== null) {
       names.add(name);
     }
   }
-}
-
-function requirementName(value: string): string | null {
-  const trimmed = value.trim().replace(/^["']|["']$/gu, "");
-  if (trimmed.length === 0 || trimmed.startsWith("#") || trimmed.startsWith("-")) {
-    return null;
-  }
-  const match = /^([A-Za-z0-9_.-]+)/u.exec(trimmed);
-  return match?.[1]?.toLowerCase().replace(/_/gu, "-") ?? null;
 }
 
 function uniquePaths(paths: string[]): string[] {
