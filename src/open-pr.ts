@@ -1,3 +1,4 @@
+import { parseTimeoutMs } from "./timeout.js";
 import { lstat, realpath } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { loadProjectState, type AppContext } from "./app-context.js";
@@ -505,13 +506,11 @@ function githubCli(): string {
 }
 
 export function gitPushTimeoutMs(): number {
-  const configured = Number(process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"] ?? "600000");
-  return Number.isFinite(configured) && configured > 0 ? configured : 600_000;
+  return parseTimeoutMs(process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"], 600_000);
 }
 
 export function ghPrCreateTimeoutMs(): number {
-  const configured = Number(process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"] ?? "300000");
-  return Number.isFinite(configured) && configured > 0 ? configured : 300_000;
+  return parseTimeoutMs(process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"], 300_000);
 }
 
 async function localBranchExists(gitRoot: string, branch: string): Promise<boolean> {

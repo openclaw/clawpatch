@@ -2,6 +2,8 @@
 
 ## 0.8.1 - Unreleased
 
+- Prevented oversized provider, validation, and PR-publishing timeout overrides from overflowing into one-millisecond deadlines.
+
 - Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.
 
 - Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.

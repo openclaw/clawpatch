@@ -1,3 +1,4 @@
+import { parseTimeoutMs } from "./timeout.js";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, extname, join } from "node:path";
@@ -19,12 +20,7 @@ const abortHandlers = new Map<NodeJS.Signals, () => void>();
 const defaultTaskkillTimeoutMs = 5_000;
 
 export function taskkillTimeoutMs(): number {
-  const configured = Number(
-    process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"] ?? String(defaultTaskkillTimeoutMs),
-  );
-  return Number.isFinite(configured) && configured >= 1 && configured <= 2_147_483_647
-    ? Math.trunc(configured)
-    : defaultTaskkillTimeoutMs;
+  return parseTimeoutMs(process.env["CLAWPATCH_TASKKILL_TIMEOUT_MS"], defaultTaskkillTimeoutMs);
 }
 
 export async function runCommand(

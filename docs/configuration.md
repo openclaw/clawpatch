@@ -84,8 +84,10 @@ Environment overrides:
 - `CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS` (default `300000`, or 5 minutes)
 - `CLAWPATCH_TASKKILL_TIMEOUT_MS` (Windows cleanup deadline; default `5000`, or 5 seconds)
 
-The `open-pr` timeout overrides must be positive millisecond values. Invalid values fall back to
-their defaults.
+Provider, validation, and `open-pr` timeout overrides accept `1` through
+`2147483647` milliseconds. Invalid or out-of-range values fall back to their
+defaults; fractional values are truncated. This prevents Node from turning an
+overflowing deadline into a one-millisecond timer.
 
 `CLAWPATCH_TASKKILL_TIMEOUT_MS` must be between `1` and `2147483647` milliseconds;
 invalid values fall back to 5 seconds. Fractional values are truncated. Each Windows
