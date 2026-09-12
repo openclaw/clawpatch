@@ -1,3 +1,4 @@
+import { stripXmlComments } from "../source-comments.js";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathExists } from "../fs.js";
@@ -371,25 +372,6 @@ function removeXmlBlocks(source: string, names: string[]): string {
       new RegExp(`<${escapedName}\\b[^>]*>[\\s\\S]*?</${escapedName}>`, "giu"),
       " ",
     );
-  }
-  return output;
-}
-
-function stripXmlComments(source: string): string {
-  let output = "";
-  let index = 0;
-  while (index < source.length) {
-    const start = source.indexOf("<!--", index);
-    if (start === -1) {
-      output += source.slice(index);
-      break;
-    }
-    output += source.slice(index, start);
-    const end = source.indexOf("-->", start + 4);
-    if (end === -1) {
-      break;
-    }
-    index = end + 3;
   }
   return output;
 }

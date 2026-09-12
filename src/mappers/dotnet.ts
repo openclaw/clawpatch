@@ -1,3 +1,4 @@
+import { stripXmlComments } from "../source-comments.js";
 import { readFile } from "node:fs/promises";
 import { basename, dirname, extname, join } from "node:path";
 import { shellQuotePath } from "../shell.js";
@@ -946,25 +947,6 @@ function xmlAttributeValues(source: string, element: string, attribute: string):
 
 function normalizeMsbuildPath(path: string): string {
   return normalize(path.replace(/\\/gu, "/"));
-}
-
-function stripXmlComments(source: string): string {
-  let output = "";
-  let index = 0;
-  while (index < source.length) {
-    const start = source.indexOf("<!--", index);
-    if (start === -1) {
-      output += source.slice(index);
-      break;
-    }
-    output += source.slice(index, start);
-    const end = source.indexOf("-->", start + 4);
-    if (end === -1) {
-      break;
-    }
-    index = end + 3;
-  }
-  return output;
 }
 
 function isStrongTestProject(source: string): boolean {

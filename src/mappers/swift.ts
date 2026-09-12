@@ -1,3 +1,4 @@
+import { stripSwiftComments } from "../source-comments.js";
 import { lstat, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathExists } from "../fs.js";
@@ -8,7 +9,6 @@ import {
   packageTrustBoundaries,
   pathMatchesPrefix,
   shouldSkip,
-  stripSwiftComments,
   walk,
 } from "./shared.js";
 import { FeatureSeed, SeedFileRef, SeedTestRef } from "./types.js";

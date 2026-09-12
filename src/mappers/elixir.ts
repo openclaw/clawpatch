@@ -1,8 +1,9 @@
+import { stripLineComments } from "../source-comments.js";
 import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { pathExists } from "../fs.js";
 import { shellQuotePath } from "../shell.js";
-import { packageKind, pathMatchesPrefix, shouldSkip, stripLineComments, walk } from "./shared.js";
+import { packageKind, pathMatchesPrefix, shouldSkip, walk } from "./shared.js";
 import { FeatureSeed, SeedTestRef } from "./types.js";
 
 const elixirSourceGroupMaxOwnedFiles = 24;
