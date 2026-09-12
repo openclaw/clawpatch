@@ -2,6 +2,8 @@
 
 ## 0.8.1 - Unreleased
 
+- Updated Zod and development tooling, aligned Node typings with the Node 22 floor, and added Node 22/24 runtime CI with pinned GitHub Actions.
+
 - Updated workflow and architecture docs to match current providers, explicit PR creation, validation order, and stale-lock recovery.
 
 ## 0.8.0 - 2026-09-07
