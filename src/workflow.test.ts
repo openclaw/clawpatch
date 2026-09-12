@@ -1,3 +1,4 @@
+import { providerByName } from "./provider.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   access,
@@ -5194,5 +5195,30 @@ describe("workflow", () => {
     expect(patches[0]?.status).toBe("failed");
     expect(findings[0]?.linkedPatchAttemptIds).toContain(patches[0]?.patchAttemptId);
     delete process.env["CLAWPATCH_PROVIDER"];
+  });
+
+  it("records partial edits when a provider fails after writing source", async () => {
+    const root = await sinceFixture("clawpatch-partial-fix-");
+    const context = await makeContext({ ...testOptions(root), quiet: true });
+    await initCommand(context, {});
+    await mapCommand(context);
+    const reviewed = (await reviewCommand(context, { provider: "mock", limit: "1" })) as {
+      next: string;
+    };
+    const finding = reviewed.next.split(" ").at(-1)!;
+    vi.spyOn(providerByName("mock-fail"), "fix").mockImplementationOnce(async () => {
+      await writeFixture(root, "src/one.ts", "export const one = 42;\n");
+      await writeFixture(root, "src/partial.ts", "export const partial = true;\n");
+      throw new Error("failed after editing");
+    });
+    await expect(fixCommand(context, { finding, provider: "mock-fail" })).rejects.toThrow(
+      "failed after editing",
+    );
+    const patches = await readPatchAttempts(statePaths(join(root, ".clawpatch")));
+    expect(patches).toHaveLength(1);
+    expect(patches[0]).toMatchObject({
+      status: "failed",
+      filesChanged: ["src/one.ts", "src/partial.ts"],
+    });
   });
 });
