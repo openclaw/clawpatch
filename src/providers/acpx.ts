@@ -423,8 +423,6 @@ function acpxPromptRetries(): number {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 1;
 }
 
-// eslint-disable-next-line no-underscore-dangle
-
 export const acpxTesting = {
   acpxFailureMessage,
   acpxPromptRetries,

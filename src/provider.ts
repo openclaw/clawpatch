@@ -33,8 +33,7 @@ export function providerByName(name: string): Provider {
   throw new ClawpatchError(`unsupported provider: ${name}`, 2, "unsupported-provider");
 }
 
-// eslint-disable-next-line no-underscore-dangle
-export const __testing = {
+export const providerTesting = {
   ...acpxTesting,
   ...claudeTesting,
   ...codexTesting,

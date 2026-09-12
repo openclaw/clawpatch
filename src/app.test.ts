@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __testing as appTesting, AppContext } from "./app.js";
+import { appTesting, AppContext } from "./app.js";
 import { defaultConfig } from "./config.js";
 import { ClawpatchError } from "./errors.js";
 import type { PartitionedReviewOutput, Provider } from "./provider-types.js";
