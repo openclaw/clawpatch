@@ -14,6 +14,12 @@ providers are out of scope; see the project [vision](../VISION.md).
 clawpatch doctor
 ```
 
+`doctor` loads configuration before checking whether project state exists, so
+`--config`, `CLAWPATCH_CONFIG`, and discovered project config also work before
+`init`. Provider, model, and reasoning flags override environment and config
+settings in the same order as review. Unknown provider names are rejected before
+invoking a harness.
+
 Provider names today:
 
 - `codex`: shells out to `codex exec` (default)

@@ -26,7 +26,7 @@ const providers: Readonly<Record<string, Provider>> = {
 };
 
 export function providerByName(name: string): Provider {
-  const provider = providers[name];
+  const provider = Object.hasOwn(providers, name) ? providers[name] : undefined;
   if (provider !== undefined) {
     return provider;
   }
