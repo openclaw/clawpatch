@@ -1,4 +1,3 @@
-import type { AppContext } from "./app-context.js";
 import { loadConfig, parseReasoningEffort } from "./config.js";
 import { nowIso } from "./fs.js";
 import type { RunRecord } from "./types.js";
@@ -45,7 +44,6 @@ export function providerOptions(config: ReturnType<typeof applyProviderFlags>) {
 export function newRun(
   id: string,
   command: string,
-  context: AppContext,
   root: string,
   headSha: string | null,
 ): RunRecord {
