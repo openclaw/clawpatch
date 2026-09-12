@@ -38,7 +38,7 @@ export async function revalidateCommand(
   const touchedFeatureIds = new Set<string>();
   const currentRunId = runId();
   const currentGit = await discoverGit(loaded.root);
-  const run = newRun(currentRunId, "revalidate", context, loaded.root, currentGit.headSha);
+  const run = newRun(currentRunId, "revalidate", loaded.root, currentGit.headSha);
   run.findingIds = findings.map((finding) => finding.findingId);
   await writeRun(loaded.paths, run);
   const results: Array<{

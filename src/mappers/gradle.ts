@@ -367,7 +367,6 @@ async function gradleProjectSeeds(root: string, gradleRoot: string): Promise<Fea
     seeds.push(...(await jvmRoleSeeds(root, buildFile, sourceRoot, sourceFiles, testFiles, tags)));
     seeds.push(
       ...(await kotlinRoleSeeds(
-        root,
         buildFile,
         sourceRoot,
         sourceFiles,
@@ -435,7 +434,6 @@ async function gradleMainSourceFiles(root: string, moduleRoots: string[]): Promi
 }
 
 async function kotlinRoleSeeds(
-  root: string,
   buildFile: string,
   sourceRoot: string,
   sourceFiles: string[],

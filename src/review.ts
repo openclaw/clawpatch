@@ -87,7 +87,7 @@ export async function reviewCommand(
   }
   const currentRunId = runId();
   const currentGit = await discoverGit(loaded.root);
-  const run = newRun(currentRunId, "review", context, loaded.root, currentGit.headSha);
+  const run = newRun(currentRunId, "review", loaded.root, currentGit.headSha);
   run.claimedFeatureIds = features.map((feature) => feature.featureId);
   await writeRun(loaded.paths, run);
   const findingIds: string[] = [];
