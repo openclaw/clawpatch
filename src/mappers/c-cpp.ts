@@ -1,3 +1,4 @@
+import { stripLineComments } from "../source-comments.js";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import {
@@ -9,7 +10,6 @@ import {
   normalize,
   packageTrustBoundaries,
   shouldSkip,
-  stripLineComments,
   targetLanguageTag,
   withCudaConcurrency,
 } from "./shared.js";

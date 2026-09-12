@@ -1,3 +1,4 @@
+import { stripLineComments } from "../source-comments.js";
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { pathExists } from "../fs.js";
@@ -9,7 +10,6 @@ import {
   packageKind,
   packageTrustBoundaries,
   normalize,
-  stripLineComments,
   walk,
 } from "./shared.js";
 import { FeatureSeed, SeedFileRef } from "./types.js";
