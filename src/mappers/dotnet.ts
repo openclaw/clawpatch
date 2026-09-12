@@ -4,7 +4,13 @@ import { basename, dirname, extname, join } from "node:path";
 import { shellQuotePath } from "../shell.js";
 import { TrustBoundary } from "../types.js";
 import { partitionFileGroups } from "./grouping.js";
-import { isSampleProjectPath, normalize, pathMatchesPrefix, shouldSkip } from "./shared.js";
+import {
+  uniqueFileRefs,
+  isSampleProjectPath,
+  normalize,
+  pathMatchesPrefix,
+  shouldSkip,
+} from "./shared.js";
 import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js";
 
 const maxOwnedFiles = 12;
@@ -1090,19 +1096,6 @@ function isDotnetGeneratedOrCachePath(path: string): boolean {
 
 function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/gu, "");
-}
-
-function uniqueFileRefs(refs: SeedFileRef[]): SeedFileRef[] {
-  const seen = new Set<string>();
-  const output: SeedFileRef[] = [];
-  for (const ref of refs) {
-    if (seen.has(ref.path)) {
-      continue;
-    }
-    seen.add(ref.path);
-    output.push(ref);
-  }
-  return output;
 }
 
 function uniqueStrings<T extends string>(values: T[]): T[] {
