@@ -410,8 +410,7 @@ function parseMapSource(flags: Record<string, string | boolean>): "heuristic" | 
   );
 }
 
-// eslint-disable-next-line no-underscore-dangle
-export const __testing = {
+export const appTesting = {
   ...reviewTesting,
   reviewFlagSubset,
 };

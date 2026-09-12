@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { ClawpatchError } from "./errors.js";
-import { __testing, extractJson, providerByName } from "./provider.js";
+import { providerTesting, extractJson, providerByName } from "./provider.js";
 import { safeProviderPreview } from "./provider-json.js";
 import { agentMapJsonSchema, reviewJsonSchema } from "./provider-schema.js";
 import { evidenceRefSchema, revalidateOutputSchema, reviewOutputSchema } from "./types.js";
 
-// eslint-disable-next-line no-underscore-dangle
 const {
   addClaudeModelArgs,
   acpxFailureMessage,
@@ -43,7 +42,7 @@ const {
   piThinkingLevel,
   providerExitCode,
   providerJsonSchema,
-} = __testing;
+} = providerTesting;
 
 function withEnv(name: string, value: string | undefined, fn: () => void): void {
   const previous = process.env[name];

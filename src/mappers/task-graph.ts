@@ -40,17 +40,3 @@ export function taskGraphCommand(
     (command) => command.projectRoot === project.root && command.task === task,
   )?.command;
 }
-
-export function taskGraphProjectCommands(
-  graph: WorkspaceTaskGraph,
-  project: NodeProjectInfo,
-): Record<string, string> {
-  const commands: Record<string, string> = {};
-  for (const task of validationTaskNames) {
-    const command = taskGraphCommand(graph, project, task);
-    if (command !== undefined && command !== null) {
-      commands[task] = command;
-    }
-  }
-  return commands;
-}
