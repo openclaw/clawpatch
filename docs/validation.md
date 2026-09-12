@@ -9,10 +9,16 @@ Validation happens during `clawpatch fix`.
 
 Configured commands run in order:
 
-- format
-- typecheck
-- lint
-- test
+- configured format command
+- feature-specific test commands
+- configured typecheck command
+- configured lint command
+- configured test command
+
+Duplicate commands run once. A mapper may suppress the configured test fallback
+for a feature when it identifies an unsuitable task, such as a persistent Turbo
+task. Validation commands have a ten-minute default timeout, configurable through
+`CLAWPATCH_VALIDATION_TIMEOUT_MS`.
 
 Commands are detected during `clawpatch init` or configured in
 `.clawpatch/config.json`.

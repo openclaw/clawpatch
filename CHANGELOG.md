@@ -2,6 +2,8 @@
 
 ## 0.8.1 - Unreleased
 
+- Updated workflow and architecture docs to match current providers, explicit PR creation, validation order, and stale-lock recovery.
+
 ## 0.8.0 - 2026-09-07
 
 **Highlights:** Opt-in HTTP context connects Node callers and Rust handlers during review.

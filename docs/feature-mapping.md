@@ -189,11 +189,12 @@ Known gaps:
 - Express/Fastify/Hono route mapping is conservative and does not infer
   prefixes from cross-file router mounts such as `app.use("/api", router)`,
   `fastify.register(..., { prefix })`, or `app.route("/api", subApp)`
-- Laravel route parsing is convention-based, does not execute Laravel route discovery,
-  and may omit prefixes applied by `Route::group(...)` wrappers
+- Laravel route parsing is convention-based and does not execute Laravel route
+  discovery; literal fluent and array-style group prefixes are supported, while
+  dynamic prefixes remain unresolved
 - C#/.NET mapping does not evaluate MSBuild conditions, imported props/targets,
   or runtime route conventions
-- no import graph expansion beyond nearby tests yet
+- import context is bounded and mapper-specific, rather than a complete dependency graph
 - agent mapping depends on provider quality and validates paths but not semantic intent
 
 ## Optional HTTP relations

@@ -62,7 +62,9 @@ codex --version
 clawpatch doctor
 ```
 
-`clawpatch doctor` checks that the configured provider is available and can execute test queries.
+`clawpatch doctor` checks the configured harness and reports its version. Most
+providers do not make an authenticated model query during this check. Claude
+host-auth mode also runs a minimal structured query; see [Providers](providers.md).
 
 ## Next steps
 

@@ -18,11 +18,8 @@ Current behavior:
 - creates a patch attempt record
 - asks the provider for a fix plan
 - lets the provider edit the worktree during the explicit fix command
-- runs configured validation commands in this order:
-  - format
-  - typecheck
-  - lint
-  - test
+- runs the configured formatter, feature-specific tests, typecheck, lint, and
+  configured test command, with duplicates removed (see [Validation](validation.md))
 - records command results
 - links the patch attempt to the finding
 

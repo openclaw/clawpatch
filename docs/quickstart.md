@@ -136,9 +136,11 @@ This:
 - Calls provider with patch instructions
 - Runs validation commands
 - Records patch attempt
-- Shows diff
+- Reports changed files and validation results
 
-Review the changes and commit manually if satisfied.
+Inspect `git diff` after the repair. Commit manually when satisfied, or use
+`clawpatch open-pr --patch <patchAttemptId>` to publish the recorded patch files
+as a PR explicitly. See [Patching](patching.md#opening-a-pr).
 
 ## 6. Revalidate
 
@@ -165,7 +167,7 @@ clawpatch review --feature <featureId>
 ### Review with different model
 
 ```bash
-clawpatch review --model claude-opus-4-20250514 --limit 5
+clawpatch review --provider claude --model <model> --limit 5
 ```
 
 ### Review with explicit Codex reasoning effort
@@ -191,7 +193,7 @@ clawpatch doctor
 If a review run was interrupted:
 
 ```bash
-clawpatch clean-locks
+clawpatch clean-locks --stale-only
 ```
 
 ## Output formats
