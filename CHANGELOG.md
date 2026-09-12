@@ -2,14 +2,12 @@
 
 ## 0.8.1 - Unreleased
 
-- Prevented oversized provider, validation, and PR-publishing timeout overrides from overflowing into one-millisecond deadlines.
-
-- Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.
-
 - Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.
-
+- Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.
+- Prevented oversized provider, validation, and PR-publishing timeout overrides from overflowing into one-millisecond deadlines.
+- Fixed `doctor` to honor standalone provider configuration before project initialization.
+- Rejected inherited object-property names as unsupported providers instead of failing during harness invocation.
 - Updated Zod and development tooling, aligned Node typings with the Node 22 floor, and added Node 22/24 runtime CI with pinned GitHub Actions.
-
 - Updated workflow and architecture docs to match current providers, explicit PR creation, validation order, and stale-lock recovery.
 
 ## 0.8.0 - 2026-09-07

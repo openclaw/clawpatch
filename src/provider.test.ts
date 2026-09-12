@@ -1738,6 +1738,13 @@ describe("extractOpencodeJson", () => {
 });
 
 describe("providerByName", () => {
+  it.each(["constructor", "toString", "__proto__", "hasOwnProperty"])(
+    "rejects inherited object key %s as an unsupported provider",
+    (name) => {
+      expect(() => providerByName(name)).toThrow(`unsupported provider: ${name}`);
+    },
+  );
+
   it("returns provider instances for optional CLI-backed providers", () => {
     expect(providerByName("acpx").name).toBe("acpx");
     expect(providerByName("claude").name).toBe("claude");

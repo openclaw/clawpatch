@@ -1,5 +1,5 @@
 import { appendFile } from "node:fs/promises";
-import { loadConfig, parseReasoningEffort, resolveStateDir } from "./config.js";
+import { loadConfig, resolveStateDir } from "./config.js";
 import { applyProviderFlags, providerOptions, stringFlag } from "./command-support.js";
 import { loadProjectState, type AppContext } from "./app-context.js";
 import { detectProject } from "./detect.js";
@@ -236,40 +236,17 @@ export async function doctorCommand(
   context: AppContext,
   flags: Record<string, string | boolean> = {},
 ): Promise<unknown> {
-  let loaded: Awaited<ReturnType<typeof loadProjectState>> | null;
-  try {
-    loaded = await loadProjectState(context);
-  } catch (error) {
-    if (error instanceof ClawpatchError && error.code === "not-initialized") {
-      loaded = null;
-    } else {
-      throw error;
-    }
-  }
-  const root = loaded?.root ?? context.root;
-  const providerName =
-    stringFlag(flags, "provider") ??
-    process.env["CLAWPATCH_PROVIDER"] ??
-    loaded?.config.provider.name ??
-    "codex";
-  const model =
-    stringFlag(flags, "model") ??
-    process.env["CLAWPATCH_MODEL"] ??
-    loaded?.config.provider.model ??
-    null;
-  const reasoningEffort =
-    parseReasoningEffort(stringFlag(flags, "reasoningEffort")) ??
-    parseReasoningEffort(process.env["CLAWPATCH_REASONING_EFFORT"]) ??
-    loaded?.config.provider.reasoningEffort ??
-    null;
-  const provider = providerByName(providerName);
-  const providerVersion = await provider.check(root);
+  const config = applyProviderFlags(await loadConfig(context.root, context.options), flags);
+  const paths = statePaths(resolveStateDir(context.root, config));
+  const project = await readProject(paths);
+  const provider = providerByName(config.provider.name);
+  const providerVersion = await provider.check(context.root);
   return {
-    root,
-    state: loaded === null ? "missing" : "ok",
-    provider: providerName,
-    model,
-    reasoningEffort,
+    root: context.root,
+    state: project === null ? "missing" : "ok",
+    provider: config.provider.name,
+    model: config.provider.model,
+    reasoningEffort: config.provider.reasoningEffort,
     providerVersion,
     secrets: "redacted",
   };
