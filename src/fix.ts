@@ -1,3 +1,4 @@
+import { parseTimeoutMs } from "./timeout.js";
 import { loadProjectState, type AppContext } from "./app-context.js";
 import {
   changedPathsBetweenSnapshots,
@@ -116,7 +117,7 @@ export async function fixCommand(
   for (const command of validationCommands) {
     commandsRun.push(
       await runCommand(command, loaded.root, undefined, {
-        timeoutMs: validationTimeoutMs(),
+        timeoutMs: parseTimeoutMs(process.env["CLAWPATCH_VALIDATION_TIMEOUT_MS"], 600_000),
         maxOutputChars: 100_000,
       }),
     );
@@ -170,9 +171,4 @@ export async function fixCommand(
       ? `inspect ${patchAttemptId}`
       : `clawpatch revalidate --finding ${finding.findingId}`,
   };
-}
-
-function validationTimeoutMs(): number {
-  const configured = Number(process.env["CLAWPATCH_VALIDATION_TIMEOUT_MS"] ?? "600000");
-  return Number.isFinite(configured) && configured > 0 ? configured : 600_000;
 }

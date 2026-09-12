@@ -1,3 +1,4 @@
+import { parseTimeoutMs } from "../timeout.js";
 import { readdir, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { runCommandArgs } from "../exec.js";
@@ -8,12 +9,7 @@ import { FeatureSeed, MapperContext, SeedFileRef, SeedTestRef } from "./types.js
 const defaultGoListTimeoutMs = 120_000;
 
 export function goListTimeoutMs(): number {
-  const configured = Number(
-    process.env["CLAWPATCH_GO_LIST_TIMEOUT_MS"] ?? String(defaultGoListTimeoutMs),
-  );
-  return Number.isFinite(configured) && configured >= 1 && configured <= 2_147_483_647
-    ? Math.trunc(configured)
-    : defaultGoListTimeoutMs;
+  return parseTimeoutMs(process.env["CLAWPATCH_GO_LIST_TIMEOUT_MS"], defaultGoListTimeoutMs);
 }
 
 export async function goSeeds(root: string, context: MapperContext): Promise<FeatureSeed[]> {

@@ -48,6 +48,13 @@ describe("open-pr command timeouts", () => {
     expect(ghPrCreateTimeoutMs()).toBe(300_000);
   });
 
+  it("rejects overflowing publishing deadlines before passing them to Node", () => {
+    process.env["CLAWPATCH_GIT_PUSH_TIMEOUT_MS"] = "2147483648";
+    process.env["CLAWPATCH_GH_PR_CREATE_TIMEOUT_MS"] = "1e100";
+    expect(gitPushTimeoutMs()).toBe(600_000);
+    expect(ghPrCreateTimeoutMs()).toBe(300_000);
+  });
+
   it(
     "times out a hung git push instead of blocking open-pr",
     { timeout: HANG_TEST_TIMEOUT_MS },

@@ -26,6 +26,10 @@ Provider names today:
 - `mock`: deterministic provider for tests and fixtures
 - `mock-fail`: failure provider for tests
 
+Timeout overrides must be between `1` and `2147483647` milliseconds. Invalid
+values use the default and fractional values are truncated. A provider-specific
+timeout takes precedence over `CLAWPATCH_PROVIDER_TIMEOUT_MS`.
+
 ## Codex
 
 Codex invocation:
