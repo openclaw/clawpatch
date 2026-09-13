@@ -2,6 +2,7 @@
 
 ## 0.8.1 - Unreleased
 
+- Completed Vitest 5 tooling with matching V8 coverage, a full-suite CI coverage run, ignored report artifacts, and documented development Node requirements while retaining Node 22/24/26 CI and the CLI's Node 22 floor.
 - Updated Nano ID to 3.3.19, Magic String to 1.3.1, and Obug to 2.2.1 within the 48-hour dependency release-age policy.
 - Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.
 - Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.

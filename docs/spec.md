@@ -109,10 +109,16 @@ Provider restrictions vary; [Safety](safety.md) describes their limits.
 
 ## Development and verification
 
-Use Node.js 22 or newer and the pnpm version pinned in `package.json`. Source is
+Use Node.js 22.x (22.12+), 24.x, or 26+ for Vitest 5 and the pnpm version pinned in
+`package.json`. The published CLI still supports Node.js 22 or newer. Source is
 strict ESM TypeScript, checked with TypeScript and Oxlint and formatted with
 Oxfmt. Tests live beside their modules and use Vitest; mapper behavior is grouped
 by language and framework.
+
+`pnpm test:coverage` runs the full suite with the matching Vitest 5 V8 provider,
+covering production TypeScript under `src/`, including files not imported by
+tests. Coverage prints a text report and writes JSON summary and HTML reports to
+`coverage/`; the Node.js 26 CI job runs coverage as well.
 
 Run the commands in [README development](../README.md#development) before
 submitting changes. `pnpm pack:smoke` builds and installs a local package, then
