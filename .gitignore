@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+.vitest/
 .clawpatch/runs/
 .clawpatch/findings/
 .clawpatch/patches/

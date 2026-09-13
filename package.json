@@ -26,6 +26,7 @@
     "format:check": "oxfmt --check .",
     "website:smoke": "node scripts/website-smoke.mjs",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "pack:smoke": "node scripts/package-smoke.mjs",
     "check:changed": "pnpm run test",
     "test:changed": "pnpm run test",
@@ -42,6 +43,7 @@
   "devDependencies": {
     "@types/node": "^22.20.2",
     "@types/proper-lockfile": "^4.1.4",
+    "@vitest/coverage-v8": "^5.0.0",
     "oxfmt": "^0.67.0",
     "oxlint": "^1.82.0",
     "typescript": "^7.0.2",
