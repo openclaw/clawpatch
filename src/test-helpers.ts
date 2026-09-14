@@ -6,7 +6,8 @@ import { GlobalOptions } from "./config.js";
 
 export async function fixtureRoot(prefix: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), prefix));
-  onTestFinished(() => rm(root, { recursive: true, force: true }));
+  // Git pack files can briefly race with fixture teardown.
+  onTestFinished(() => rm(root, { recursive: true, force: true, maxRetries: 3 }));
   return root;
 }
 

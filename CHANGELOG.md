@@ -1,14 +1,16 @@
 # Changelog
 
-## 0.8.1 - Unreleased
+## 0.8.1 - 2026-09-13
 
-- Completed Vitest 5 tooling with matching V8 coverage, a full-suite CI coverage run, ignored report artifacts, and documented development Node requirements while retaining Node 22/24/26 CI and the CLI's Node 22 floor.
-- Updated Nano ID to 3.3.19, Magic String to 1.3.1, and Obug to 2.2.1 within the 48-hour dependency release-age policy.
+**Highlights:** Nested-project repairs stop tripping over sibling changes, and failed patch attempts keep the edits a provider already wrote.
+
 - Fixed nested-project repairs to ignore their own state and sibling changes, fingerprint project-relative source paths, and record both sides of renames.
 - Preserved observed source edits in failed patch attempts when a provider writes files before exiting with an error.
-- Prevented oversized provider, validation, and PR-publishing timeout overrides from overflowing into one-millisecond deadlines.
 - Fixed `doctor` to honor standalone provider configuration before project initialization.
+- Prevented oversized provider, validation, and PR-publishing timeout overrides from overflowing into one-millisecond deadlines.
 - Rejected inherited object-property names as unsupported providers instead of failing during harness invocation.
+- Completed Vitest 5 tooling with matching V8 coverage, a full-suite CI coverage run, ignored report artifacts, and documented development Node requirements while retaining Node 22/24/26 CI and the CLI's Node 22 floor.
+- Updated Nano ID to 3.3.19, Magic String to 1.3.1, and Obug to 2.2.1 within the 48-hour dependency release-age policy.
 - Updated Zod and development tooling, aligned Node typings with the Node 22 floor, and added Node 22/24 runtime CI with pinned GitHub Actions.
 - Updated workflow and architecture docs to match current providers, explicit PR creation, validation order, and stale-lock recovery.
 
