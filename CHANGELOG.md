@@ -1,5 +1,7 @@
 # Changelog
 
+## 0.8.2 - Unreleased
+
 ## 0.8.1 - 2026-09-13
 
 **Highlights:** Nested-project repairs stop tripping over sibling changes, and failed patch attempts keep the edits a provider already wrote.
