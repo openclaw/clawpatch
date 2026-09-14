@@ -41,7 +41,7 @@
     "zod": "^4.6.2"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^26.5.1",
     "@types/proper-lockfile": "^4.1.4",
     "@vitest/coverage-v8": "^5.0.0",
     "oxfmt": "^0.67.0",
