@@ -70,7 +70,8 @@ export async function changedFilesSince(root: string, ref: string): Promise<Set<
   validateGitRef(ref);
   const result = await runCommandArgs(
     "git",
-    ["diff", "--name-only", "--relative", "-z", `${ref}...HEAD`, "--"],
+    // Rename summaries omit the old path, which can still own mapped features.
+    ["diff", "--no-renames", "--name-only", "--relative", "-z", `${ref}...HEAD`, "--"],
     root,
     undefined,
     { trimOutput: false },
