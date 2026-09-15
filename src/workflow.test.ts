@@ -861,6 +861,22 @@ describe("workflow", () => {
     });
   });
 
+  it("selects existing review features when their owned file is renamed", async () => {
+    const root = await sinceFixture("clawpatch-since-rename-");
+    const context = await makeContext(testOptions(root));
+    await initCommand(context, {});
+    await mapCommand(context);
+    const features = await readFeatures(statePaths(join(root, ".clawpatch")));
+    await checkCommand(root, "git config diff.renames true");
+    await checkCommand(root, "git mv src/two.ts src/renamed.ts");
+    await commitAll(root, "rename two");
+
+    const reviewed = await reviewCommand(context, { since: "base", dryRun: true });
+    const expected = expectedFeatureIds(features, new Set(["src/two.ts"]), true);
+    expect(expected.length).toBeGreaterThan(0);
+    expect(reviewed).toMatchObject({ dryRun: true, featureIds: expected });
+  });
+
   it("selects changed features regardless of their previous review status", async () => {
     const root = await sinceFixture("clawpatch-since-status-");
     const context = await makeContext(testOptions(root));

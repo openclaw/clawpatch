@@ -2,6 +2,8 @@
 
 ## 0.8.2 - Unreleased
 
+- Fixed diff-scoped review, CI, and revalidation to include both paths of committed renames, preventing features mapped to the old path from being silently skipped.
+
 ## 0.8.1 - 2026-09-13
 
 **Highlights:** Nested-project repairs stop tripping over sibling changes, and failed patch attempts keep the edits a provider already wrote.
