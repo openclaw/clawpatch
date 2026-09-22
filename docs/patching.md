@@ -28,6 +28,10 @@ When `--root` selects a subdirectory of a Git repository, dirty checks and patch
 file records are scoped to that project. Its state directory and sibling-project
 changes are excluded; renames record both the old and new project-relative paths.
 
+For non-Git roots explicitly enabled with `--skip-git-repo-check`, patch audits
+record changes to regular files and symlinks without following linked targets.
+Unix filenames retain literal backslashes in the recorded paths.
+
 Status updates:
 
 - validation success marks the finding `uncertain`

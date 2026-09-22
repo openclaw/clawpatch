@@ -97,12 +97,12 @@ async function collectSnapshotPaths(
       continue;
     }
     const info = await lstat(full).catch(() => null);
-    if (info === null || info.isSymbolicLink()) {
+    if (info === null) {
       continue;
     }
     if (info.isDirectory()) {
       await collectSnapshotPaths(root, full, relativeStateDir, paths);
-    } else if (info.isFile()) {
+    } else if (info.isFile() || info.isSymbolicLink()) {
       paths.add(path);
     }
   }
@@ -120,5 +120,5 @@ function shouldSkipSnapshotPath(path: string, relativeStateDir: string): boolean
 }
 
 function normalizePath(path: string): string {
-  return path.replace(/\\/gu, "/").replace(/\/$/u, "");
+  return process.platform === "win32" ? path.replace(/\\/gu, "/") : path;
 }

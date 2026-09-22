@@ -2,6 +2,7 @@
 
 ## 0.8.2 - Unreleased
 
+- Fixed non-Git patch audits to retain symlink edits and literal backslashes in Unix filenames without reading linked targets.
 - Fixed diff-scoped review, CI, and revalidation to include both paths of committed renames, preventing features mapped to the old path from being silently skipped.
 
 ## 0.8.1 - 2026-09-13
