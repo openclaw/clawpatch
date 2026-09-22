@@ -29,15 +29,6 @@ export async function runCommand(
   input?: string,
   options: CommandOptions = {},
 ): Promise<CommandResult> {
-  return runCommandRaw(command, cwd, input, options);
-}
-
-export async function runCommandRaw(
-  command: string,
-  cwd: string,
-  input?: string,
-  options: CommandOptions = {},
-): Promise<CommandResult> {
   const shell = process.platform === "win32" ? (process.env["ComSpec"] ?? "cmd.exe") : "/bin/sh";
   const windows = process.platform === "win32";
   // cmd.exe owns shell quoting; Node's executable argument escaping breaks quoted paths.
