@@ -38,19 +38,19 @@
   "dependencies": {
     "js-tokens": "^10.0.0",
     "proper-lockfile": "^4.1.2",
-    "zod": "^4.6.2"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^22.20.2",
+    "@types/node": "^22.20.4",
     "@types/proper-lockfile": "^4.1.4",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.1",
     "oxfmt": "^0.68.0",
-    "oxlint": "^1.82.0",
+    "oxlint": "^1.83.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   },
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@11.26.0+sha512.fc0e2bf890b9f983611f1ab68c0637bce914390653699f83c1a78b005ed25f2c81e77920c8fd8eee2ecf0b58b28cdcb00a84d97f69bcf7c56b2f344710238664"
+  "packageManager": "pnpm@11.27.0+sha512.ad12821463bb143295f1fa3ecde77a6b9b97a7990386da800ff57bffc3964dc64b7b1c7559d5dbe5c337aea659ed9c8937d4370bd198ca2009bc6fa0249808e7"
 }

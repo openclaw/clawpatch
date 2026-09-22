@@ -19,30 +19,30 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2
       zod:
-        specifier: ^4.6.2
-        version: 4.6.2
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@types/node':
-        specifier: ^22.20.2
-        version: 22.20.2
+        specifier: ^22.20.4
+        version: 22.20.4
       '@types/proper-lockfile':
         specifier: ^4.1.4
         version: 4.1.4
       '@vitest/coverage-v8':
-        specifier: ^5.0.0
+        specifier: ^5.0.1
         version: 5.0.1(vitest@5.0.1)
       oxfmt:
         specifier: ^0.68.0
         version: 0.68.0
       oxlint:
-        specifier: ^1.82.0
+        specifier: ^1.83.0
         version: 1.83.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
       vitest:
-        specifier: ^5.0.0
-        version: 5.0.1(@types/node@22.20.2)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.2))
+        specifier: ^5.0.1
+        version: 5.0.1(@types/node@22.20.4)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.4))
 
 packages:
 
@@ -54,8 +54,8 @@ packages:
     resolution: {integrity: sha512-qehxGkRj55h/ff8EMaJ+cYhyaKlHIxqYDn682wQD7RNp9UujOQsHog2uS0r2vzr4pW+sXf90NeeayjcNaX3fFg==}
     engines: {node: '>=6.9.0'}
 
-  '@babel/parser@7.29.8':
-    resolution: {integrity: sha512-E8lTAYNB1KW+FH+VGJuZM1ioAx2E6oVlvQFRrf5P8ZZmsiJXYAD9vTFV7yyEURNzgh1dFqMZuO6tUwcARbqFCA==}
+  '@babel/parser@7.29.9':
+    resolution: {integrity: sha512-CjXrNHTnvqBVqHgdBysY3vk2T8tpJHb5/RMeHJBTyVa9xgugCB0CJTx/3oO8RV2QRQP391RWpB7D6hLjm8V9uA==}
     engines: {node: '>=6.0.0'}
     hasBin: true
 
@@ -432,8 +432,8 @@ packages:
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
 
-  '@types/node@22.20.2':
-    resolution: {integrity: sha512-xlvWf4Vs9n1PEVYwP1n4vvG07M6y8WgvJ2t0vbrWTmijsIHp1cS+uJ2kMIRdY3nHZK0nCYKrPeD171+SzF4/zw==}
+  '@types/node@22.20.4':
+    resolution: {integrity: sha512-zJRE40jpHtKqE/C4fgHrAKQLJuSpzEnP9ff9Y7YtoR3Wd2pwqzlekDeEuUQXjRd+QCYnVnNwuJYmhdk9XV8gvA==}
 
   '@types/proper-lockfile@4.1.4':
     resolution: {integrity: sha512-uo2ABllncSqg9F1D4nugVl9v93RmjxF6LJzQLMLDdPaXCUIDPeOJ21Gbqi43xNKzBi/WQ0Q0dICqufzQbMjipQ==}
@@ -711,8 +711,8 @@ packages:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
 
-  magic-string@1.3.1:
-    resolution: {integrity: sha512-rm91zr2Ou+XueDTohjQQjdQEcYM6zVi8KVUCG8Ec3vHwUEKrhSdCNyfuIywkA6hcCAteIn0ZOtAHA6eGpiX+Pg==}
+  magic-string@1.4.1:
+    resolution: {integrity: sha512-8lyCu36ErXR0J9uaGKlKQoiLZKmtI63YGLE8G2o9jyRPdr4X47LusSOwgOJOzcVtp81fTAAjxR7BwKz682Jhow==}
 
   magicast@0.5.5:
     resolution: {integrity: sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA==}
@@ -908,8 +908,8 @@ packages:
     engines: {node: '>=8'}
     hasBin: true
 
-  zod@4.6.2:
-    resolution: {integrity: sha512-lh5RCAGFa1Cm2hjtNwLQhSs/AsqdWnTQaBER9fEwN/88pSh7KOtJavtBx/0VlkN/uFd61SwYmljLMDAsHlvzBQ==}
+  zod@4.6.5:
+    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
 snapshots:
 
@@ -917,7 +917,7 @@ snapshots:
 
   '@babel/helper-validator-identifier@7.29.7': {}
 
-  '@babel/parser@7.29.8':
+  '@babel/parser@7.29.9':
     dependencies:
       '@babel/types': 7.29.8
 
@@ -1109,7 +1109,7 @@ snapshots:
 
   '@types/estree@1.0.9': {}
 
-  '@types/node@22.20.2':
+  '@types/node@22.20.4':
     dependencies:
       undici-types: 6.21.0
 
@@ -1189,7 +1189,7 @@ snapshots:
       obug: 2.2.1
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 5.0.1(@types/node@22.20.2)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.2))
+      vitest: 5.0.1(@types/node@22.20.4)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.4))
 
   '@vitest/istanbul-lib-coverage@1.0.1': {}
 
@@ -1197,14 +1197,14 @@ snapshots:
     dependencies:
       '@vitest/istanbul-lib-coverage': 1.0.1
 
-  '@vitest/mocker@5.0.1(vite@8.3.0(@types/node@22.20.2))':
+  '@vitest/mocker@5.0.1(vite@8.3.0(@types/node@22.20.4))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
       '@vitest/spy': 5.0.1
       estree-walker: 3.0.3
-      magic-string: 1.3.1
+      magic-string: 1.4.1
     optionalDependencies:
-      vite: 8.3.0(@types/node@22.20.2)
+      vite: 8.3.0(@types/node@22.20.4)
 
   '@vitest/spy@5.0.1': {}
 
@@ -1288,13 +1288,13 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
-  magic-string@1.3.1:
+  magic-string@1.4.1:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.6.0
 
   magicast@0.5.5:
     dependencies:
-      '@babel/parser': 7.29.8
+      '@babel/parser': 7.29.9
       '@babel/types': 7.29.8
       source-map-js: 1.2.1
 
@@ -1435,7 +1435,7 @@ snapshots:
 
   undici-types@6.21.0: {}
 
-  vite@8.3.0(@types/node@22.20.2):
+  vite@8.3.0(@types/node@22.20.4):
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
@@ -1443,27 +1443,27 @@ snapshots:
       rolldown: 1.2.8
       tinyglobby: 0.2.17
     optionalDependencies:
-      '@types/node': 22.20.2
+      '@types/node': 22.20.4
       fsevents: 2.3.3
 
-  vitest@5.0.1(@types/node@22.20.2)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.2)):
+  vitest@5.0.1(@types/node@22.20.4)(@vitest/coverage-v8@5.0.1)(vite@8.3.0(@types/node@22.20.4)):
     dependencies:
       '@types/chai': 5.2.3
-      '@vitest/mocker': 5.0.1(vite@8.3.0(@types/node@22.20.2))
+      '@vitest/mocker': 5.0.1(vite@8.3.0(@types/node@22.20.4))
       chai: 6.2.2
       es-module-lexer: 2.3.2
       expect-type: 1.4.0
-      magic-string: 1.3.1
+      magic-string: 1.4.1
       obug: 2.2.1
       picomatch: 4.0.7
       std-env: 4.2.0
       tinybench: 6.1.4
       tinyexec: 1.3.0
       tinyglobby: 0.2.17
-      vite: 8.3.0(@types/node@22.20.2)
+      vite: 8.3.0(@types/node@22.20.4)
       why-is-node-running: 2.3.0
     optionalDependencies:
-      '@types/node': 22.20.2
+      '@types/node': 22.20.4
       '@vitest/coverage-v8': 5.0.1(vitest@5.0.1)
     transitivePeerDependencies:
       - msw
@@ -1473,4 +1473,4 @@ snapshots:
       siginfo: 2.0.0
       stackback: 0.0.2
 
-  zod@4.6.2: {}
+  zod@4.6.5: {}
