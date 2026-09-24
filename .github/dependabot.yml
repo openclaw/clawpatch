@@ -8,6 +8,10 @@ updates:
       time: "09:00"
       timezone: America/Los_Angeles
     open-pull-requests-limit: 10
+    ignore:
+      # Match the published CLI's Node 22 floor until its runtime requirement changes.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       production-minor-and-patch:
         dependency-type: production

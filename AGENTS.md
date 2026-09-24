@@ -12,6 +12,7 @@ User documentation is in `docs/`; the static website assets are in `website/`.
 
 Use pnpm with Node 22.x (22.12+), 24.x, or 26+ for Vitest 5 development. The published
 CLI continues to support Node 22 or newer.
+Keep `@types/node` on the Node 22 major to typecheck against that runtime floor.
 
 - `pnpm build`: clean and compile the package with `tsconfig.build.json`.
 - `pnpm typecheck`: run TypeScript checks without emitting files.
