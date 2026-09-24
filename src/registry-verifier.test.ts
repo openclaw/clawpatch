@@ -138,19 +138,19 @@ describe("extractPackageSpecs", () => {
 
 type FetchInput = Parameters<typeof fetch>[0];
 
-describe("verifyPackageSpec", () => {
-  function makeFetch(implementations: Array<(input: FetchInput) => Promise<Response>>) {
-    let call = 0;
-    return ((input: FetchInput) => {
-      const handler = implementations[call];
-      call += 1;
-      if (!handler) {
-        throw new Error(`unexpected fetch call #${call}`);
-      }
-      return handler(input);
-    }) as typeof fetch;
-  }
+function makeFetch(implementations: Array<(input: FetchInput) => Promise<Response>>) {
+  let call = 0;
+  return ((input: FetchInput) => {
+    const handler = implementations[call];
+    call += 1;
+    if (!handler) {
+      throw new Error(`unexpected fetch call #${call}`);
+    }
+    return handler(input);
+  }) as typeof fetch;
+}
 
+describe("verifyPackageSpec", () => {
   it("returns verified-published when registry returns 200 with matching name+version", async () => {
     const fetchImpl = makeFetch([
       async () =>
