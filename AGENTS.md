@@ -10,7 +10,7 @@ User documentation is in `docs/`; the static website assets are in `website/`.
 
 ## Build, Test, and Development Commands
 
-Use pnpm with Node 22.x (22.12+), 24.x, or 26+ for Vitest 5 development. The published
+Use pnpm with Node 22.x (22.13+), 24.x, or 26+ for pnpm 11 and Vitest 5 development. The published
 CLI continues to support Node 22 or newer.
 Keep `@types/node` on the Node 22 major to typecheck against that runtime floor.
 

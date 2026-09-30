@@ -2,6 +2,7 @@
 
 ## 0.8.2 - Unreleased
 
+- Updated Vitest and V8 coverage to 5.0.2, pnpm to 11.28.0, CodeQL to 4.38.2, and both the TruffleHog action and scanner to 3.97.9, thanks @dependabot[bot].
 - Fixed non-Git patch audits to retain symlink edits and literal backslashes in Unix filenames without reading linked targets.
 - Fixed diff-scoped review, CI, and revalidation to include both paths of committed renames, preventing features mapped to the old path from being silently skipped.
 
