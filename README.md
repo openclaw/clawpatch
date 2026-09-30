@@ -97,7 +97,7 @@ pnpm build
 pnpm pack:smoke
 ```
 
-Use Node.js 22.x (22.12+), 24.x, or 26+ and the pnpm version declared in `package.json`
+Use Node.js 22.x (22.13+), 24.x, or 26+ and the pnpm version declared in `package.json`
 for development with Vitest 5. CI tests Node.js 22, 24, and 26; the published CLI
 continues to support Node.js 22 or newer. `pnpm test:coverage` runs the full suite
 with V8 coverage, prints a text report, and writes JSON summary and HTML reports
