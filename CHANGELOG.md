@@ -1,11 +1,15 @@
 # Changelog
 
-## 0.8.2 - Unreleased
+## 0.8.3 - Unreleased
 
+## 0.8.2 - 2026-10-01
+
+**Highlights:** Diff-scoped reviews retain both sides of committed renames, and patch audits preserve symlink and literal-path edits.
+
+- Fixed diff-scoped review, CI, and revalidation to include both paths of committed renames, preventing features mapped to the old path from being silently skipped.
+- Fixed non-Git patch audits to retain symlink edits and literal backslashes in Unix filenames without reading linked targets.
 - Updated Oxfmt to 0.71.0, Oxlint to 1.86.0, pnpm to 11.28.2, Vite to 8.3.1, and the release workflow's npm CLI to 12.1.0 within the 48-hour dependency release-age policy.
 - Updated Vitest and V8 coverage to 5.0.2, pnpm to 11.28.0, CodeQL to 4.38.2, and both the TruffleHog action and scanner to 3.97.9, thanks @dependabot[bot].
-- Fixed non-Git patch audits to retain symlink edits and literal backslashes in Unix filenames without reading linked targets.
-- Fixed diff-scoped review, CI, and revalidation to include both paths of committed renames, preventing features mapped to the old path from being silently skipped.
 
 ## 0.8.1 - 2026-09-13
 

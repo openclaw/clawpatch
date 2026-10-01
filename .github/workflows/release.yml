@@ -98,7 +98,6 @@ jobs:
             capture && /^## / { exit }
             capture { print }
           ' CHANGELOG.md > release-notes.md
-          printf '\n## Package\n\n- npm: https://www.npmjs.com/package/clawpatch/v/%s\n' "$RELEASE_VERSION" >> release-notes.md
 
       - name: Publish GitHub release
         env:
