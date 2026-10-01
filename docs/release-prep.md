@@ -11,7 +11,9 @@ GitHub release, or change the package version.
 ## Release Snapshot
 
 Record the target version, current npm version, release commit, local validation,
-and CI URLs in the GitHub release notes. Verify the target version is absent from
+and CI URLs in the release report. The workflow uses the dated changelog section
+as the GitHub release body. Keep a one-line `**Highlights:**` first, preserve all
+existing bullets, and open an empty next-patch `Unreleased` section. Verify the target version is absent from
 npm, Git tags, and GitHub releases before publishing.
 
 ## Audit Commands
