@@ -2,6 +2,8 @@
 
 ## 0.8.3 - Unreleased
 
+- Updated Node 22 typings to 22.20.5, Vitest and V8 coverage to 5.0.3, Vite to 8.3.2, and pnpm to 11.28.4 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
+
 ## 0.8.2 - 2026-10-01
 
 **Highlights:** Diff-scoped reviews retain both sides of committed renames, and patch audits preserve symlink and literal-path edits.
