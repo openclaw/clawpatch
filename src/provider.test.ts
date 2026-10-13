@@ -2452,6 +2452,20 @@ describe("gateway provider replies", () => {
     expect(body["response_format"]).toMatchObject({ type: "json_schema" });
   });
 
+  it("sends the session id as x-litellm-session-id, and omits it when unset", async () => {
+    const fetchMock = stubGateway(chatReply(REVIEW_JSON));
+    const options = gatewayReviewOptions(diagnosticsDir);
+    await providerByName("gateway").review("/tmp", "review this", {
+      ...options,
+      sessionId: "clawpatch:feat-1",
+    });
+    await providerByName("gateway").review("/tmp", "review this", options);
+    const headers = (call: number) =>
+      (fetchMock.mock.calls[call]?.[1]?.headers ?? {}) as Record<string, string>;
+    expect(headers(0)["x-litellm-session-id"]).toBe("clawpatch:feat-1");
+    expect(headers(1)).not.toHaveProperty("x-litellm-session-id");
+  });
+
   it.each([
     ["a json fence", "```json\n" + REVIEW_JSON + "\n```"],
     ["leading and trailing prose", `Here is the review:\n${REVIEW_JSON}\nHope this helps.`],

@@ -26,6 +26,14 @@ export type ProviderOptions = {
    * budget instead of getting a fresh one. Unset = this attempt starts it.
    */
   callStartedAt?: number;
+  /**
+   * Stable key for one logical unit of work (a feature slice), so repeat and
+   * retry calls for it can land on the same backend. The gateway provider
+   * sends it as `x-litellm-session-id`; the LiteLLM router's `session_affinity`
+   * then pins the session to the replica that already holds its prompt prefix
+   * in cache. Ignored by providers with no such notion.
+   */
+  sessionId?: string;
 };
 
 export type DroppedFinding = {

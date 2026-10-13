@@ -159,6 +159,7 @@ async function runGatewayJson(
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${config.apiKey}`,
+          ...(options.sessionId ? { "x-litellm-session-id": options.sessionId } : {}),
         },
         body: JSON.stringify(body),
         signal: controller.signal,

@@ -494,7 +494,13 @@ async function runProviderReviewWithRetry(args: {
     try {
       await limiter?.acquire();
       callStartedAt ??= Date.now();
-      return await provider.review(root, prompt, { ...options, callStartedAt });
+      // The feature id is the session key: a retry, or a re-review of the same
+      // slice, then reaches the gateway replica that already cached its prompt.
+      return await provider.review(root, prompt, {
+        ...options,
+        callStartedAt,
+        sessionId: `clawpatch:${featureId}`,
+      });
     } catch (error: unknown) {
       // A retry cut off by the call's shared deadline has nothing new to say:
       // report the failure that prompted the retry — its own class and exit
