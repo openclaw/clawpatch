@@ -2,6 +2,8 @@
 
 ## 0.8.3 - Unreleased
 
+- Updated Oxfmt to 0.72.0 and Oxlint to 1.87.0 for repository formatting and linting, thanks @dependabot[bot].
+
 - Updated Node 22 typings to 22.20.5, Vitest and V8 coverage to 5.0.3, Vite to 8.3.2, and pnpm to 11.28.4 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
 
 ## 0.8.2 - 2026-10-01
