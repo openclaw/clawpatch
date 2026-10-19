@@ -2,6 +2,8 @@
 
 ## 0.8.3 - Unreleased
 
+- Updated Zod to 4.6.7, Vitest and V8 coverage to 5.0.5, Oxfmt to 0.73.0, Oxlint to 1.88.0, and CodeQL to 4.39.0 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
+- Added a no-publish release workflow dry run that validates the selected ref and defaults on for manual dispatch.
 - Fixed provider JSON extraction to recover structured results after unmatched braces in leading prose, thanks @goutamadwant and @notlakshitha.
 - Updated Node setup to 7.1.0, CodeQL to 4.38.3, and both the TruffleHog action and scanner to 3.99.2, thanks @dependabot[bot].
 - Updated Oxfmt to 0.72.0 and Oxlint to 1.87.0 for repository formatting and linting, thanks @dependabot[bot].

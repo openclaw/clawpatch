@@ -40,6 +40,19 @@ npm pack --dry-run --json --ignore-scripts
 
 ## Manual Checks
 
+To validate the release pipeline against the current default branch without
+publishing, dispatch the Release workflow with the current package version:
+
+```bash
+gh workflow run release.yml --repo openclaw/clawpatch --ref main -f tag_name=v0.8.2 -F dry_run=true
+```
+
+Manual dispatch defaults to `dry_run: true`. It checks out the selected workflow
+ref, validates the package version and dated changelog entry, and runs the same
+build and package checks while skipping both npm and GitHub publication. An
+authorized manual publication must explicitly set `dry_run: false`; tag pushes
+retain the release behavior.
+
 - Confirm npm Trusted Publisher is bound to GitHub repository
   `openclaw/clawpatch`, workflow filename `release.yml`, environment
   `npm-release`, and the `npm publish` action.

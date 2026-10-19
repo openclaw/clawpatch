@@ -10,12 +10,17 @@ on:
         description: "Existing release tag to publish, for example v0.5.1"
         required: true
         type: string
+      dry_run:
+        description: "Validate the selected ref without publishing"
+        required: false
+        default: true
+        type: boolean
 
 permissions: {}
 
 jobs:
   release:
-    name: Publish npm and GitHub release
+    name: Validate or publish release
     runs-on: ubuntu-latest
     environment: npm-release
     timeout-minutes: 20
@@ -37,12 +42,12 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Check out release tag
+      - name: Check out release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ steps.release.outputs.tag }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && github.sha || steps.release.outputs.tag }}
 
       - name: Verify release metadata
         env:
@@ -86,6 +91,7 @@ jobs:
           pnpm pack:smoke
 
       - name: Publish npm package with trusted publishing
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         run: npm publish --access public --provenance
 
       - name: Build release notes
@@ -100,6 +106,7 @@ jobs:
           ' CHANGELOG.md > release-notes.md
 
       - name: Publish GitHub release
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
