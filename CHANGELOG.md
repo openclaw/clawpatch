@@ -1,15 +1,18 @@
 # Changelog
 
-## 0.8.3 - Unreleased
+## 0.8.4 - Unreleased
 
+## 0.8.3 - 2026-10-20
+
+**Highlights:** Provider JSON recovery handles unmatched braces in prose, and the coverage toolchain receives a Source Map JS security fix.
+
+- Fixed provider JSON extraction to recover structured results after unmatched braces in leading prose, thanks @goutamadwant and @notlakshitha.
 - Updated the coverage toolchain's Source Map JS dependency to 1.2.2 to fix an indexed source-map denial of service (GHSA-68fv-2mgg-jv7q).
 - Updated Vite to 8.3.4, pnpm to 11.28.6, and the release workflow's npm CLI to 12.2.0 within the 48-hour dependency release-age policy.
 - Updated Zod to 4.6.7, Vitest and V8 coverage to 5.0.5, Oxfmt to 0.73.0, Oxlint to 1.88.0, and CodeQL to 4.39.0 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
 - Added a no-publish release workflow dry run that validates the selected ref and defaults on for manual dispatch.
-- Fixed provider JSON extraction to recover structured results after unmatched braces in leading prose, thanks @goutamadwant and @notlakshitha.
 - Updated Node setup to 7.1.0, CodeQL to 4.38.3, and both the TruffleHog action and scanner to 3.99.2, thanks @dependabot[bot].
 - Updated Oxfmt to 0.72.0 and Oxlint to 1.87.0 for repository formatting and linting, thanks @dependabot[bot].
-
 - Updated Node 22 typings to 22.20.5, Vitest and V8 coverage to 5.0.3, Vite to 8.3.2, and pnpm to 11.28.4 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
 
 ## 0.8.2 - 2026-10-01
