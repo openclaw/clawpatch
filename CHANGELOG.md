@@ -2,6 +2,8 @@
 
 ## 0.8.3 - Unreleased
 
+- Updated the coverage toolchain's Source Map JS dependency to 1.2.2 to fix an indexed source-map denial of service (GHSA-68fv-2mgg-jv7q).
+- Updated Vite to 8.3.4, pnpm to 11.28.6, and the release workflow's npm CLI to 12.2.0 within the 48-hour dependency release-age policy.
 - Updated Zod to 4.6.7, Vitest and V8 coverage to 5.0.5, Oxfmt to 0.73.0, Oxlint to 1.88.0, and CodeQL to 4.39.0 within the 48-hour dependency release-age policy, thanks @dependabot[bot].
 - Added a no-publish release workflow dry run that validates the selected ref and defaults on for manual dispatch.
 - Fixed provider JSON extraction to recover structured results after unmatched braces in leading prose, thanks @goutamadwant and @notlakshitha.
