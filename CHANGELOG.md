@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.8.4 - Unreleased
+## 0.8.5 - Unreleased
+
+## 0.8.4 - 2026-10-21
+
+**Highlights:** Package-less nested TypeScript sources receive deterministic ownership without crossing explicit project boundaries.
 
 - Fixed deterministic mapping of package-less nested Node/TypeScript sources under `packages/*`, assigning unowned files to bounded source groups while preserving explicit project boundaries, thanks @ptahdunbar for the report (#243).
 
