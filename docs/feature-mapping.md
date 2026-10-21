@@ -123,6 +123,14 @@ clawpatch next --project web
 When an Nx project target is available, nearby tests use the project-scoped
 command, such as `yarn nx test web`, instead of a repository-wide test command.
 
+Package-less projects under `packages/*` also cover nested Node/TypeScript
+sources outside conventional folders, such as `packages/core/governance/types.ts`.
+After conventional and framework mapping, remaining sources get one bounded
+source-group owner in the nearest discovered package-like directory. Explicit
+`package.json` and `project.json` boundaries retain control of their subtrees;
+fallback mapping does not expand an explicit project's declared source scope.
+Workspace and configured excludes, generated files, and symlinks remain excluded.
+
 When Turborepo metadata is available, mapped workspace features use filtered
 Turbo validation commands such as `pnpm turbo run test --filter web`. Clawpatch
 does not execute Turbo during mapping and leaves task dependency expansion to

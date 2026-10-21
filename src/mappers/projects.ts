@@ -474,6 +474,15 @@ async function discoverGenericProjectRoots(
   return roots;
 }
 
+export async function nodeWorkspaceExcludes(root: string): Promise<string[]> {
+  return (await declaredWorkspacePatterns(root, await readPackageJson(root)))
+    .filter((pattern) => pattern.startsWith("!"))
+    .flatMap((pattern) => {
+      const normalized = normalizeWorkspacePattern(pattern.slice(1));
+      return normalized === null ? [] : [normalized];
+    });
+}
+
 function isNestedUnderRoots(projectRoot: string, roots: Iterable<string>): boolean {
   return [...roots].some(
     (existingRoot) =>
@@ -748,6 +757,9 @@ async function hasGenericProjectSignal(
     if (isGenericProjectSignal(sourceRoot, files)) {
       return true;
     }
+  }
+  if (/^packages\/[^/]+$/u.test(projectRoot)) {
+    return (await sourceLikeFiles(root, projectRoot)).length > 0;
   }
   return false;
 }

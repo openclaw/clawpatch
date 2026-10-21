@@ -2,6 +2,8 @@
 
 ## 0.8.4 - Unreleased
 
+- Fixed deterministic mapping of package-less nested Node/TypeScript sources under `packages/*`, assigning unowned files to bounded source groups while preserving explicit project boundaries, thanks @ptahdunbar for the report (#243).
+
 ## 0.8.3 - 2026-10-20
 
 **Highlights:** Provider JSON recovery handles unmatched braces in prose, and the coverage toolchain receives a Source Map JS security fix.

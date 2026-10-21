@@ -10,15 +10,18 @@ import {
   packageKind,
   packageTrustBoundaries,
   pathMatchesPrefix,
+  shouldSkip,
   walk,
 } from "./shared.js";
 import {
   packageRelativePath,
+  nodeWorkspaceExcludes,
   projectContextFiles,
   projectDisplayName,
   projectTags,
   projectTargetCommand,
 } from "./projects.js";
+import { isExcludedWorkspace } from "./workspace-patterns.js";
 import type { NodePackageJson, NodeProjectInfo } from "./projects.js";
 import type { WorkspaceTaskGraph } from "./task-graph.js";
 import {
@@ -32,6 +35,12 @@ import {
 type PackageInfo = NodeProjectInfo & {
   packageJsonPath: string;
   packageJson: NodePackageJson;
+};
+
+type SourceGroupOptions = {
+  sourceRoots?: string[];
+  files?: string[];
+  includeFile?: (path: string) => boolean;
 };
 
 const sourceDirectories = ["src", "lib", "app", "pages", "scripts", "server", "api"] as const;
@@ -71,6 +80,9 @@ export async function nodeSeeds(root: string, context: MapperContext): Promise<F
   const projects = await context.nodeProjects();
   const taskGraph = await context.nodeTaskGraph();
   for (const info of projects) {
+    if (isPackageLessProject(info)) {
+      continue;
+    }
     if (hasNodePackage(info)) {
       seeds.push(...(await packageSeeds(root, info, taskGraph)));
     }
@@ -78,6 +90,73 @@ export async function nodeSeeds(root: string, context: MapperContext): Promise<F
   }
 
   return seeds;
+}
+
+export async function packageLessSourceSeeds(
+  root: string,
+  context: MapperContext,
+  existingSeeds: FeatureSeed[],
+): Promise<FeatureSeed[]> {
+  const projects = await context.nodeProjects();
+  const taskGraph = await context.nodeTaskGraph();
+  const excludes = await nodeWorkspaceExcludes(root);
+  const ownedPaths = new Set(
+    existingSeeds.flatMap((seed) =>
+      (seed.ownedFiles ?? [{ path: seed.entryPath }]).map((file) => file.path),
+    ),
+  );
+  const seeds: FeatureSeed[] = [];
+  for (const info of projects) {
+    if (!isPackageLessProject(info)) {
+      continue;
+    }
+    const otherRoots = projects
+      .filter((project) => project !== info && project.root !== ".")
+      .flatMap((project) => [
+        project.root,
+        ...(project.sourceRoot === null ? [] : [project.sourceRoot]),
+      ])
+      .filter((path) => path !== info.root && pathMatchesPrefix(path, info.root));
+    const files = await walk(
+      root,
+      [info.root],
+      (path) =>
+        shouldSkip(path) ||
+        isExcludedWorkspace(path, excludes) ||
+        otherRoots.some((other) => pathMatchesPrefix(path, other)),
+    );
+    // A nested manifest is a boundary even when workspace globs did not discover it.
+    const manifestRoots = files
+      .filter((path) => ["package.json", "project.json"].includes(basename(path)))
+      .map((path) => dirname(path));
+    const projectFiles = files.filter(
+      (path) => !manifestRoots.some((manifestRoot) => pathMatchesPrefix(path, manifestRoot)),
+    );
+    const conventional = await sourceGroupSeeds(root, info, taskGraph, {
+      files: projectFiles,
+      includeFile: (path) => !ownedPaths.has(path),
+    });
+    seeds.push(...conventional);
+    for (const seed of conventional) {
+      for (const file of seed.ownedFiles ?? []) ownedPaths.add(file.path);
+    }
+    seeds.push(
+      ...(await sourceGroupSeeds(root, info, taskGraph, {
+        sourceRoots: [info.root],
+        files: projectFiles,
+        includeFile: (path) => !ownedPaths.has(path),
+      })),
+    );
+  }
+  return seeds;
+}
+
+function isPackageLessProject(info: NodeProjectInfo): boolean {
+  return (
+    info.packageJsonPath === null &&
+    info.projectJsonPath === null &&
+    info.root.startsWith("packages/")
+  );
 }
 
 function hasNodePackage(project: NodeProjectInfo): project is PackageInfo {
@@ -193,20 +272,23 @@ async function sourceGroupSeeds(
   root: string,
   info: NodeProjectInfo,
   taskGraph: WorkspaceTaskGraph,
+  options: SourceGroupOptions = {},
 ): Promise<FeatureSeed[]> {
   const packageName = projectDisplayName(info);
   const testCommand = projectTargetCommand(info, "test", taskGraph);
-  const testFiles = await packageTestFiles(root, info);
+  const testFiles = await packageTestFiles(root, info, options);
   const railsPackage = await isRailsPackage(root, info.root);
   const seeds: FeatureSeed[] = [];
 
-  for (const sourceRoot of packageSourceRoots(info, railsPackage)) {
+  for (const sourceRoot of options.sourceRoots ?? packageSourceRoots(info, railsPackage)) {
     if (!(await pathExists(join(root, sourceRoot)))) {
       continue;
     }
-    const files = (await walk(root, [sourceRoot])).filter(
+    const files = (options.files ?? (await walk(root, [sourceRoot]))).filter(
       (path) =>
+        (options.files === undefined || pathMatchesPrefix(path, sourceRoot)) &&
         isReviewableNodeSourceFile(path) &&
+        (options.includeFile?.(path) ?? true) &&
         !isRailsExcludedNodeSourcePath(info, railsPackage, sourceRoot, path),
     );
     if (files.length === 0) {
@@ -422,13 +504,24 @@ function isRailsExcludedNodeSourcePath(
   );
 }
 
-async function packageTestFiles(root: string, info: NodeProjectInfo): Promise<string[]> {
+async function packageTestFiles(
+  root: string,
+  info: NodeProjectInfo,
+  options: SourceGroupOptions = {},
+): Promise<string[]> {
   const railsPackage = await isRailsPackage(root, info.root);
   const prefixes = [
-    ...packageSourceRoots(info, railsPackage),
+    ...(options.sourceRoots ?? packageSourceRoots(info, railsPackage)),
     ...testDirectories.map((dir) => packageRelativePath(info.root, dir)),
   ];
-  return (await walk(root, prefixes)).filter(isNodeTestPath).slice(0, 200);
+  return (options.files ?? (await walk(root, prefixes)))
+    .filter(
+      (path) =>
+        (options.files === undefined ||
+          prefixes.some((prefix) => pathMatchesPrefix(path, prefix))) &&
+        isNodeTestPath(path),
+    )
+    .slice(0, 200);
 }
 
 async function isRailsPackage(root: string, packageRoot: string): Promise<boolean> {

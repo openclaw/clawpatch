@@ -16,7 +16,7 @@ import { laravelSeeds } from "./mappers/laravel.js";
 import { mavenSeeds } from "./mappers/maven.js";
 import { nextSeeds } from "./mappers/next.js";
 import { nodeRouteSeeds } from "./mappers/node-routes.js";
-import { nodeSeeds } from "./mappers/node.js";
+import { nodeSeeds, packageLessSourceSeeds } from "./mappers/node.js";
 import { pythonSeeds } from "./mappers/python.js";
 import { reactSeeds } from "./mappers/react.js";
 import { createMapperContext } from "./mappers/context.js";
@@ -329,7 +329,12 @@ async function collectSeeds(
       return seeds;
     }),
   );
-  return dedupeFeatureSeeds(groups.flat());
+  const seeds = groups.flat();
+  // Fill only ownership gaps after all conventional and framework mappers have run.
+  if (await runNodeMappers) {
+    seeds.push(...(await packageLessSourceSeeds(root, context, seeds)));
+  }
+  return dedupeFeatureSeeds(seeds);
 }
 
 async function shouldRunNodeMappers(root: string, project: ProjectRecord): Promise<boolean> {
