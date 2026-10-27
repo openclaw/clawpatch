@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Refresh Oxfmt, test tooling, CodeQL, and TruffleHog within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #249 #250
+
 ## 0.8.4 - 2026-10-21
 
 **Highlights:** Package-less nested TypeScript sources receive deterministic ownership without crossing explicit project boundaries.
