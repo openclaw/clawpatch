@@ -2,6 +2,7 @@
 
 ## 0.8.5 - Unreleased
 
+- Avoid duplicate CI compilation by retaining the package smoke test's clean prepack build.
 - Refresh Oxfmt, test tooling, CodeQL, and TruffleHog within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #249 #250
 
 ## 0.8.4 - 2026-10-21
