@@ -1,0 +1,87 @@
+name: Isolated package build proof
+
+on:
+  push:
+    branches: [investigate/ci-build-proof-20261102]
+
+permissions:
+  contents: read
+
+jobs:
+  cold:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.variant == 'baseline' && '79c1495f20d33b68ca4439dfa9dfef18ed7a460e' || 'f3505124159b5bfbb5ad6605f95e1e400b3cb441' }}
+          path: source
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: source/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.12.1
+      - name: Isolate empty package store
+        run: |
+          test ! -e "$GITHUB_WORKSPACE/.proof-store"
+          pnpm config set store-dir "$GITHUB_WORKSPACE/.proof-store" --global
+      - name: Actual cold pipeline
+        env:
+          PROOF_VARIANT: ${{ matrix.variant }}
+          PROOF_PHASE: cold
+        run: node harness/scripts/ci-pack-proof.mjs
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .proof-store
+          key: pack-proof-v1-${{ runner.os }}-${{ runner.arch }}-node26.12.1-pnpm11.28.6-${{ hashFiles('source/pnpm-lock.yaml') }}-${{ matrix.variant }}
+
+  restored:
+    needs: cold
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [baseline, candidate]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.variant == 'baseline' && '79c1495f20d33b68ca4439dfa9dfef18ed7a460e' || 'f3505124159b5bfbb5ad6605f95e1e400b3cb441' }}
+          path: source
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        if: matrix.variant == 'candidate'
+        with:
+          ref: 79c1495f20d33b68ca4439dfa9dfef18ed7a460e
+          path: baseline
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+        with:
+          package_json_file: source/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 26.12.1
+      - run: pnpm config set store-dir "$GITHUB_WORKSPACE/.proof-store" --global
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        id: store
+        with:
+          path: .proof-store
+          key: pack-proof-v1-${{ runner.os }}-${{ runner.arch }}-node26.12.1-pnpm11.28.6-${{ hashFiles('source/pnpm-lock.yaml') }}-${{ matrix.variant }}
+      - name: Require exact restored store
+        env:
+          CACHE_HIT: ${{ steps.store.outputs.cache-hit }}
+        run: test "$CACHE_HIT" = true
+      - name: Actual fresh-workspace restored and interleaved hot pipelines
+        env:
+          PROOF_VARIANT: ${{ matrix.variant }}
+          PROOF_PHASE: restored
+        run: node harness/scripts/ci-pack-proof.mjs
