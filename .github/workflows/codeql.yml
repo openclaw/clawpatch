@@ -12,19 +12,11 @@ on:
           - all
           - typescript
           - actions
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/codeql/**"
-      - ".github/workflows/**"
-      - "src/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "tsconfig*.json"
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
+      - ".gitattributes"
+      - "**/.gitattributes"
       - ".github/codeql/**"
       - ".github/workflows/**"
       - "src/**"
@@ -35,7 +27,7 @@ on:
     - cron: "23 7 * * 1"
 
 concurrency:
-  group: codeql-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  group: codeql-${{ github.workflow }}-${{ github.event_name }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:

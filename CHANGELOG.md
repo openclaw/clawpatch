@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Keep full weekly CodeQL analysis without duplicate main-push scans, isolate scheduled and manual runs, and scan PRs that change checkout attributes.
+
 - Avoid duplicate CI compilation by retaining the package smoke test's clean prepack build.
 - Refresh Oxfmt, test tooling, CodeQL, and TruffleHog within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #249 #250
 
