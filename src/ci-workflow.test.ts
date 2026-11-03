@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 
 it("preserves weekly CodeQL and admits checkout-attribute PR changes", async () => {
   const workflow = await readFile(".github/workflows/codeql.yml", "utf8");
-  const header = workflow.split("\njobs:\n", 1)[0];
+  const header = workflow.slice(0, workflow.indexOf("\njobs:\n"));
   const pr = header.split("  pull_request:\n")[1]?.split("  schedule:\n")[0];
 
   expect(header).not.toMatch(/^  push:/mu);
