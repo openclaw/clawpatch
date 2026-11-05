@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Refresh Oxfmt and Oxlint within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #253
+
 - Keep full weekly CodeQL analysis without duplicate main-push scans, isolate scheduled and manual runs, and scan PRs that change checkout attributes.
 
 - Avoid duplicate CI compilation by retaining the package smoke test's clean prepack build.
