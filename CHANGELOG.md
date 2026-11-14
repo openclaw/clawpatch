@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Refresh Vitest and V8 coverage to 5.1.0, Oxfmt to 0.77.0, Oxlint to 1.93.0, Node 22 typings, and CI/security actions within the 48-hour dependency policy. Thanks @dependabot! #256 #257
+
 - Refresh Oxfmt and Oxlint within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #253
 
 - Keep full weekly CodeQL analysis without duplicate main-push scans, isolate scheduled and manual runs, and scan PRs that change checkout attributes.
