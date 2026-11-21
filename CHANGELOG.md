@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Refresh Vitest and coverage, Oxfmt, Oxlint, and the pinned TruffleHog action within the 48-hour dependency policy while retaining Node 22 support. Thanks @dependabot! #259 #260
+
 - Refresh Vitest and V8 coverage to 5.1.0, Oxfmt to 0.77.0, Oxlint to 1.93.0, Node 22 typings, and CI/security actions within the 48-hour dependency policy. Thanks @dependabot! #256 #257
 
 - Refresh Oxfmt and Oxlint within the 48-hour dependency policy while preserving Node 22 support. Thanks @dependabot! #253
