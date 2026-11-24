@@ -2,6 +2,8 @@
 
 ## 0.8.5 - Unreleased
 
+- Align the TruffleHog scanner runtime with the pinned 3.100.0 action so secret scans use the updated scanner. #264
+
 - Refresh Vitest and coverage, Oxfmt, Oxlint, and the pinned TruffleHog action within the 48-hour dependency policy while retaining Node 22 support. Thanks @dependabot! #259 #260
 
 - Refresh Vitest and V8 coverage to 5.1.0, Oxfmt to 0.77.0, Oxlint to 1.93.0, Node 22 typings, and CI/security actions within the 48-hour dependency policy. Thanks @dependabot! #256 #257
